@@ -96,7 +96,7 @@ function calculate_redundant_ccs()
 
     local _, _, cc_count, _ = reaper.MIDI_CountEvts(take, 0, 0, 0)
 
-    local last_event_value = -1
+    local last_event_value = nil  -- Use nil to indicate no previous event has been processed yet
     redundant_event_count = 0
     total_event_count = 0
 
@@ -104,9 +104,11 @@ function calculate_redundant_ccs()
         local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(take, i, false, false, 0, 0, 0, 0, 0)
         if cc == last_clicked_cc_lane then
             total_event_count = total_event_count + 1
-            if math.abs(val - last_event_value) <= cc_redundancy_threshold then -- MODIFIED
+            -- Only check for redundancy if this is not the first event in the lane
+            if last_event_value ~= nil and math.abs(val - last_event_value) <= cc_redundancy_threshold then
                 redundant_event_count = redundant_event_count + 1
             end
+            -- For the first event, just set it as the reference; for subsequent events, always update the reference
             last_event_value = val
         end
     end
