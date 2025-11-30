@@ -29,15 +29,15 @@ local imgui = require('imgui')('0.9.3')
 -- Script variables
 local script_name = "Combined CC Tool"
 local ctx = imgui.CreateContext(script_name)
+local script_running = true
 local take = nil
 local last_clicked_cc_lane = -1
 local lane_name = ""
 local redundant_event_count = 0
 local total_event_count = 0
 local smooth_amount = 0 -- 0-100%
-local last_smooth_amount = 0
+local cc_redundancy_threshold = 0 -- New global variable for redundancy threshold
 local cc_list_cache = {}
-local is_smoothing = false
 
 -- Helper function to get the active MIDI take
 function get_active_take()
@@ -90,7 +90,7 @@ function calculate_redundant_ccs()
         local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(take, i, false, false, 0, 0, 0, 0, 0)
         if cc == last_clicked_cc_lane then
             total_event_count = total_event_count + 1
-            if val == last_event_value then
+            if math.abs(val - last_event_value) <= cc_redundancy_threshold then -- MODIFIED
                 redundant_event_count = redundant_event_count + 1
             end
             last_event_value = val
@@ -116,7 +116,7 @@ function remove_redundant_ccs()
         local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(take, i, false, false, 0, 0, 0, 0, 0)
 
         if cc == lane then
-            if val == last_event_value then
+            if math.abs(val - last_event_value) <= cc_redundancy_threshold then -- MODIFIED
                 reaper.MIDI_DeleteCC(take, i)
                 changes = changes + 1
                 -- The index stays the same because the next event shifts down
@@ -154,11 +154,9 @@ end
 
 function smooth_ccs()
     if not take or #cc_list_cache < 3 then return end
-    if smooth_amount == 0 then return end
     
     local c = smooth_amount / 100
-    local changes = 0
-
+    
     for i = 2, #cc_list_cache - 1 do
         local prev_val = cc_list_cache[i-1].val
         local curr_val = cc_list_cache[i].val
@@ -170,75 +168,132 @@ function smooth_ccs()
         
         local cc_event = cc_list_cache[i]
         reaper.MIDI_SetCC(take, cc_event.idx, true, false, nil, nil, nil, nil, new_val, false)
-        changes = changes + 1
     end
-    if changes > 0 then
-      reaper.UpdateArrange()
-    end
+    reaper.UpdateArrange()
 end
 
 -- GUI
 function loop()
-    imgui.SetNextWindowSize(ctx, 300, 220, imgui.Cond_Once)
-    local visible, open = imgui.Begin(ctx, script_name, true)
-    if not visible then 
-        imgui.End(ctx)
-        return 
+    if not script_running then return end
+
+    -- Handle global keyboard shortcuts
+    local is_ctrl_down = imgui.IsKeyDown(ctx, imgui.Key_LeftCtrl) or imgui.IsKeyDown(ctx, imgui.Key_RightCtrl)
+    local is_super_down = imgui.IsKeyDown(ctx, imgui.Key_LeftSuper) or imgui.IsKeyDown(ctx, imgui.Key_RightSuper)
+    local is_shift_down = imgui.IsKeyDown(ctx, imgui.Key_LeftShift) or imgui.IsKeyDown(ctx, imgui.Key_RightShift)
+
+    -- Undo (Ctrl+Z or Cmd+Z)
+    if (is_ctrl_down or is_super_down) and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false) then
+        reaper.Undo_DoUndo2(0)
     end
 
-    local midi_editor = reaper.MIDIEditor_GetActive()
-    if not midi_editor then
-        imgui.Text(ctx, "Please open a MIDI editor.")
-    else
-        -- Shared Info
-        local current_lane = reaper.MIDIEditor_GetSetting_int(reaper.MIDIEditor_GetActive(), "last_clicked_cc_lane")
-        if last_clicked_cc_lane ~= current_lane or lane_name == "" then
-            calculate_redundant_ccs()
-        end
-        
-        imgui.Text(ctx, lane_name or "Select a CC lane")
-        if imgui.Button(ctx, "Update") then
-            calculate_redundant_ccs()
-        end
-        imgui.Separator(ctx)
+    -- Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS)
+    if (is_ctrl_down and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Y, false)) or
+       (is_super_down and is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false)) then
+        reaper.Undo_DoRedo2(0)
+    end
+    
+    if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
+        script_running = false
+    end
 
-        -- Remove Redundant Section
-        imgui.Text(ctx, "Remove Redundant CCs")
-        imgui.Text(ctx, "Total Events: " .. total_event_count)
-        imgui.Text(ctx, "Redundant Events: " .. redundant_event_count)
-        if imgui.Button(ctx, "Remove") then
-            remove_redundant_ccs()
-        end
+    imgui.SetNextWindowSize(ctx, 300, 220, imgui.Cond_Once)
+    local visible, open = imgui.Begin(ctx, script_name, true)
+    
+    if not open then script_running = false end
+    
+    if visible and script_running then
+        local midi_editor = reaper.MIDIEditor_GetActive()
+        if not midi_editor then
+            imgui.Text(ctx, "Please open a MIDI editor.")
+        else
+            -- Shared Info
+            local current_lane = reaper.MIDIEditor_GetSetting_int(reaper.MIDIEditor_GetActive(), "last_clicked_cc_lane")
+            if last_clicked_cc_lane ~= current_lane or lane_name == "" then
+                calculate_redundant_ccs()
+            end
+            
+            if last_clicked_cc_lane < 0 or last_clicked_cc_lane > 127 then
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
+                imgui.Text(ctx, "Please select a CC lane")
+                reaper.ImGui_PopStyleColor(ctx)
+            else
+                imgui.Text(ctx, lane_name)
+            end
+            
+            if imgui.Button(ctx, "Update") then
+                calculate_redundant_ccs()
+            end
+            imgui.Separator(ctx)
 
-        imgui.Separator(ctx)
+            -- Count selected CCs for the current lane
+            local selected_in_lane_count = 0
+            if take and last_clicked_cc_lane >= 0 and last_clicked_cc_lane <= 127 then
+                local i = -1
+                while true do
+                    i = reaper.MIDI_EnumSelCC(take, i)
+                    if i == -1 then break end
+                    local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(take, i, false, false, 0, 0, 0, 0, 0)
+                    if cc == last_clicked_cc_lane then
+                        selected_in_lane_count = selected_in_lane_count + 1
+                    end
+                end
+            end
 
-        -- Smooth Section
-        imgui.Text(ctx, "Smooth Selected CCs")
-        local _, new_smooth_amount = imgui.SliderInt(ctx, "Amount", smooth_amount, 0, 100, "%d%%")
-        smooth_amount = new_smooth_amount
+            -- Smooth Section
+            imgui.Text(ctx, "Smooth Selected CCs")
+            if selected_in_lane_count < 3 then
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
+                imgui.Text(ctx, "Select at least 3 CC events to use smoother.")
+                reaper.ImGui_PopStyleColor(ctx)
+            end
+            local _, new_smooth_amount = imgui.SliderInt(ctx, "Amount", smooth_amount, 0, 100, "%d%%")
+            smooth_amount = new_smooth_amount
 
-        -- Handle smoothing logic
-        if smooth_amount ~= last_smooth_amount then
-            if not is_smoothing then
+            -- Handle smoothing logic
+            if imgui.IsItemActivated(ctx) then
                 reaper.Undo_BeginBlock()
                 cc_list_cache = build_cc_cache()
-                is_smoothing = true
             end
-            smooth_ccs()
-        elseif is_smoothing then
-            reaper.Undo_EndBlock("Smooth CC events", -1)
-            is_smoothing = false
-            cc_list_cache = {}
+
+            if imgui.IsItemActive(ctx) and #cc_list_cache > 0 then
+                smooth_ccs()
+                calculate_redundant_ccs() -- Recalculate redundant count after smoothing
+            end
+
+            if imgui.IsItemDeactivatedAfterEdit(ctx) then
+                if #cc_list_cache > 0 then
+                    reaper.Undo_EndBlock("Smooth CC events", -1)
+                else
+                    reaper.Undo_EndBlock("", -1) 
+                end
+                cc_list_cache = {}
+                calculate_redundant_ccs() -- Recalculate redundant count after smoothing ends
+            end
+
+            imgui.Separator(ctx)
+
+            -- Remove Redundant Section
+            imgui.Text(ctx, "Remove Redundant CCs")
+            imgui.Text(ctx, "Total Events: " .. total_event_count)
+            imgui.Text(ctx, "Redundant Events: " .. redundant_event_count)
+            local _, new_threshold = imgui.SliderInt(ctx, "Threshold", cc_redundancy_threshold, 0, 10)
+            if new_threshold ~= cc_redundancy_threshold then
+                cc_redundancy_threshold = new_threshold
+                calculate_redundant_ccs() -- Recalculate counts when threshold changes
+            end
+            if imgui.Button(ctx, "Remove") then
+                remove_redundant_ccs()
+            end
+
         end
-        last_smooth_amount = smooth_amount
     end
     
     imgui.End(ctx)
-    if open then
+    
+    if script_running then
         reaper.defer(loop)
     end
 end
-
 
 -- Init
 reaper.defer(loop)
