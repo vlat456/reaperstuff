@@ -39,16 +39,30 @@ local smooth_amount = 0 -- 0-100%
 local cc_redundancy_threshold = 0 -- New global variable for redundancy threshold
 local cc_list_cache = {}
 
+-- Function to get current MIDI context consistently
+function get_midi_context()
+    local midi_editor = reaper.MIDIEditor_GetActive()
+    if not midi_editor then return nil, nil, nil end
+
+    local current_take = reaper.MIDIEditor_GetTake(midi_editor)
+    if not current_take then return nil, nil, nil end
+
+    local current_lane = reaper.MIDIEditor_GetSetting_int(midi_editor, "last_clicked_cc_lane")
+    if current_lane < 0 or current_lane > 127 then return current_take, midi_editor, current_lane end
+
+    return current_take, midi_editor, current_lane
+end
+
 -- Helper function to get the active MIDI take
 function get_active_take()
-    local midi_editor = reaper.MIDIEditor_GetActive()
-    if not midi_editor then return nil end
-    return reaper.MIDIEditor_GetTake(midi_editor)
+    local current_take, midi_editor, lane = get_midi_context()
+    return current_take
 end
 
 -- Logic from "Remove redundant CCs"
 function calculate_redundant_ccs()
-    local midi_editor = reaper.MIDIEditor_GetActive()
+    local current_take, midi_editor, lane = get_midi_context()
+
     if not midi_editor then
         lane_name = "Please open a MIDI editor."
         total_event_count = 0
@@ -57,7 +71,6 @@ function calculate_redundant_ccs()
         return
     end
 
-    local current_take = reaper.MIDIEditor_GetTake(midi_editor)
     if not current_take then
         lane_name = "Could not get MIDI take."
         total_event_count = 0
@@ -67,8 +80,7 @@ function calculate_redundant_ccs()
     end
 
     take = current_take
-    
-    local lane = reaper.MIDIEditor_GetSetting_int(midi_editor, "last_clicked_cc_lane")
+
     if lane < 0 or lane > 127 then
         redundant_event_count = 0
         total_event_count = 0
@@ -99,9 +111,9 @@ function calculate_redundant_ccs()
 end
 
 function remove_redundant_ccs()
-    if not take or redundant_event_count == 0 then return end
+    local current_take, midi_editor, lane = get_midi_context()
 
-    local lane = reaper.MIDIEditor_GetSetting_int(reaper.MIDIEditor_GetActive(), "last_clicked_cc_lane")
+    if not current_take or redundant_event_count == 0 then return end
     if lane < 0 or lane > 127 then return end
 
     reaper.Undo_BeginBlock()
@@ -110,14 +122,14 @@ function remove_redundant_ccs()
     local changes = 0
     local i = 0
     while true do
-        local _, _, cc_count, _ = reaper.MIDI_CountEvts(take, 0, 0, 0)
+        local _, _, cc_count, _ = reaper.MIDI_CountEvts(current_take, 0, 0, 0)
         if i >= cc_count then break end
 
-        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(take, i, false, false, 0, 0, 0, 0, 0)
+        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
 
         if cc == lane then
             if math.abs(val - last_event_value) <= cc_redundancy_threshold then -- MODIFIED
-                reaper.MIDI_DeleteCC(take, i)
+                reaper.MIDI_DeleteCC(current_take, i)
                 changes = changes + 1
                 -- The index stays the same because the next event shifts down
                 i = i - 1
@@ -133,15 +145,17 @@ function remove_redundant_ccs()
 end
 
 function select_all_ccs_in_lane()
-    if not take or last_clicked_cc_lane < 0 or last_clicked_cc_lane > 127 then return end
+    local current_take, midi_editor, lane = get_midi_context()
+
+    if not current_take or lane < 0 or lane > 127 then return end
 
     reaper.Undo_BeginBlock()
     local changes = 0
-    local _, _, cc_count, _ = reaper.MIDI_CountEvts(take, 0, 0, 0)
+    local _, _, cc_count, _ = reaper.MIDI_CountEvts(current_take, 0, 0, 0)
     for i = 0, cc_count - 1 do
-        local _, selected, muted, ppqpos, chanmsg, chan, msg2, msg3 = reaper.MIDI_GetCC(take, i)
-        if msg2 == last_clicked_cc_lane and not selected then
-            reaper.MIDI_SetCC(take, i, true, muted, ppqpos, chanmsg, chan, msg2, msg3, false)
+        local _, selected, muted, ppqpos, chanmsg, chan, msg2, msg3 = reaper.MIDI_GetCC(current_take, i)
+        if msg2 == lane and not selected then
+            reaper.MIDI_SetCC(current_take, i, true, muted, ppqpos, chanmsg, chan, msg2, msg3, false)
             changes = changes + 1
         end
     end
@@ -151,17 +165,18 @@ end
 
 -- Logic from "Smooth CCs"
 function build_cc_cache()
-    if not take then return {} end
-    local lane = reaper.MIDIEditor_GetSetting_int(reaper.MIDIEditor_GetActive(), "last_clicked_cc_lane")
+    local current_take, midi_editor, lane = get_midi_context()
+
+    if not current_take then return {} end
     if lane < 0 or lane > 127 then return {} end
 
     local list = {}
     local i = -1
     while true do
-        i = reaper.MIDI_EnumSelCC(take, i)
+        i = reaper.MIDI_EnumSelCC(current_take, i)
         if i == -1 then break end
-        
-        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(take, i, false, false, 0, 0, 0, 0, 0)
+
+        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
         if cc == lane then
             table.insert(list, {idx = i, val = val})
         end
@@ -171,9 +186,9 @@ end
 
 function smooth_ccs()
     if not take or #cc_list_cache < 3 then return end
-    
+
     local c = smooth_amount / 100
-    
+
     for i = 2, #cc_list_cache - 1 do
         local prev_val = cc_list_cache[i-1].val
         local curr_val = cc_list_cache[i].val
@@ -182,7 +197,7 @@ function smooth_ccs()
         local avg = (prev_val + curr_val + next_val) / 3
         local new_val = curr_val - c * (curr_val - avg)
         new_val = math.floor(math.max(0, math.min(127, new_val + 0.5)))
-        
+
         local cc_event = cc_list_cache[i]
         reaper.MIDI_SetCC(take, cc_event.idx, true, false, nil, nil, nil, nil, new_val, false)
     end
@@ -219,7 +234,8 @@ function loop()
     if not open then script_running = false end
     
     if visible and script_running then
-        local midi_editor = reaper.MIDIEditor_GetActive()
+        local current_take, midi_editor, current_lane = get_midi_context()
+
         if not midi_editor then
             -- Clear cache when no MIDI editor is active
             if #cc_list_cache > 0 then
@@ -227,9 +243,6 @@ function loop()
             end
             imgui.Text(ctx, "Please open a MIDI editor.")
         else
-            local current_take = reaper.MIDIEditor_GetTake(midi_editor)
-            local current_lane = reaper.MIDIEditor_GetSetting_int(midi_editor, "last_clicked_cc_lane")
-
             -- Clear cache if take or lane changes
             if take ~= current_take or last_clicked_cc_lane ~= current_lane then
                 if #cc_list_cache > 0 then
@@ -247,6 +260,8 @@ function loop()
                 -- Shared Info
                 if last_clicked_cc_lane ~= current_lane or lane_name == "" then
                     calculate_redundant_ccs()
+                    -- Update the global last_clicked_cc_lane to match current context
+                    last_clicked_cc_lane = current_lane
                 end
 
                 if last_clicked_cc_lane < 0 or last_clicked_cc_lane > 127 then
@@ -258,7 +273,7 @@ function loop()
                 end
             end -- end of current_take check
 
-            if current_take and last_clicked_cc_lane >= 0 and last_clicked_cc_lane <= 127 then
+            if current_take and current_lane >= 0 and current_lane <= 127 then
                 if imgui.Button(ctx, "Update") then
                     calculate_redundant_ccs()
                 end
@@ -267,13 +282,13 @@ function loop()
 
             -- Count selected CCs for the current lane
             local selected_in_lane_count = 0
-            if take and last_clicked_cc_lane >= 0 and last_clicked_cc_lane <= 127 then
+            if current_take and current_lane >= 0 and current_lane <= 127 then
                 local i = -1
                 while true do
-                    i = reaper.MIDI_EnumSelCC(take, i)
+                    i = reaper.MIDI_EnumSelCC(current_take, i)
                     if i == -1 then break end
-                    local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(take, i, false, false, 0, 0, 0, 0, 0)
-                    if cc == last_clicked_cc_lane then
+                    local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
+                    if cc == current_lane then
                         selected_in_lane_count = selected_in_lane_count + 1
                     end
                 end
