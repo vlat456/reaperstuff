@@ -103,19 +103,23 @@ function build_notes_cache()
         end
 
         local retval, selected, muted, startppqpos, endppqpos, chan, pitch, vel = reaper.MIDI_GetNote(current_take, note_index)
-        if retval then
-            table.insert(notes, {
-                index = note_index,
-                selected = selected,
-                muted = muted,
-                startppqpos = startppqpos,
-                endppqpos = endppqpos,  -- Current end position
-                original_endppqpos = endppqpos,  -- Baseline end position when cache was created
-                chan = chan,
-                pitch = pitch,
-                vel = vel
-            })
+        if not retval then
+            -- Error retrieving note - skip this note
+            reaper.MB("Error retrieving MIDI note at index " .. note_index, "Legato Tool Error", 0)
+            break  -- Stop processing and return partial results
         end
+
+        table.insert(notes, {
+            index = note_index,
+            selected = selected,
+            muted = muted,
+            startppqpos = startppqpos,
+            endppqpos = endppqpos,  -- Current end position
+            original_endppqpos = endppqpos,  -- Baseline end position when cache was created
+            chan = chan,
+            pitch = pitch,
+            vel = vel
+        })
 
         safety_counter = safety_counter + 1
     end
@@ -148,18 +152,22 @@ function get_selected_notes()
         end
 
         local retval, selected, muted, startppqpos, endppqpos, chan, pitch, vel = reaper.MIDI_GetNote(current_take, note_index)
-        if retval then
-            table.insert(notes, {
-                index = note_index,
-                selected = selected,
-                muted = muted,
-                startppqpos = startppqpos,
-                endppqpos = endppqpos,
-                chan = chan,
-                pitch = pitch,
-                vel = vel
-            })
+        if not retval then
+            -- Error retrieving note - skip this note
+            reaper.MB("Error retrieving MIDI note at index " .. note_index, "Legato Tool Error", 0)
+            break  -- Stop processing and return partial results
         end
+
+        table.insert(notes, {
+            index = note_index,
+            selected = selected,
+            muted = muted,
+            startppqpos = startppqpos,
+            endppqpos = endppqpos,
+            chan = chan,
+            pitch = pitch,
+            vel = vel
+        })
 
         safety_counter = safety_counter + 1
     end
@@ -183,11 +191,26 @@ function get_item_boundaries_in_ppq(take)
     -- Get item position and length in project time
     local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
     local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+    if item_pos == nil or item_pos == -1 or item_len == nil or item_len == -1 then
+        -- Error getting item info
+        reaper.MB("Error getting media item info", "Legato Tool Error", 0)
+        return 0, math.huge
+    end
+
     local item_end = item_pos + item_len
 
-    -- Convert to PPQ relative to the take
+    -- Convert to PPQ relative to the take - check for valid conversion
     local start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, item_pos)
+    if start_ppq == nil or start_ppq == -1 then
+        reaper.MB("Error converting start time to PPQ", "Legato Tool Error", 0)
+        return 0, math.huge
+    end
+
     local end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, item_end)
+    if end_ppq == nil or end_ppq == -1 then
+        reaper.MB("Error converting end time to PPQ", "Legato Tool Error", 0)
+        return 0, math.huge
+    end
 
     return start_ppq, end_ppq
 end
@@ -245,7 +268,7 @@ function restore_original_notes(cache)
 
     for _, note in ipairs(cache) do
         -- Restore to original end position
-        reaper.MIDI_SetNote(
+        local result = reaper.MIDI_SetNote(
             current_take,
             note.index,
             nil,  -- selected
@@ -257,6 +280,11 @@ function restore_original_notes(cache)
             nil,  -- vel
             true   -- take
         )
+
+        if not result then
+            reaper.MB("Error restoring MIDI note at index " .. note.index, "Legato Tool Error", 0)
+            -- Continue with other notes even if one fails
+        end
     end
 
     reaper.UpdateArrange()
@@ -276,19 +304,31 @@ function apply_legato(cache)
 
     -- Get project tempo at the MIDI item's location to convert milliseconds to PPQ
     -- Use time-based tempo function to handle projects with tempo changes
-    local item = reaper.GetMediaItemTake_Item(current_take)
-    local item_pos = item and reaper.GetMediaItemInfo_Value(item, "D_POSITION") or 0
-    local tempo = reaper.TimeMap2_GetDividedBpmAtTime(0, item_pos) -- Use current project (0) and item position
+    local tempo = reaper.Master_GetTempo()  -- Default to master tempo
 
-    -- As fallback, if we can't get the tempo at the item position, use master tempo
-    if tempo <= 0 then
-        tempo = reaper.Master_GetTempo()
+    local item = reaper.GetMediaItemTake_Item(current_take)
+    if item then
+        local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+        if item_pos and item_pos ~= -1 then
+            local item_tempo = reaper.TimeMap2_GetDividedBpmAtTime(0, item_pos) -- Use current project (0) and item position
+            if item_tempo and item_tempo > 0 then
+                tempo = item_tempo
+            end
+        end
+    end
+
+    -- Validate tempo value
+    if not tempo or tempo <= 0 then
+        tempo = 120.0  -- Default to 120 BPM if all methods fail
     end
 
     -- Convert milliseconds to PPQ (pulses per quarter note)
     -- Standard MIDI timebase is 480 PPQ at 120 BPM
     -- 1 ms = (tempo/60) * (480/1000) PPQ
     local ms_to_ppq = function(ms)
+        if not ms or ms < 0 then
+            return 0
+        end
         return (ms * tempo * 480) / (60 * 1000)
     end
 
@@ -342,7 +382,11 @@ function apply_legato(cache)
 
         -- Make sure the new end position is not before the start position
         if new_end_ppq > note.startppqpos then
-            reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
+            local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
+            if not result then
+                reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
+                return  -- Stop processing this note
+            end
         end
     end
 
@@ -367,12 +411,19 @@ function loop()
     -- Undo (Ctrl+Z or Cmd+Z)
     if (is_ctrl_down or is_super_down) and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false) then
         reaper.Undo_DoUndo2(0)
+        -- Invalidate the selected CCs count cache since undo may change CCs or selection
+        -- NOTE: For this tool, we should clear caches that may be invalidated
+        notes_cache = {}
+        drag_start_note_states = {}
     end
 
     -- Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS)
-    if (is_ctrl_down and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Y, false)) or
-       (is_super_down and is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false)) then
+    if ((is_ctrl_down and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Y, false)) or
+       (is_super_down and is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false))) then
         reaper.Undo_DoRedo2(0)
+        -- Invalidate caches when redo occurs
+        notes_cache = {}
+        drag_start_note_states = {}
     end
 
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
