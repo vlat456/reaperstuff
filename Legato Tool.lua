@@ -35,8 +35,9 @@ local script_running = true
 local take = nil
 local last_clicked_cc_lane = -1  -- This will be repurposed for general MIDI context
 local selected_note_count = 0
-local legato_amount = 0 -- Default legato amount in milliseconds (0-400ms)
-local original_legato_amount = 0 -- Store the original value before dragging started
+local legato_amount = 0 -- Current legato amount in milliseconds (0-400ms)
+local drag_start_legato_amount = 0 -- Legato amount at the start of dragging
+local drag_start_note_states = {} -- Store the note states at drag start for delta calculations
 local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
 
@@ -79,7 +80,7 @@ function count_selected_notes()
     return note_count
 end
 
--- Function to build notes cache
+-- Function to build notes cache with original values preserved
 function build_notes_cache()
     local current_take, midi_editor = get_midi_context()
 
@@ -101,7 +102,8 @@ function build_notes_cache()
                 selected = selected,
                 muted = muted,
                 startppqpos = startppqpos,
-                endppqpos = endppqpos,
+                endppqpos = endppqpos,  -- Current end position
+                original_endppqpos = endppqpos,  -- Baseline end position when cache was created
                 chan = chan,
                 pitch = pitch,
                 vel = vel
@@ -157,7 +159,32 @@ function get_selected_notes()
     return notes
 end
 
--- Function to apply legato to selected notes
+-- Function to restore notes to their original state
+function restore_original_notes(cache)
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take or not cache then return end
+
+    for _, note in ipairs(cache) do
+        -- Restore to original end position
+        reaper.MIDI_SetNote(
+            current_take,
+            note.index,
+            nil,  -- selected
+            nil,  -- muted
+            nil,  -- startppqpos (keep current)
+            note.original_endppqpos,  -- Restore original end position
+            nil,  -- chan
+            nil,  -- pitch
+            nil,  -- vel
+            true   -- take
+        )
+    end
+
+    reaper.UpdateArrange()
+end
+
+-- Function to apply legato to selected notes using delta from baseline state
 function apply_legato(cache)
     local current_take, midi_editor = get_midi_context()
 
@@ -180,23 +207,39 @@ function apply_legato(cache)
         return (ms * tempo * 480) / (60 * 1000)
     end
 
-    local legato_ppq = ms_to_ppq(legato_amount)
+    -- Calculate the delta from the drag start value
+    local delta_ms = legato_amount - drag_start_legato_amount
+    local delta_ppq = ms_to_ppq(delta_ms)
 
-    -- Apply legato: each note should get the legato amount added to its original duration
+    -- Apply the delta to the baseline state from when dragging started
     for i, note in ipairs(selected_notes) do
         local next_note = nil
         if i < #selected_notes then
             next_note = selected_notes[i + 1]
         end
 
-        -- Calculate the new end position based on original duration + legato amount
-        local original_duration = note.endppqpos - note.startppqpos
-        local new_end_ppq = note.startppqpos + original_duration + legato_ppq
+        -- Get the baseline end position from the cache (state when dragging started)
+        local baseline_end_pos
+        if cache and note.original_endppqpos then
+            baseline_end_pos = note.original_endppqpos  -- This is the baseline when cache was made
+        else
+            -- Fallback to current state if no cache
+            local _, _, _, _, current_end, _, _, _ = reaper.MIDI_GetNote(current_take, note.index)
+            baseline_end_pos = current_end
+        end
+
+        -- Apply the delta to the baseline state
+        local new_end_ppq = baseline_end_pos + delta_ppq
 
         -- Apply constraints:
-        -- 1. Same pitch notes must not overlap - end at next note's start time if same pitch
-        if next_note and note.pitch == next_note.pitch then
-            new_end_ppq = math.min(new_end_ppq, next_note.startppqpos)
+        -- 1. Same pitch notes must not overlap - search all notes for potential overlap
+        -- Check all selected notes for same pitch that start after this note ends
+        for _, potential_next_note in ipairs(selected_notes) do
+            if note.pitch == potential_next_note.pitch and
+               potential_next_note.startppqpos > note.startppqpos and  -- Only look at notes that start after current note start
+               potential_next_note.startppqpos < new_end_ppq then      -- And that start before the current note would end (with legato)
+                new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
+            end
         end
 
         -- Make sure the new end position is not before the start position
@@ -208,22 +251,6 @@ function apply_legato(cache)
     reaper.UpdateArrange()
 end
 
--- Function to apply legato with proper undo handling
-function apply_legato_with_undo()
-    local current_take, midi_editor = get_midi_context()
-
-    if not current_take then return end
-
-    local selected_notes = get_selected_notes()
-
-    if #selected_notes < 2 then
-        return  -- Need at least 2 notes for legato
-    end
-
-    reaper.Undo_BeginBlock()
-    apply_legato(selected_notes)
-    reaper.Undo_EndBlock("Apply legato to selected notes", -1)
-end
 
 -- Main GUI loop
 function loop()
@@ -253,6 +280,19 @@ function loop()
     local visible, open = imgui.Begin(ctx, script_name, true, flags)
 
     if not open then script_running = false end
+
+    -- Check for clicks outside the window to close it
+    local is_window_hovered = imgui.IsWindowHovered(ctx, imgui.HoveredFlags_RootAndChildWindows)
+    local is_window_focused = imgui.IsWindowFocused(ctx, imgui.FocusedFlags_RootAndChildWindows)
+    local is_mouse_down = imgui.IsMouseDown(ctx, imgui.MouseButton_Left)
+
+    -- Check if mouse was just released (meaning a click happened outside)
+    local is_mouse_clicked = imgui.IsMouseClicked(ctx, imgui.MouseButton_Left)
+
+    -- Close when clicking outside the window area
+    if visible and is_window_hovered == false and is_mouse_clicked then
+        script_running = false
+    end
 
     if visible and script_running then
         local current_take, midi_editor = get_midi_context()
@@ -299,22 +339,32 @@ function loop()
                 local _, new_legato_amount = imgui.SliderInt(ctx, "Legato Amount (ms)", legato_amount, 0, 400, "%d ms")
 
                 -- Handle legato slider interaction for real-time feedback
-                if new_legato_amount ~= legato_amount then
-                    legato_amount = new_legato_amount
-                    -- Only update if we have valid notes and are not dragging
-                    if selected_note_count >= 2 and not imgui.IsItemActive(ctx) then
-                        apply_legato_with_undo()
-                    end
-                end
+                local value_changed = new_legato_amount ~= legato_amount
+                local is_activated = imgui.IsItemActivated(ctx)
+                local is_active = imgui.IsItemActive(ctx)
 
-                -- Handle legato logic when slider is being dragged
-                if imgui.IsItemActivated(ctx) then
+                -- Build cache when slider interaction starts (when starting to drag)
+                if is_activated then
                     reaper.Undo_BeginBlock()
-                    notes_cache = build_notes_cache()
+                    drag_start_legato_amount = legato_amount  -- Store the value at drag start
+                    drag_start_note_states = build_notes_cache()  -- Store the note states at drag start
+                    notes_cache = drag_start_note_states  -- Use the drag start states as the reference
                 end
 
-                if imgui.IsItemActive(ctx) and #notes_cache > 0 then
-                    apply_legato(notes_cache)  -- Apply to cached notes without creating undo block
+                if value_changed then
+                    -- Update legato_amount first
+                    legato_amount = new_legato_amount
+
+                    if selected_note_count >= 2 then
+                        if is_active and #notes_cache > 0 then
+                            -- Currently dragging, apply delta from initial state
+                            apply_legato(notes_cache)
+                        else
+                            -- Not dragging, apply to current state (no delta)
+                            local temp_cache = build_notes_cache()
+                            apply_legato(temp_cache)
+                        end
+                    end
                 end
 
                 -- Clear the cache when the slider is not active to prevent memory buildup
@@ -324,22 +374,8 @@ function loop()
                 end
 
                 if imgui.IsItemDeactivatedAfterEdit(ctx) then
-                    if #notes_cache > 0 then
-                        reaper.Undo_EndBlock("Apply legato to selected notes", -1)
-                    else
-                        reaper.Undo_EndBlock("", -1)
-                    end
-                    -- Cache is already cleared by the condition above, so no need to clear again
-                end
-
-                if selected_note_count >= 2 then
-                    if imgui.Button(ctx, "Apply Legato") then
-                        apply_legato_with_undo()
-                    end
-                else
-                    imgui.BeginDisabled(ctx)
-                    imgui.Button(ctx, "Apply Legato")
-                    imgui.EndDisabled(ctx)
+                    -- End the undo block that was started on activation
+                    reaper.Undo_EndBlock("", -1)
                 end
             end
         end
