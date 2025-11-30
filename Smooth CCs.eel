@@ -1,3 +1,14 @@
+/*
+ * ReaScript Name: Smooth CCs
+ * Description: Smooth selected CCs to create more natural automation curves
+ * Author: Vladimir Karmishin
+ * Licence: GPL v3
+ * REAPER: 5.95
+ * Version: 1.0
+ * Category: MIDI Editor
+ * Tags: midi, cc, automation, smooth, curve
+ */
+
 // Smooth CCs (original script by gofer)
 // 9.4.2014   - EEL version by spk77
 // 11.4.2014  - clean up (may be faster now)
