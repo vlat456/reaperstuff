@@ -213,8 +213,8 @@ function loop()
         script_running = false
     end
 
-    imgui.SetNextWindowSize(ctx, 300, 220, imgui.Cond_Once)
-    local visible, open = imgui.Begin(ctx, script_name, true)
+    local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse
+    local visible, open = imgui.Begin(ctx, script_name, true, flags)
     
     if not open then script_running = false end
     
@@ -308,12 +308,12 @@ function loop()
         end
     end
     
+    imgui.Spacing(ctx)
     imgui.End(ctx)
     
     if script_running then
         reaper.defer(loop)
     end
 end
-
 -- Init
 reaper.defer(loop)
