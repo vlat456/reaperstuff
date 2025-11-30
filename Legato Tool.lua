@@ -35,6 +35,7 @@ local script_running = true
 local take = nil
 local last_clicked_cc_lane = -1  -- This will be repurposed for general MIDI context
 local selected_note_count = 0
+local overlay_count = 0  -- For tracking overlay count
 local legato_amount = 0 -- Current legato amount in milliseconds (0-400ms)
 local drag_start_legato_amount = 0 -- Legato amount at the start of dragging
 local drag_start_note_states = {} -- Store the note states at drag start for delta calculations
@@ -290,6 +291,244 @@ function restore_original_notes(cache)
     reaper.UpdateArrange()
 end
 
+-- Function to detect note overlays (selected notes with the same pitch that have overlapping time ranges)
+function detect_overlays()
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take then return 0 end
+
+    -- Get selected notes only
+    local selected_notes = get_selected_notes()
+
+    if #selected_notes < 2 then
+        return 0  -- Need at least 2 notes to check for overlays
+    end
+
+    -- Sort selected notes by start position
+    table.sort(selected_notes, function(a, b)
+        return a.startppqpos < b.startppqpos
+    end)
+
+    -- Find overlapping notes of the same pitch
+    local overlay_indices = {}
+    for i, note1 in ipairs(selected_notes) do
+        for j = i + 1, #selected_notes do
+            local note2 = selected_notes[j]
+
+            -- Stop checking if note2 starts after note1 ends (notes are sorted by start time)
+            if note2.startppqpos >= note1.endppqpos then
+                break
+            end
+
+            -- Check if notes have the same pitch and actually overlap in time
+            if note1.pitch == note2.pitch and note1.endppqpos > note2.startppqpos then
+                -- This is an overlay - mark both notes for selection
+                if not table_contains(overlay_indices, note1.index) then
+                    table.insert(overlay_indices, note1.index)
+                end
+                if not table_contains(overlay_indices, note2.index) then
+                    table.insert(overlay_indices, note2.index)
+                end
+            end
+        end
+    end
+
+    -- Deselect all selected notes first
+    for _, note in ipairs(selected_notes) do
+        reaper.MIDI_SetNote(current_take, note.index, false, nil, nil, nil, nil, nil, nil, true)  -- deselect only
+    end
+
+    -- Select only the overlay notes
+    for _, overlay_index in ipairs(overlay_indices) do
+        reaper.MIDI_SetNote(current_take, overlay_index, true, nil, nil, nil, nil, nil, nil, true)  -- select only
+    end
+
+    reaper.UpdateArrange()
+    return #overlay_indices
+end
+
+-- Helper function to check if a table contains a value
+function table_contains(table, value)
+    for _, v in ipairs(table) do
+        if v == value then
+            return true
+        end
+    end
+    return false
+end
+
+-- Function to heal note overlays by adjusting note positions so that first note ends before second note starts
+function heal_overlays()
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take then return 0 end
+
+    -- Get selected notes only
+    local selected_notes = get_selected_notes()
+
+    if #selected_notes < 2 then
+        return 0  -- Need at least 2 notes to check for overlays
+    end
+
+    -- Sort selected notes by start position
+    table.sort(selected_notes, function(a, b)
+        return a.startppqpos < b.startppqpos
+    end)
+
+    -- Find overlapping notes of the same pitch and resolve the overlays
+    local resolved_count = 0
+    for i, note1 in ipairs(selected_notes) do
+        for j = i + 1, #selected_notes do
+            local note2 = selected_notes[j]
+
+            -- Stop checking if note2 starts after note1 ends (notes are sorted by start time)
+            if note2.startppqpos >= note1.endppqpos then
+                break
+            end
+
+            -- Check if notes have the same pitch and actually overlap in time
+            if note1.pitch == note2.pitch and note1.endppqpos > note2.startppqpos then
+                -- This is an overlay - adjust the first note to end just before the second note starts
+                -- Ensure note doesn't end before it starts
+                local new_end_pos = note2.startppqpos
+
+                if new_end_pos > note1.startppqpos then
+                    -- Apply the adjustment to the first note
+                    local result = reaper.MIDI_SetNote(
+                        current_take,
+                        note1.index,
+                        nil,  -- selected (keep current)
+                        nil,  -- muted (keep current)
+                        nil,  -- startppqpos (keep current)
+                        new_end_pos,  -- new end position
+                        nil,  -- chan (keep current)
+                        nil,  -- pitch (keep current)
+                        nil,  -- vel (keep current)
+                        true   -- noSort (do sort after all changes)
+                    )
+
+                    if result then
+                        resolved_count = resolved_count + 1
+                    end
+                end
+            end
+        end
+    end
+
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
+    reaper.UpdateArrange()
+
+    return resolved_count
+end
+
+-- Function to count note overlays (selected notes with the same pitch that have overlapping time ranges) without changing selection
+function detect_overlays_count(current_take)
+    if not current_take then return 0 end
+
+    -- Get the current MIDI context to get selected notes
+    local _, _ = get_midi_context()
+
+    -- Get selected notes only
+    local selected_notes = get_selected_notes()
+
+    if #selected_notes < 2 then
+        return 0  -- Need at least 2 notes to check for overlays
+    end
+
+    -- Sort selected notes by start position
+    table.sort(selected_notes, function(a, b)
+        return a.startppqpos < b.startppqpos
+    end)
+
+    -- Find overlapping notes of the same pitch
+    local overlay_indices = {}
+    for i, note1 in ipairs(selected_notes) do
+        for j = i + 1, #selected_notes do
+            local note2 = selected_notes[j]
+
+            -- Stop checking if note2 starts after note1 ends (notes are sorted by start time)
+            if note2.startppqpos >= note1.endppqpos then
+                break
+            end
+
+            -- Check if notes have the same pitch and actually overlap in time
+            if note1.pitch == note2.pitch and note1.endppqpos > note2.startppqpos then
+                -- This is an overlay - mark both notes for counting
+                if not table_contains(overlay_indices, note1.index) then
+                    table.insert(overlay_indices, note1.index)
+                end
+                if not table_contains(overlay_indices, note2.index) then
+                    table.insert(overlay_indices, note2.index)
+                end
+            end
+        end
+    end
+
+    return #overlay_indices
+end
+
+-- Function to fill gaps between selected notes
+function fill_gaps()
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take then return end
+
+    local selected_notes = get_selected_notes()
+
+    if #selected_notes < 2 then
+        return  -- Need at least 2 notes to fill gaps
+    end
+
+    -- Sort notes by start position (in case they're not already sorted)
+    table.sort(selected_notes, function(a, b)
+        return a.startppqpos < b.startppqpos
+    end)
+
+    -- Process each note to extend to the next note's start
+    for i, note in ipairs(selected_notes) do
+        -- Find the next note that starts after this note
+        local next_note_start = nil
+        for j = i + 1, #selected_notes do
+            if selected_notes[j].startppqpos > note.startppqpos then
+                next_note_start = selected_notes[j].startppqpos
+                break
+            end
+        end
+
+        if next_note_start and next_note_start > note.endppqpos then
+            -- Check for same pitch overlap prevention
+            local new_end_ppq = next_note_start
+
+            -- Same pitch overlap prevention
+            for _, potential_next_note in ipairs(selected_notes) do
+                if note.pitch == potential_next_note.pitch and
+                   potential_next_note.startppqpos > note.startppqpos and
+                   potential_next_note.startppqpos < new_end_ppq then
+                    new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
+                end
+            end
+
+            -- Keep within item boundaries if checkbox is enabled
+            if keep_within_boundaries then
+                local item_start_ppq, item_end_ppq = get_item_boundaries_in_ppq(current_take)
+                new_end_ppq = math.min(new_end_ppq, item_end_ppq)
+            end
+
+            -- Make sure the new end position is not before the start position
+            if new_end_ppq > note.startppqpos then
+                local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
+                if not result then
+                    reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
+                    return  -- Stop processing this note
+                end
+            end
+        end
+    end
+
+    reaper.UpdateArrange()
+end
+
 -- Function to apply legato to selected notes using delta from baseline state
 function apply_legato(cache)
     local current_take, midi_editor = get_midi_context()
@@ -487,7 +726,7 @@ function loop()
                     notes_cache = {}  -- Clear the drag cache
                 end
 
-                -- Count selected notes (with caching to avoid repeated calculation)
+                -- Count selected notes and overlays (with caching to avoid repeated calculation)
                 if current_take then
                     -- Recalculate if cache is invalid or MIDI context changed
                     local current_note_count = count_selected_notes()
@@ -495,8 +734,12 @@ function loop()
                         selected_note_count = current_note_count
                         take = current_take
                     end
+
+                    -- Update overlay count when needed (for display)
+                    overlay_count = detect_overlays_count(current_take)  -- Update overlay count for selected notes
                 else
                     selected_note_count = 0
+                    overlay_count = 0  -- Reset overlay count when there's no take
                 end
 
                 if selected_note_count < 2 then
@@ -507,6 +750,60 @@ function loop()
                     imgui.Text(ctx, tostring(selected_note_count) .. " selected notes")
                 end
 
+                imgui.Separator(ctx)
+
+                -- Fill gaps button above the legato controls
+                if selected_note_count >= 2 then
+                    if imgui.Button(ctx, "Fill gaps") then
+                        -- Create an undo point for the current state
+                        reaper.Undo_BeginBlock()
+                        fill_gaps()  -- Call the new fill gaps function
+                        reaper.Undo_EndBlock("Fill gaps between notes", -1)
+                    end
+                    imgui.SameLine(ctx)  -- Put the Apply button next to Fill gaps
+                    if imgui.Button(ctx, "Apply") then
+                        -- Create an undo point for the current state
+                        reaper.Undo_BeginBlock()
+                        reaper.Undo_EndBlock("Apply legato changes", -1)
+                        -- Update the drag start reference to current state for future delta calculations
+                        drag_start_legato_amount = legato_amount  -- Set baseline to current value
+                        drag_start_note_states = build_notes_cache()  -- Capture current visual state
+                        legato_amount = 0  -- Reset slider to 0
+
+                        -- Also reset any other drag-related states to maintain consistency
+                        -- If we're currently dragging, make sure to clear the cache
+                        if #notes_cache > 0 then
+                            notes_cache = {}
+                        end
+                    end
+                    imgui.SameLine(ctx)  -- Put the Detect overlays button next to Apply
+                    if imgui.Button(ctx, "Detect overlays") then
+                        -- Create an undo point for the current state
+                        reaper.Undo_BeginBlock()
+                        overlay_count = detect_overlays()  -- Call the new detect overlays function and store count
+                        reaper.Undo_EndBlock("Detect and select overlays", -1)
+                    end
+                    imgui.SameLine(ctx)  -- Put the Heal overlays button next to Detect overlays
+                    if imgui.Button(ctx, "Heal overlays") then
+                        -- Create an undo point for the current state
+                        reaper.Undo_BeginBlock()
+                        local resolved_count = heal_overlays()  -- Call the heal overlays function
+                        overlay_count = detect_overlays_count(current_take)  -- Update overlay count after healing
+                        reaper.Undo_EndBlock("Heal note overlays", -1)
+                    end
+                else
+                    imgui.BeginDisabled(ctx)
+                    imgui.Button(ctx, "Fill gaps")
+                    imgui.SameLine(ctx)  -- Put the disabled Apply button next to Fill gaps
+                    imgui.Button(ctx, "Apply")
+                    imgui.SameLine(ctx)  -- Put the disabled Detect overlays button
+                    imgui.Button(ctx, "Detect overlays")
+                    imgui.SameLine(ctx)  -- Put the disabled Heal overlays button
+                    imgui.Button(ctx, "Heal overlays")
+                    imgui.EndDisabled(ctx)
+                end
+                -- Display overlay count text
+                imgui.Text(ctx, tostring(overlay_count) .. " overlays detected")
                 imgui.Separator(ctx)
 
                 -- Legato Section
@@ -556,29 +853,6 @@ function loop()
                 -- Keep within item boundaries checkbox
                 local _, new_keep_within_boundaries = imgui.Checkbox(ctx, "Keep within item boundaries", keep_within_boundaries)
                 keep_within_boundaries = new_keep_within_boundaries  -- Update the variable
-
-                -- Apply button to commit changes and reset to 0
-                if selected_note_count >= 2 then
-                    if imgui.Button(ctx, "Apply") then
-                        -- Create an undo point for the current state
-                        reaper.Undo_BeginBlock()
-                        reaper.Undo_EndBlock("Apply legato changes", -1)
-                        -- Update the drag start reference to current state for future delta calculations
-                        drag_start_legato_amount = legato_amount  -- Set baseline to current value
-                        drag_start_note_states = build_notes_cache()  -- Capture current visual state
-                        legato_amount = 0  -- Reset slider to 0
-
-                        -- Also reset any other drag-related states to maintain consistency
-                        -- If we're currently dragging, make sure to clear the cache
-                        if #notes_cache > 0 then
-                            notes_cache = {}
-                        end
-                    end
-                else
-                    imgui.BeginDisabled(ctx)
-                    imgui.Button(ctx, "Apply")
-                    imgui.EndDisabled(ctx)
-                end
             end
         end
     end
