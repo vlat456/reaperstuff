@@ -129,6 +129,23 @@ function remove_redundant_ccs()
     end
     reaper.Undo_EndBlock("Remove " .. changes .. " redundant CC events", -1)
     calculate_redundant_ccs() -- Recalculate after removal
+    cc_redundancy_threshold = 0 -- Reset threshold to 0
+end
+
+function select_all_ccs_in_lane()
+    if not take or last_clicked_cc_lane < 0 or last_clicked_cc_lane > 127 then return end
+
+    reaper.Undo_BeginBlock()
+    local changes = 0
+    local _, _, cc_count, _ = reaper.MIDI_CountEvts(take, 0, 0, 0)
+    for i = 0, cc_count - 1 do
+        local _, selected, muted, ppqpos, chanmsg, chan, msg2, msg3 = reaper.MIDI_GetCC(take, i)
+        if msg2 == last_clicked_cc_lane and not selected then
+            reaper.MIDI_SetCC(take, i, true, muted, ppqpos, chanmsg, chan, msg2, msg3, false)
+            changes = changes + 1
+        end
+    end
+    reaper.Undo_EndBlock("Select all CCs in lane", -1)
 end
 
 
@@ -245,6 +262,9 @@ function loop()
                 reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
                 imgui.Text(ctx, "Select at least 3 CC events to use smoother.")
                 reaper.ImGui_PopStyleColor(ctx)
+                if imgui.Button(ctx, "Select all events in lane") then
+                    select_all_ccs_in_lane()
+                end
             end
             local _, new_smooth_amount = imgui.SliderInt(ctx, "Amount", smooth_amount, 0, 100, "%d%%")
             smooth_amount = new_smooth_amount
