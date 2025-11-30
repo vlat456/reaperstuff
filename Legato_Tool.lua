@@ -1,14 +1,12 @@
---[[
- * ReaScript Name: Legato Tool
- * Description: A tool for extending MIDI notes to create legato effects, detecting overlays, and filling gaps
- * Author: Vladimir Karmishin
- * Licence: GPL v3
- * REAPER: 5.95
- * Extensions: ReaImGui 0.4+
- * Version: 1.2
- * Category: MIDI Editor
- * Tags: midi, legato, notes, overlay, gap, music production
---]]
+-- ReaScript Name: Legato Tool
+-- Description: A tool for extending MIDI notes to create legato effects, detecting overlays, and filling gaps
+-- Author: Vladimir Karmishin
+-- Licence: GPL v3
+-- REAPER: 5.95
+-- Extensions: ReaImGui 0.4+
+-- Version: 1.2
+-- Category: MIDI Editor
+-- Tags: midi, legato, notes, overlay, gap, music production
 
 local reaper = reaper
 
