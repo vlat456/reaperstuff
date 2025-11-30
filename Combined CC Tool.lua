@@ -70,6 +70,8 @@ function calculate_redundant_ccs()
         total_event_count = 0
         redundant_event_count = 0
         take = nil
+        last_clicked_cc_lane = -1  -- Reset to indicate no valid lane
+        selected_ccs_cache_valid = false  -- Invalidate cache when context is invalid
         return
     end
 
@@ -78,6 +80,8 @@ function calculate_redundant_ccs()
         total_event_count = 0
         redundant_event_count = 0
         take = nil
+        last_clicked_cc_lane = -1  -- Reset to indicate no valid lane
+        selected_ccs_cache_valid = false  -- Invalidate cache when context is invalid
         return
     end
 
@@ -87,6 +91,8 @@ function calculate_redundant_ccs()
         redundant_event_count = 0
         total_event_count = 0
         lane_name = "Select a CC lane"
+        last_clicked_cc_lane = lane  -- Still update to the invalid lane number so the condition will be accurate
+        selected_ccs_cache_valid = false  -- Invalidate cache when context is invalid
         return
     end
 
@@ -281,8 +287,6 @@ function loop()
                 -- Shared Info
                 if last_clicked_cc_lane ~= current_lane or lane_name == "" then
                     calculate_redundant_ccs()
-                    -- Update the global last_clicked_cc_lane to match current context
-                    last_clicked_cc_lane = current_lane
                 end
 
                 if last_clicked_cc_lane < 0 or last_clicked_cc_lane > 127 then
