@@ -38,6 +38,7 @@ local selected_note_count = 0
 local legato_amount = 0 -- Current legato amount in milliseconds (0-400ms)
 local drag_start_legato_amount = 0 -- Legato amount at the start of dragging
 local drag_start_note_states = {} -- Store the note states at drag start for delta calculations
+local keep_within_boundaries = false -- Flag to keep notes within media item boundaries
 local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
 
@@ -159,6 +160,26 @@ function get_selected_notes()
     return notes
 end
 
+-- Function to get media item boundaries in PPQ for the given take
+function get_item_boundaries_in_ppq(take)
+    if not take then return 0, math.huge end  -- Return a reasonable range if no take
+
+    -- Get the media item that contains the take
+    local item = reaper.GetMediaItemTake_Item(take)
+    if not item then return 0, math.huge end
+
+    -- Get item position and length in project time
+    local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+    local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+    local item_end = item_pos + item_len
+
+    -- Convert to PPQ relative to the take
+    local start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, item_pos)
+    local end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, item_end)
+
+    return start_ppq, end_ppq
+end
+
 -- Function to restore notes to their original state
 function restore_original_notes(cache)
     local current_take, midi_editor = get_midi_context()
@@ -240,6 +261,12 @@ function apply_legato(cache)
                potential_next_note.startppqpos < new_end_ppq then      -- And that start before the current note would end (with legato)
                 new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
             end
+        end
+
+        -- 2. Keep within item boundaries if checkbox is enabled
+        if keep_within_boundaries then
+            local item_start_ppq, item_end_ppq = get_item_boundaries_in_ppq(current_take)
+            new_end_ppq = math.min(new_end_ppq, item_end_ppq)
         end
 
         -- Make sure the new end position is not before the start position
@@ -377,6 +404,10 @@ function loop()
                     -- End the undo block that was started on activation
                     reaper.Undo_EndBlock("", -1)
                 end
+
+                -- Keep within item boundaries checkbox
+                local _, new_keep_within_boundaries = imgui.Checkbox(ctx, "Keep within item boundaries", keep_within_boundaries)
+                keep_within_boundaries = new_keep_within_boundaries  -- Update the variable
 
                 -- Apply button to commit changes and reset to 0
                 if selected_note_count >= 2 then
