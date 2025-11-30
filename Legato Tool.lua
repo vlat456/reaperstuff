@@ -69,13 +69,16 @@ function count_selected_notes()
 
     local note_count = 0
     local note_index = -1
+    local safety_counter = 0
+    local max_notes = 10000  -- Safety limit to prevent infinite loops
 
-    while true do
+    while safety_counter < max_notes do
         note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
         if note_index == -1 then
             break
         end
         note_count = note_count + 1
+        safety_counter = safety_counter + 1
     end
 
     return note_count
@@ -89,8 +92,10 @@ function build_notes_cache()
 
     local notes = {}
     local note_index = -1
+    local safety_counter = 0
+    local max_notes = 10000  -- Safety limit to prevent infinite loops
 
-    while true do
+    while safety_counter < max_notes do
         note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
         if note_index == -1 then
             break
@@ -110,6 +115,8 @@ function build_notes_cache()
                 vel = vel
             })
         end
+
+        safety_counter = safety_counter + 1
     end
 
     -- Sort notes by start position
@@ -130,8 +137,10 @@ function get_selected_notes()
 
     local notes = {}
     local note_index = -1
+    local safety_counter = 0
+    local max_notes = 10000  -- Safety limit to prevent infinite loops
 
-    while true do
+    while safety_counter < max_notes do
         note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
         if note_index == -1 then
             break
@@ -150,6 +159,8 @@ function get_selected_notes()
                 vel = vel
             })
         end
+
+        safety_counter = safety_counter + 1
     end
 
     -- Sort notes by start position
@@ -419,6 +430,12 @@ function loop()
                         drag_start_legato_amount = legato_amount  -- Set baseline to current value
                         drag_start_note_states = build_notes_cache()  -- Capture current visual state
                         legato_amount = 0  -- Reset slider to 0
+
+                        -- Also reset any other drag-related states to maintain consistency
+                        -- If we're currently dragging, make sure to clear the cache
+                        if #notes_cache > 0 then
+                            notes_cache = {}
+                        end
                     end
                 else
                     imgui.BeginDisabled(ctx)
