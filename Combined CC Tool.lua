@@ -221,24 +221,47 @@ function loop()
     if visible and script_running then
         local midi_editor = reaper.MIDIEditor_GetActive()
         if not midi_editor then
+            -- Clear cache when no MIDI editor is active
+            if #cc_list_cache > 0 then
+                cc_list_cache = {}
+            end
             imgui.Text(ctx, "Please open a MIDI editor.")
         else
-            -- Shared Info
-            local current_lane = reaper.MIDIEditor_GetSetting_int(reaper.MIDIEditor_GetActive(), "last_clicked_cc_lane")
-            if last_clicked_cc_lane ~= current_lane or lane_name == "" then
-                calculate_redundant_ccs()
+            local current_take = reaper.MIDIEditor_GetTake(midi_editor)
+            local current_lane = reaper.MIDIEditor_GetSetting_int(midi_editor, "last_clicked_cc_lane")
+
+            -- Clear cache if take or lane changes
+            if take ~= current_take or last_clicked_cc_lane ~= current_lane then
+                if #cc_list_cache > 0 then
+                    cc_list_cache = {}
+                end
             end
-            
-            if last_clicked_cc_lane < 0 or last_clicked_cc_lane > 127 then
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
-                imgui.Text(ctx, "Please select a CC lane")
-                reaper.ImGui_PopStyleColor(ctx)
+
+            if not current_take then
+                -- Clear cache if no take is available
+                if #cc_list_cache > 0 then
+                    cc_list_cache = {}
+                end
+                imgui.Text(ctx, "Could not get MIDI take.")
             else
-                imgui.Text(ctx, lane_name)
-            end
-            
-            if imgui.Button(ctx, "Update") then
-                calculate_redundant_ccs()
+                -- Shared Info
+                if last_clicked_cc_lane ~= current_lane or lane_name == "" then
+                    calculate_redundant_ccs()
+                end
+
+                if last_clicked_cc_lane < 0 or last_clicked_cc_lane > 127 then
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
+                    imgui.Text(ctx, "Please select a CC lane")
+                    reaper.ImGui_PopStyleColor(ctx)
+                else
+                    imgui.Text(ctx, lane_name)
+                end
+            end -- end of current_take check
+
+            if current_take and last_clicked_cc_lane >= 0 and last_clicked_cc_lane <= 127 then
+                if imgui.Button(ctx, "Update") then
+                    calculate_redundant_ccs()
+                end
             end
             imgui.Separator(ctx)
 
@@ -280,13 +303,19 @@ function loop()
                 calculate_redundant_ccs() -- Recalculate redundant count after smoothing
             end
 
+            -- Clear the cache when the slider is not active to prevent memory buildup
+            -- But only when not actively dragging (to preserve the cache during dragging)
+            if not imgui.IsItemActive(ctx) and not imgui.IsItemActivated(ctx) and #cc_list_cache > 0 then
+                cc_list_cache = {}
+            end
+
             if imgui.IsItemDeactivatedAfterEdit(ctx) then
                 if #cc_list_cache > 0 then
                     reaper.Undo_EndBlock("Smooth CC events", -1)
                 else
-                    reaper.Undo_EndBlock("", -1) 
+                    reaper.Undo_EndBlock("", -1)
                 end
-                cc_list_cache = {}
+                -- Cache is already cleared by the condition above, so no need to clear again
                 calculate_redundant_ccs() -- Recalculate redundant count after smoothing ends
             end
 
@@ -304,7 +333,6 @@ function loop()
             if imgui.Button(ctx, "Remove") then
                 remove_redundant_ccs()
             end
-
         end
     end
     
