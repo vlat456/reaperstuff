@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <reapack name="reaperstuff" author="Vladimir Karmishin" link="https://github.com/vlat456/reaperstuff">
+  <metadata>
+    <description>Vladimir Karmishin's ReaScripts</description>
+  </metadata>
   <category name="MIDI">
-    <script name="Combined CC Tool.lua" version="1.0">
-      <description><![CDATA[
-        A tool to remove redundant CC events and smooth CC curves.
-      ]]></description>
-      <source main="true">https://raw.githubusercontent.com/vlat456/reaperstuff/main/Combined%20CC%20Tool.lua</source>
+    <script name="Combined CC Tool">
+        <version>1.1</version>
+        <author>Vladimir Karmishin</author>
+        <description><![CDATA[A tool to remove redundant CC events and smooth CC curves.]]></description>
+        <source>https://raw.githubusercontent.com/vlat456/reaperstuff/main/Combined%20CC%20Tool.lua</source>
     </script>
-    <script name="Legato Tool.lua" version="1.0">
-      <description><![CDATA[
-        A set of legato helpers, including legato length adjustment, gap filling, and overlap detection and healing.
-      ]]></description>
-      <source main="true">https://raw.githubusercontent.com/vlat456/reaperstuff/main/Legato%20Tool.lua</source>
+    <script name="Legato Tool">
+        <version>1.1</version>
+        <author>Vladimir Karmishin</author>
+        <description><![CDATA[A set of legato helpers, including legato length adjustment, gap filling, and overlap detection and healing.]]></description>
+        <source>https://raw.githubusercontent.com/vlat456/reaperstuff/main/Legato%20Tool.lua</source>
     </script>
   </category>
 </reapack>
