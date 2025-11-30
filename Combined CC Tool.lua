@@ -120,27 +120,34 @@ function remove_redundant_ccs()
 
     reaper.Undo_BeginBlock()
 
+    -- First, collect all indices of redundant CCs to avoid index shifting issues during deletion
+    -- The algorithm processes events in order and marks events as redundant based on similarity
+    -- to the last NON-redundant event in the same lane
+    local redundant_indices = {}
     local last_event_value = -1
-    local changes = 0
-    local i = 0
-    while true do
-        local _, _, cc_count, _ = reaper.MIDI_CountEvts(current_take, 0, 0, 0)
-        if i >= cc_count then break end
+    local _, _, cc_count, _ = reaper.MIDI_CountEvts(current_take, 0, 0, 0)
 
+    for i = 0, cc_count - 1 do
         local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
-
         if cc == lane then
-            if math.abs(val - last_event_value) <= cc_redundancy_threshold then -- MODIFIED
-                reaper.MIDI_DeleteCC(current_take, i)
-                changes = changes + 1
-                -- The index stays the same because the next event shifts down
-                i = i - 1
+            if math.abs(val - last_event_value) <= cc_redundancy_threshold then
+                -- This CC is redundant (similar to the last non-redundant value)
+                table.insert(redundant_indices, i)
             else
+                -- This CC is not redundant, so update the reference value
                 last_event_value = val
             end
         end
-        i = i + 1
+        -- CCs in other lanes are ignored for the redundancy calculation
     end
+
+    -- Delete redundant CCs in reverse order to avoid index shifting issues
+    local changes = 0
+    for i = #redundant_indices, 1, -1 do
+        reaper.MIDI_DeleteCC(current_take, redundant_indices[i])
+        changes = changes + 1
+    end
+
     reaper.Undo_EndBlock("Remove " .. changes .. " redundant CC events", -1)
     calculate_redundant_ccs() -- Recalculate after removal
     cc_redundancy_threshold = 0 -- Reset threshold to 0
