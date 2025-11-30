@@ -1,13 +1,11 @@
-/*
- * ReaScript Name: Remove redundant CCs
- * Description: Remove redundant CC messages to clean up MIDI data
- * Author: Vladimir Karmishin
- * Licence: GPL v3
- * REAPER: 5.95
- * Version: 1.0
- * Category: MIDI Editor
- * Tags: midi, cc, automation, redundant, cleanup
- */
+// ReaScript Name: Remove redundant CCs
+// Description: Remove redundant CC messages to clean up MIDI data
+// Author: Vladimir Karmishin
+// Licence: GPL v3
+// REAPER: 5.95
+// Version: 1.0
+// Category: MIDI Editor
+// Tags: midi, cc, automation, redundant, cleanup
 
 // Remove redundant CC messages (Original JSFX script by DarkStar. EELed by SPK77 2.5.2014)
 
