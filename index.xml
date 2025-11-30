@@ -1,2 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="reaperstuff"/>
+<index version="1" name="reaperstuff">
+  <metadata>
+    <link rel="website">https://github.com/vlat456/reaperstuff</link>
+  </metadata>
+</index>
