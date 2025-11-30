@@ -1,17 +1,10 @@
 --[[
-# Description
-A script to remove redundant CC events and smooth selected CC events in the MIDI editor.
-This script combines the functionality of the EEL scripts "Remove redundant CCs" and "Smooth CCs".
-
-# Instructions
-1.  Open the MIDI editor in REAPER.
-2.  Select a CC lane by clicking on it.
-3.  Run this script.
-4.  Use the GUI to remove redundant CCs or smooth the selected CCs.
-
-# Requirements
-*   REAPER v5.95+
-*   ReaImGui: v0.4+ (Available via ReaPack -> ReaTeam Extensions)
+ * ReaScript Name: Combined CC Tool
+ * Author: Vladimir Karmishin
+ * Licence: GPL v3
+ * REAPER: 5.95
+ * Extensions: ReaImGui 0.4+
+ * Version: 1.2
 --]]
 
 local reaper = reaper

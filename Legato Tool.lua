@@ -1,19 +1,10 @@
 --[[
-# Description
-A script to make selected notes legato in the MIDI editor.
-This script adds the specified amount of time (in milliseconds) to the duration of each selected note.
-For notes of the same pitch, overlap prevention ensures they never overlap regardless of the legato setting.
-
-# Instructions
-1. Open the MIDI editor in REAPER.
-2. Select at least 2 notes that you want to make legato.
-3. Run this script.
-4. Use the GUI slider to adjust the legato amount (0-400ms).
-   The legato amount represents additional time added to each note's original duration.
-
-# Requirements
-* REAPER v5.95+
-* ReaImGui: v0.4+ (Available via ReaPack -> ReaTeam Extensions)
+ * ReaScript Name: Legato Tool
+ * Author: Vladimir Karmishin
+ * Licence: GPL v3
+ * REAPER: 5.95
+ * Extensions: ReaImGui 0.4+
+ * Version: 1.2
 --]]
 
 local reaper = reaper
