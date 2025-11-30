@@ -377,6 +377,23 @@ function loop()
                     -- End the undo block that was started on activation
                     reaper.Undo_EndBlock("", -1)
                 end
+
+                -- Apply button to commit changes and reset to 0
+                if selected_note_count >= 2 then
+                    if imgui.Button(ctx, "Apply") then
+                        -- Create an undo point for the current state
+                        reaper.Undo_BeginBlock()
+                        reaper.Undo_EndBlock("Apply legato changes", -1)
+                        -- Update the drag start reference to current state for future delta calculations
+                        drag_start_legato_amount = legato_amount  -- Set baseline to current value
+                        drag_start_note_states = build_notes_cache()  -- Capture current visual state
+                        legato_amount = 0  -- Reset slider to 0
+                    end
+                else
+                    imgui.BeginDisabled(ctx)
+                    imgui.Button(ctx, "Apply")
+                    imgui.EndDisabled(ctx)
+                end
             end
         end
     end
