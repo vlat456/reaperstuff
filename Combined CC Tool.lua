@@ -38,6 +38,8 @@ local total_event_count = 0
 local smooth_amount = 0 -- 0-100%
 local cc_redundancy_threshold = 0 -- New global variable for redundancy threshold
 local cc_list_cache = {}
+local selected_in_lane_count = 0
+local selected_ccs_cache_valid = false
 
 -- Function to get current MIDI context consistently
 function get_midi_context()
@@ -142,6 +144,8 @@ function remove_redundant_ccs()
     reaper.Undo_EndBlock("Remove " .. changes .. " redundant CC events", -1)
     calculate_redundant_ccs() -- Recalculate after removal
     cc_redundancy_threshold = 0 -- Reset threshold to 0
+    -- Invalidate the selected CCs count cache since some events were removed
+    selected_ccs_cache_valid = false
 end
 
 function select_all_ccs_in_lane()
@@ -160,6 +164,8 @@ function select_all_ccs_in_lane()
         end
     end
     reaper.Undo_EndBlock("Select all CCs in lane", -1)
+    -- Invalidate the selected CCs count cache since selection changed
+    selected_ccs_cache_valid = false
 end
 
 
@@ -216,12 +222,16 @@ function loop()
     -- Undo (Ctrl+Z or Cmd+Z)
     if (is_ctrl_down or is_super_down) and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false) then
         reaper.Undo_DoUndo2(0)
+        -- Invalidate the selected CCs count cache since undo may change CCs or selection
+        selected_ccs_cache_valid = false
     end
 
     -- Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS)
     if (is_ctrl_down and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Y, false)) or
        (is_super_down and is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false)) then
         reaper.Undo_DoRedo2(0)
+        -- Invalidate the selected CCs count cache since redo may change CCs or selection
+        selected_ccs_cache_valid = false
     end
     
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
@@ -248,6 +258,8 @@ function loop()
                 if #cc_list_cache > 0 then
                     cc_list_cache = {}
                 end
+                -- Also invalidate the selected CCs count cache
+                selected_ccs_cache_valid = false
             end
 
             if not current_take then
@@ -280,18 +292,26 @@ function loop()
             end
             imgui.Separator(ctx)
 
-            -- Count selected CCs for the current lane
-            local selected_in_lane_count = 0
+            -- Count selected CCs for the current lane (with caching to avoid repeated calculation)
             if current_take and current_lane >= 0 and current_lane <= 127 then
-                local i = -1
-                while true do
-                    i = reaper.MIDI_EnumSelCC(current_take, i)
-                    if i == -1 then break end
-                    local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
-                    if cc == current_lane then
-                        selected_in_lane_count = selected_in_lane_count + 1
+                -- Recalculate if cache is invalid or MIDI context changed
+                if not selected_ccs_cache_valid or take ~= current_take or last_clicked_cc_lane ~= current_lane then
+                    selected_in_lane_count = 0
+                    local i = -1
+                    while true do
+                        i = reaper.MIDI_EnumSelCC(current_take, i)
+                        if i == -1 then break end
+                        local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
+                        if cc == current_lane then
+                            selected_in_lane_count = selected_in_lane_count + 1
+                        end
                     end
+                    selected_ccs_cache_valid = true
                 end
+            else
+                -- Reset count if no valid context
+                selected_in_lane_count = 0
+                selected_ccs_cache_valid = false
             end
 
             -- Smooth Section
