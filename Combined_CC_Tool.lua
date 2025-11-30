@@ -1,12 +1,14 @@
--- ReaScript Name: Combined CC Tool
--- Description: A tool for removing redundant CCs and smoothing selected CCs in MIDI editor
--- Author: Vladimir Karmishin
--- Licence: GPL v3
--- REAPER: 5.95
--- Extensions: ReaImGui 0.4+
--- Version: 1.2
--- Category: MIDI Editor
--- Tags: midi, cc, automation, redundant, smooth
+--[[
+ * ReaScript Name: Combined CC Tool
+ * Description: A tool for removing redundant CCs and smoothing selected CCs in MIDI editor
+ * Author: Vladimir Karmishin
+ * Licence: GPL v3
+ * REAPER: 5.95
+ * Extensions: ReaImGui 0.4+
+ * Version: 1.2
+ * Category: MIDI Editor
+ * Tags: midi, cc, automation, redundant, smooth
+--]]
 
 local reaper = reaper
 
