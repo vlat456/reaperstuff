@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="5c5d3235ee9b07c48b683e9c270cd6165d0068cc">
+<index version="1" name="Walter Scripts" commit="a162435c36ef308bb1bfbd4575164d106c252bdb">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
@@ -12,11 +12,8 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.2.1" author="drvlat" time="2025-11-30T19:43:28Z">
-        <source main="main">https://github.com/vlat456/reaperstuff/raw/728d7774bc51ca46eb283738e4056964162e70c0/MIDI_Tools/Combined_CC_Tool.lua</source>
-      </version>
-      <version name="0.1" author="drvlat" time="2025-11-30T19:46:21Z">
-        <source main="main">https://github.com/vlat456/reaperstuff/raw/5c5d3235ee9b07c48b683e9c270cd6165d0068cc/MIDI_Tools/Combined_CC_Tool.lua</source>
+      <version name="0.1" author="drvlat" time="2025-11-30T19:53:14Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/a162435c36ef308bb1bfbd4575164d106c252bdb/MIDI_Tools/Combined_CC_Tool.lua</source>
       </version>
     </reapack>
     <reapack name="Legato_Tool.lua" type="script" desc="Legato Tool - Creating legato effects and stuff">
@@ -30,11 +27,8 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.2.1" author="drvlat" time="2025-11-30T19:43:28Z">
-        <source main="main">https://github.com/vlat456/reaperstuff/raw/728d7774bc51ca46eb283738e4056964162e70c0/MIDI_Tools/Legato_Tool.lua</source>
-      </version>
-      <version name="0.1" author="drvlat" time="2025-11-30T19:46:21Z">
-        <source main="main">https://github.com/vlat456/reaperstuff/raw/5c5d3235ee9b07c48b683e9c270cd6165d0068cc/MIDI_Tools/Legato_Tool.lua</source>
+      <version name="0.1" author="drvlat" time="2025-11-30T19:53:14Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/a162435c36ef308bb1bfbd4575164d106c252bdb/MIDI_Tools/Legato_Tool.lua</source>
       </version>
     </reapack>
   </category>
