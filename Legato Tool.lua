@@ -228,9 +228,16 @@ function apply_legato(cache)
         return  -- Need at least 2 notes for legato
     end
 
-    -- Get project tempo to convert milliseconds to PPQ
-    local proj = 0 -- Current project (0 means currently active project)
-    local tempo = reaper.Master_GetTempo()
+    -- Get project tempo at the MIDI item's location to convert milliseconds to PPQ
+    -- Use time-based tempo function to handle projects with tempo changes
+    local item = reaper.GetMediaItemTake_Item(current_take)
+    local item_pos = item and reaper.GetMediaItemInfo_Value(item, "D_POSITION") or 0
+    local tempo = reaper.TimeMap2_GetDividedBpmAtTime(0, item_pos) -- Use current project (0) and item position
+
+    -- As fallback, if we can't get the tempo at the item position, use master tempo
+    if tempo <= 0 then
+        tempo = reaper.Master_GetTempo()
+    end
 
     -- Convert milliseconds to PPQ (pulses per quarter note)
     -- Standard MIDI timebase is 480 PPQ at 120 BPM
@@ -277,7 +284,14 @@ function apply_legato(cache)
         -- 2. Keep within item boundaries if checkbox is enabled
         if keep_within_boundaries then
             local item_start_ppq, item_end_ppq = get_item_boundaries_in_ppq(current_take)
+            -- Constrain to item end boundary
             new_end_ppq = math.min(new_end_ppq, item_end_ppq)
+            -- Constrain to item start boundary - note end should not be before item start
+            -- But only if the note is within the item boundaries
+            if note.startppqpos >= item_start_ppq and note.startppqpos < item_end_ppq then
+                -- If note starts within the item, make sure end doesn't go before item start
+                new_end_ppq = math.max(new_end_ppq, item_start_ppq)
+            end
         end
 
         -- Make sure the new end position is not before the start position
