@@ -429,9 +429,10 @@ function loop()
             else
                 -- Check if MIDI selection has changed
                 if midi_selection_changed() then
-                    -- Reset drag-related states when selection changes, but keep the legato amount
-                    drag_start_legato_amount = legato_amount  -- Set baseline to current value so no change occurs
-                    drag_start_note_states = {}  -- Clear the drag start states to be rebuilt when dragging starts
+                    -- Reset to fresh state when selection changes (like just opened)
+                    legato_amount = 0  -- Reset slider to 0
+                    drag_start_legato_amount = 0  -- Reset drag start to 0
+                    drag_start_note_states = {}  -- Clear the drag start states
                     notes_cache = {}  -- Clear the drag cache
                 end
 
