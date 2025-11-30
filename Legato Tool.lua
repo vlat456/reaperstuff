@@ -41,6 +41,7 @@ local drag_start_note_states = {} -- Store the note states at drag start for del
 local keep_within_boundaries = false -- Flag to keep notes within media item boundaries
 local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
+local last_selected_note_indices = {} -- Store indices of selected notes to detect changes
 
 -- Function to get current MIDI context consistently
 function get_midi_context()
@@ -191,6 +192,51 @@ function get_item_boundaries_in_ppq(take)
     return start_ppq, end_ppq
 end
 
+-- Function to get current selected note indices
+function get_current_selected_note_info()
+    local current_take, midi_editor = get_midi_context()
+    if not current_take then return {} end
+
+    local selected_indices = {}
+    local note_index = -1
+    local safety_counter = 0
+    local max_notes = 10000  -- Safety limit to prevent infinite loops
+
+    while safety_counter < max_notes do
+        note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
+        if note_index == -1 then
+            break
+        end
+        table.insert(selected_indices, note_index)
+        safety_counter = safety_counter + 1
+    end
+
+    return selected_indices
+end
+
+-- Function to check if MIDI selection has changed
+function midi_selection_changed()
+    local current_selection = get_current_selected_note_info()
+    local last_selection = last_selected_note_indices
+
+    -- Compare lengths first
+    if #current_selection ~= #last_selection then
+        last_selected_note_indices = current_selection
+        return true
+    end
+
+    -- Compare individual indices
+    for i = 1, #current_selection do
+        if current_selection[i] ~= last_selection[i] then
+            last_selected_note_indices = current_selection
+            return true
+        end
+    end
+
+    -- No change detected
+    return false
+end
+
 -- Function to restore notes to their original state
 function restore_original_notes(cache)
     local current_take, midi_editor = get_midi_context()
@@ -306,7 +352,12 @@ end
 
 -- Main GUI loop
 function loop()
-    if not script_running then return end
+    if not script_running then
+        -- Clean up caches when the script is terminated to prevent memory leaks
+        notes_cache = {}
+        drag_start_note_states = {}
+        return
+    end
 
     -- Handle global keyboard shortcuts
     local is_ctrl_down = imgui.IsKeyDown(ctx, imgui.Key_LeftCtrl) or imgui.IsKeyDown(ctx, imgui.Key_RightCtrl)
@@ -326,6 +377,9 @@ function loop()
 
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
         script_running = false
+        -- Clean up caches when the script is terminated to prevent memory leaks
+        notes_cache = {}
+        drag_start_note_states = {}
     end
 
     local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse
@@ -346,16 +400,25 @@ function loop()
         script_running = false
     end
 
+    -- Clean up caches when the script is terminated to prevent memory leaks
+    if not script_running then
+        notes_cache = {}
+        drag_start_note_states = {}
+    end
+
     if visible and script_running then
         local current_take, midi_editor = get_midi_context()
 
         if not midi_editor then
             imgui.Text(ctx, "Please open a MIDI editor.")
         else
-            -- Clear cache if take changes
+            -- Clear cache if take changes to prevent memory leaks
             if take ~= current_take then
                 if #notes_cache > 0 then
                     notes_cache = {}
+                end
+                if #drag_start_note_states > 0 then
+                    drag_start_note_states = {}
                 end
             end
 
@@ -364,6 +427,14 @@ function loop()
             if not current_take then
                 imgui.Text(ctx, "Could not get MIDI take.")
             else
+                -- Check if MIDI selection has changed
+                if midi_selection_changed() then
+                    -- Reset drag-related states when selection changes, but keep the legato amount
+                    drag_start_legato_amount = legato_amount  -- Set baseline to current value so no change occurs
+                    drag_start_note_states = {}  -- Clear the drag start states to be rebuilt when dragging starts
+                    notes_cache = {}  -- Clear the drag cache
+                end
+
                 -- Count selected notes (with caching to avoid repeated calculation)
                 if current_take then
                     -- Recalculate if cache is invalid or MIDI context changed
