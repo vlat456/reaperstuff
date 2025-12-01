@@ -254,6 +254,34 @@ function midi_selection_changed()
     return false
 end
 
+-- Function to validate if the notes_cache is still valid by checking if same notes are still selected
+function is_notes_cache_valid(cache)
+    if not cache or #cache == 0 then
+        return false
+    end
+
+    local current_take, midi_editor = get_midi_context()
+    if not current_take then
+        return false
+    end
+
+    -- Check if the cached note indices still exist and have the same properties
+    for _, cached_note in ipairs(cache) do
+        local retval, selected, muted, startppqpos, endppqpos, chan, pitch, vel = reaper.MIDI_GetNote(current_take, cached_note.index)
+        if not retval or
+           selected ~= cached_note.selected or
+           muted ~= cached_note.muted or
+           startppqpos ~= cached_note.startppqpos or
+           chan ~= cached_note.chan or
+           pitch ~= cached_note.pitch or
+           vel ~= cached_note.vel then
+            return false
+        end
+    end
+
+    return true
+end
+
 -- Function to restore notes to their original state
 function restore_original_notes(cache)
     local current_take, midi_editor = get_midi_context()
@@ -281,6 +309,8 @@ function restore_original_notes(cache)
         end
     end
 
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
     reaper.UpdateArrange()
 end
 
@@ -368,6 +398,12 @@ function heal_overlays()
         return a.startppqpos < b.startppqpos
     end)
 
+    -- Get item boundaries if needed
+    local item_start_ppq, item_end_ppq = 0, math.huge
+    if keep_within_boundaries then
+        item_start_ppq, item_end_ppq = get_item_boundaries_in_ppq(current_take)
+    end
+
     -- Find overlapping notes of the same pitch and resolve the overlays
     local resolved_count = 0
     for i, note1 in ipairs(selected_notes) do
@@ -384,6 +420,15 @@ function heal_overlays()
                 -- This is an overlay - adjust the first note to end just before the second note starts
                 -- Ensure note doesn't end before it starts
                 local new_end_pos = note2.startppqpos
+
+                -- Apply boundary checks if enabled
+                if keep_within_boundaries then
+                    new_end_pos = math.min(new_end_pos, item_end_ppq)
+                    -- Ensure the note doesn't go before the item starts
+                    if note1.startppqpos >= item_start_ppq and note1.startppqpos < item_end_ppq then
+                        new_end_pos = math.max(new_end_pos, item_start_ppq)
+                    end
+                end
 
                 if new_end_pos > note1.startppqpos then
                     -- Apply the adjustment to the first note
@@ -519,6 +564,8 @@ function fill_gaps()
         end
     end
 
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
     reaper.UpdateArrange()
 end
 
@@ -622,6 +669,8 @@ function apply_legato(cache)
         end
     end
 
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
     reaper.UpdateArrange()
 end
 
@@ -632,6 +681,7 @@ function loop()
         -- Clean up caches when the script is terminated to prevent memory leaks
         notes_cache = {}
         drag_start_note_states = {}
+        last_selected_note_indices = {}
         return
     end
 
@@ -647,6 +697,7 @@ function loop()
         -- NOTE: For this tool, we should clear caches that may be invalidated
         notes_cache = {}
         drag_start_note_states = {}
+        last_selected_note_indices = {}
     end
 
     -- Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS)
@@ -656,6 +707,7 @@ function loop()
         -- Invalidate caches when redo occurs
         notes_cache = {}
         drag_start_note_states = {}
+        last_selected_note_indices = {}
     end
 
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
@@ -703,6 +755,9 @@ function loop()
                 if #drag_start_note_states > 0 then
                     drag_start_note_states = {}
                 end
+                if #last_selected_note_indices > 0 then
+                    last_selected_note_indices = {}
+                end
             end
 
             take = current_take
@@ -717,6 +772,7 @@ function loop()
                     drag_start_legato_amount = 0  -- Reset drag start to 0
                     drag_start_note_states = {}  -- Clear the drag start states
                     notes_cache = {}  -- Clear the drag cache
+                    last_selected_note_indices = {} -- Reset the selection indices cache as well
                 end
 
                 -- Count selected notes and overlays (with caching to avoid repeated calculation)
@@ -768,6 +824,8 @@ function loop()
                         if #notes_cache > 0 then
                             notes_cache = {}
                         end
+                        -- Reset selection cache to detect changes after applying
+                        last_selected_note_indices = {}
                     end
                     imgui.SameLine(ctx)  -- Put the Detect overlays button next to Apply
                     if imgui.Button(ctx, "Detect overlays") then
@@ -821,11 +879,11 @@ function loop()
                     legato_amount = new_legato_amount
 
                     if selected_note_count >= 2 then
-                        if is_active and #notes_cache > 0 then
+                        if is_active and #notes_cache > 0 and is_notes_cache_valid(notes_cache) then
                             -- Currently dragging, apply delta from initial state
                             apply_legato(notes_cache)
                         else
-                            -- Not dragging, apply to current state (no delta)
+                            -- Not dragging, or cache is invalid, apply to current state (no delta)
                             local temp_cache = build_notes_cache()
                             apply_legato(temp_cache)
                         end
