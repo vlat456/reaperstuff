@@ -1,6 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="reaperstuff">
+<index version="1" name="Walter Scripts" commit="a162435c36ef308bb1bfbd4575164d106c252bdb">
   <metadata>
     <link rel="website">https://github.com/vlat456/reaperstuff</link>
   </metadata>
+  <category name="MIDI_Tools">
+    <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 This is a ReaScript for REAPER that provides tools for cleaning up MIDI CC data. It removes redundant control change events and smooths selected CCs in the MIDI editor.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 The tool provides a user interface for adjusting settings and applying CC cleanup operations to selected MIDI CCs in the MIDI editor.\par}
+}
+]]></description>
+      </metadata>
+      <version name="0.1" author="drvlat" time="2025-11-30T19:53:14Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/a162435c36ef308bb1bfbd4575164d106c252bdb/MIDI_Tools/Combined_CC_Tool.lua</source>
+      </version>
+    </reapack>
+    <reapack name="Legato_Tool.lua" type="script" desc="Legato Tool - Creating legato effects and stuff">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 This is a ReaScript for REAPER that provides tools for creating legato effects in MIDI. It extends MIDI notes to create legato effects, detects and handles note overlays, and fills gaps between notes.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 The tool provides a user interface for adjusting settings and applying legato effects to selected MIDI notes in the MIDI editor.\par}
+}
+]]></description>
+      </metadata>
+      <version name="0.1" author="drvlat" time="2025-11-30T19:53:14Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/a162435c36ef308bb1bfbd4575164d106c252bdb/MIDI_Tools/Legato_Tool.lua</source>
+      </version>
+    </reapack>
+  </category>
 </index>
