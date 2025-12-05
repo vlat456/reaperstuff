@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="a162435c36ef308bb1bfbd4575164d106c252bdb">
-  <metadata>
-    <link rel="website">https://github.com/vlat456/reaperstuff</link>
-  </metadata>
+<index version="1" name="Walter Scripts" commit="13d0f77e39ac914b567d4c6630f55e79239877f8">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
@@ -17,6 +14,9 @@
       </metadata>
       <version name="0.1" author="drvlat" time="2025-11-30T19:53:14Z">
         <source main="main">https://github.com/vlat456/reaperstuff/raw/a162435c36ef308bb1bfbd4575164d106c252bdb/MIDI_Tools/Combined_CC_Tool.lua</source>
+      </version>
+      <version name="0.1.2" author="drvlat" time="2025-12-05T19:02:19Z">
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/13d0f77e39ac914b567d4c6630f55e79239877f8/MIDI_Tools/Combined_CC_Tool.lua</source>
       </version>
     </reapack>
     <reapack name="Legato_Tool.lua" type="script" desc="Legato Tool - Creating legato effects and stuff">
@@ -33,6 +33,12 @@
       <version name="0.1" author="drvlat" time="2025-11-30T19:53:14Z">
         <source main="main">https://github.com/vlat456/reaperstuff/raw/a162435c36ef308bb1bfbd4575164d106c252bdb/MIDI_Tools/Legato_Tool.lua</source>
       </version>
+      <version name="0.1.2" author="drvlat" time="2025-12-05T19:02:19Z">
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/13d0f77e39ac914b567d4c6630f55e79239877f8/MIDI_Tools/Legato_Tool.lua</source>
+      </version>
     </reapack>
   </category>
+  <metadata>
+    <link rel="website">https://github.com/vlat456/reaperstuff</link>
+  </metadata>
 </index>
