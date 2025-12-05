@@ -1,6 +1,7 @@
 -- @description Legato Tool - Creating legato effects and stuff 
 -- @author drvlat
--- @version 0.1
+-- @version 0.1.2
+-- @provides [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] .
 -- @about
 --   This is a ReaScript for REAPER that provides tools for creating legato effects in MIDI.
 --   It extends MIDI notes to create legato effects, detects and handles note overlays,
