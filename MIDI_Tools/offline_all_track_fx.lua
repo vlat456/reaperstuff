@@ -1,6 +1,7 @@
 -- @description Offline all track inserts and save state
 -- @author drvlat
 -- @version 0.0.1
+-- @provides [main] restore_all_track_fx.lua
 -- @about
 --   This script saves the state of all FX inserts on selected tracks,
 --   then offlines them. It stores the original state in track metadata

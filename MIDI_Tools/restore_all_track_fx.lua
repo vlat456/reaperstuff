@@ -1,10 +1,4 @@
--- @description Restore track inserts state from saved metadata
--- @author drvlat
--- @version 0.0.1
--- @about
---   This script restores the state of all FX inserts on selected tracks
---   using the metadata saved by the offline script.
---   If FX slots were deleted between offline and online states, they are skipped.
+-- @noindex
 
 local reaper = reaper
 
