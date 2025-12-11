@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="54d837cadc3b31bba11a72367dd4010151ed6a22">
+<index version="1" name="Walter Scripts" commit="d21d1a9ceccb80a02f439aecd8b38eee59def82c">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
@@ -49,20 +49,6 @@
       </metadata>
       <version name="0.0.1" author="drvlat" time="2025-12-11T10:34:07Z">
         <source main="main">https://github.com/vlat456/reaperstuff/raw/54d837cadc3b31bba11a72367dd4010151ed6a22/MIDI_Tools/offline_all_track_fx.lua</source>
-      </version>
-    </reapack>
-    <reapack name="restore_all_track_fx.lua" type="script" desc="Restore track inserts state from saved metadata">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 This script restores the state of all FX inserts on selected tracks using the metadata saved by the offline script. If FX slots were deleted between offline and online states, they are skipped.\par}
-}
-]]></description>
-      </metadata>
-      <version name="0.0.1" author="drvlat" time="2025-12-11T10:34:07Z">
-        <source main="main">https://github.com/vlat456/reaperstuff/raw/54d837cadc3b31bba11a72367dd4010151ed6a22/MIDI_Tools/restore_all_track_fx.lua</source>
       </version>
     </reapack>
   </category>
