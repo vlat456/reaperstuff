@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="d21d1a9ceccb80a02f439aecd8b38eee59def82c">
+<index version="1" name="Walter Scripts" commit="12082f3845d174fcf8733ac5e4979c141ed4df74">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
@@ -35,20 +35,6 @@
       </version>
       <version name="0.1.2" author="drvlat" time="2025-12-05T19:02:19Z">
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/13d0f77e39ac914b567d4c6630f55e79239877f8/MIDI_Tools/Legato_Tool.lua</source>
-      </version>
-    </reapack>
-    <reapack name="offline_all_track_fx.lua" type="script" desc="Offline all track inserts and save state">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 This script saves the state of all FX inserts on selected tracks, then offlines them. It stores the original state in track metadata for later restoration.\par}
-}
-]]></description>
-      </metadata>
-      <version name="0.0.1" author="drvlat" time="2025-12-11T10:34:07Z">
-        <source main="main">https://github.com/vlat456/reaperstuff/raw/54d837cadc3b31bba11a72367dd4010151ed6a22/MIDI_Tools/offline_all_track_fx.lua</source>
       </version>
     </reapack>
   </category>
