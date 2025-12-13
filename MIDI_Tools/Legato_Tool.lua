@@ -329,15 +329,18 @@ function detect_overlays()
         end
     end
 
-    -- Deselect all selected notes first
-    for _, note in ipairs(selected_notes) do
-        reaper.MIDI_SetNote(current_take, note.index, false, nil, nil, nil, nil, nil, nil, true)  -- deselect only
-    end
+    -- Only update selection if overlays were found
+    if #overlay_indices > 0 then
+        -- Deselect all selected notes first
+        for _, note in ipairs(selected_notes) do
+            reaper.MIDI_SetNote(current_take, note.index, false, nil, nil, nil, nil, nil, nil, true)  -- deselect only
+        end
 
-    -- Select only the overlay notes
-    for _, overlay_index in ipairs(overlay_indices) do
-        reaper.MIDI_SetNote(current_take, overlay_index, true, nil, nil, nil, nil, nil, nil, true)  -- select only
-    end
+        -- Select only the overlay notes
+        for _, overlay_index in ipairs(overlay_indices) do
+            reaper.MIDI_SetNote(current_take, overlay_index, true, nil, nil, nil, nil, nil, nil, true)  -- select only
+        end
+    end  -- If no overlays found, keep original selection unchanged
 
     reaper.UpdateArrange()
     return #overlay_indices
@@ -891,9 +894,17 @@ function loop()
                     imgui.Text(ctx, tostring(selected_note_count) .. " selected notes")
                 end
 
+                -- Select all notes button (full row)
+                if imgui.Button(ctx, "Select all notes", -1, 0) then
+                    -- Create an undo point for the current state
+                    reaper.Undo_BeginBlock()
+                    select_all_notes()  -- Call the new select all function
+                    reaper.Undo_EndBlock("Select all notes in take", -1)
+                end
+
                 imgui.Separator(ctx)
 
-                -- Fill gaps button above the legato controls
+                -- Group of action buttons: Fill gaps, Detect Overlays, Heal Overlays
                 if selected_note_count >= 2 then
                     if imgui.Button(ctx, "Fill gaps") then
                         -- Create an undo point for the current state
@@ -902,25 +913,7 @@ function loop()
                         legato_amount = 0  -- Reset legato slider to 0
                         reaper.Undo_EndBlock("Fill gaps between notes", -1)
                     end
-                    imgui.SameLine(ctx)  -- Put the Apply button next to Fill gaps
-                    if imgui.Button(ctx, "Apply") then
-                        -- Create an undo point for the current state
-                        reaper.Undo_BeginBlock()
-                        reaper.Undo_EndBlock("Apply legato changes", -1)
-                        -- Update the drag start reference to current state for future delta calculations
-                        drag_start_legato_amount = legato_amount  -- Set baseline to current value
-                        drag_start_note_states = build_notes_cache()  -- Capture current visual state
-                        legato_amount = 0  -- Reset slider to 0
-                        jitter_min = 20  -- Reset jitter min to default
-                        jitter_max = 50  -- Reset jitter max to default
-
-                        -- Also reset any other drag-related states to maintain consistency
-                        -- If we're currently dragging, make sure to clear the cache
-                        if #notes_cache > 0 then
-                            notes_cache = {}
-                        end
-                    end
-                    imgui.SameLine(ctx)  -- Put the Detect overlays button next to Apply
+                    imgui.SameLine(ctx)  -- Put the Detect overlays button next to Fill gaps
                     if imgui.Button(ctx, "Detect overlays") then
                         -- Create an undo point for the current state
                         reaper.Undo_BeginBlock()
@@ -938,16 +931,13 @@ function loop()
                 else
                     imgui.BeginDisabled(ctx)
                     imgui.Button(ctx, "Fill gaps")
-                    imgui.SameLine(ctx)  -- Put the disabled Apply button next to Fill gaps
-                    imgui.Button(ctx, "Apply")
-                    imgui.SameLine(ctx)  -- Put the disabled Detect overlays button
+                    imgui.SameLine(ctx)  -- Put the disabled Detect overlays button next to Fill gaps
                     imgui.Button(ctx, "Detect overlays")
-                    imgui.SameLine(ctx)  -- Put the disabled Heal overlays button
+                    imgui.SameLine(ctx)  -- Put the disabled Heal overlays button next to Detect overlays
                     imgui.Button(ctx, "Heal overlays")
                     imgui.EndDisabled(ctx)
                 end
-                -- Display overlay count text
-                imgui.Text(ctx, tostring(overlay_count) .. " overlays detected")
+
                 imgui.Separator(ctx)
 
                 -- Legato Section
@@ -994,21 +984,37 @@ function loop()
                     reaper.Undo_EndBlock("", -1)
                 end
 
+                -- Apply button after legato slider
+                if selected_note_count >= 2 then
+                    if imgui.Button(ctx, "Apply") then
+                        -- Create an undo point for the current state
+                        reaper.Undo_BeginBlock()
+                        reaper.Undo_EndBlock("Apply legato changes", -1)
+                        -- Update the drag start reference to current state for future delta calculations
+                        drag_start_legato_amount = legato_amount  -- Set baseline to current value
+                        drag_start_note_states = build_notes_cache()  -- Capture current visual state
+                        legato_amount = 0  -- Reset slider to 0
+                        jitter_min = 20  -- Reset jitter min to default
+                        jitter_max = 50  -- Reset jitter max to default
+
+                        -- Also reset any other drag-related states to maintain consistency
+                        -- If we're currently dragging, make sure to clear the cache
+                        if #notes_cache > 0 then
+                            notes_cache = {}
+                        end
+                    end
+                else
+                    imgui.BeginDisabled(ctx)
+                    imgui.Button(ctx, "Apply")
+                    imgui.EndDisabled(ctx)
+                end
+                -- Display overlay count text
+                imgui.Text(ctx, tostring(overlay_count) .. " overlays detected")
+                imgui.Separator(ctx)
+
                 -- Keep within item boundaries checkbox
                 local _, new_keep_within_boundaries = imgui.Checkbox(ctx, "Keep within item boundaries", keep_within_boundaries)
                 keep_within_boundaries = new_keep_within_boundaries  -- Update the variable
-
-                -- Jitter Section
-                imgui.Separator(ctx)
-                local _, new_jitter_min = imgui.SliderInt(ctx, "Jitter Min (ms)", jitter_min, 1, 400, "%d ms")
-                jitter_min = new_jitter_min
-
-                -- Draw jitter_max slider with min constraint (value can't be less than min)
-                local _, new_jitter_max = imgui.SliderInt(ctx, "Jitter Max (ms)", jitter_max, math.min(jitter_min, jitter_max), 400, "%d ms")
-                -- Update jitter_max only if it's valid (not less than min)
-                if new_jitter_max >= jitter_min then
-                    jitter_max = new_jitter_max
-                end
 
                 -- Humanize Legato button to apply random jitter values to notes
                 if selected_note_count >= 2 then
@@ -1024,13 +1030,21 @@ function loop()
                     imgui.EndDisabled(ctx)
                 end
 
-                -- Select all notes button
-                if imgui.Button(ctx, "Select all notes") then
-                    -- Create an undo point for the current state
-                    reaper.Undo_BeginBlock()
-                    select_all_notes()  -- Call the new select all function
-                    reaper.Undo_EndBlock("Select all notes in take", -1)
+                -- Jitter Section
+                imgui.Separator(ctx)
+                local _, new_jitter_min = imgui.SliderInt(ctx, "Jitter Min (ms)", jitter_min, 1, 400, "%d ms")
+                jitter_min = new_jitter_min
+
+                -- Draw jitter_max slider with min constraint (value can't be less than min)
+                local _, new_jitter_max = imgui.SliderInt(ctx, "Jitter Max (ms)", jitter_max, math.min(jitter_min, jitter_max), 400, "%d ms")
+                -- Update jitter_max only if it's valid (not less than min)
+                if new_jitter_max >= jitter_min then
+                    jitter_max = new_jitter_max
                 end
+
+                -- Display overlay count text
+                imgui.Text(ctx, tostring(overlay_count) .. " overlays detected")
+
             end
         end
     end
