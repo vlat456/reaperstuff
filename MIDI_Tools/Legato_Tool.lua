@@ -497,6 +497,50 @@ function select_all_notes()
     return changes
 end
 
+-- Function to apply non-legato (de-legato) effect - ensures notes don't overlap
+function non_legato()
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take then return end
+
+    local selected_notes = get_selected_notes()
+
+    if #selected_notes < 2 then
+        return  -- Need at least 2 notes for non-legato
+    end
+
+    -- Sort notes by start position (in case they're not already sorted)
+    table.sort(selected_notes, function(a, b)
+        return a.startppqpos < b.startppqpos
+    end)
+
+    -- Process each note to ensure no overlaps
+    for i, note in ipairs(selected_notes) do
+        -- Find the next note that starts after this note
+        if i < #selected_notes then
+            local next_note = selected_notes[i + 1]
+
+            -- Check if this note extends beyond or to the start of the next note
+            if note.endppqpos >= next_note.startppqpos then
+                -- Calculate new end position: couple of ten PPQ before next note starts
+                local gap_ppq = 10  -- 10 PPQ gap to avoid mess
+                local new_end_ppq = next_note.startppqpos - gap_ppq
+
+                -- Make sure the new end position is not before the start position
+                if new_end_ppq > note.startppqpos then
+                    local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
+                    if not result then
+                        reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
+                        return  -- Stop processing this note
+                    end
+                end
+            end
+        end
+    end
+
+    reaper.UpdateArrange()
+end
+
 -- Function to fill gaps between selected notes
 function fill_gaps()
     local current_take, midi_editor = get_midi_context()
@@ -844,7 +888,15 @@ function loop()
                         legato_amount = 0  -- Reset legato slider to 0
                         reaper.Undo_EndBlock("Fill gaps between notes", -1)
                     end
-                    imgui.SameLine(ctx)  -- Put the Detect overlays button next to Fill gaps
+                    imgui.SameLine(ctx)  -- Put the Non-legato button next to Fill gaps
+                    if imgui.Button(ctx, "Non-legato") then
+                        -- Create an undo point for the current state
+                        reaper.Undo_BeginBlock()
+                        non_legato()  -- Call the new non-legato function
+                        legato_amount = 0  -- Reset legato slider to 0
+                        reaper.Undo_EndBlock("Apply non-legato (de-legato) to notes", -1)
+                    end
+                    imgui.SameLine(ctx)  -- Put the Detect overlays button next to Non-legato
                     if imgui.Button(ctx, "Detect overlays") then
                         -- Create an undo point for the current state
                         reaper.Undo_BeginBlock()
@@ -862,7 +914,9 @@ function loop()
                 else
                     imgui.BeginDisabled(ctx)
                     imgui.Button(ctx, "Fill gaps")
-                    imgui.SameLine(ctx)  -- Put the disabled Detect overlays button next to Fill gaps
+                    imgui.SameLine(ctx)  -- Put the disabled Non-legato button next to Fill gaps
+                    imgui.Button(ctx, "Non-legato")
+                    imgui.SameLine(ctx)  -- Put the disabled Detect overlays button next to Non-legato
                     imgui.Button(ctx, "Detect overlays")
                     imgui.SameLine(ctx)  -- Put the disabled Heal overlays button next to Detect overlays
                     imgui.Button(ctx, "Heal overlays")
