@@ -34,9 +34,8 @@ local legato_amount = 0 -- Current legato amount in milliseconds (0-400ms)
 local drag_start_legato_amount = 0 -- Legato amount at the start of dragging
 local drag_start_note_states = {} -- Store the note states at drag start for delta calculations
 local keep_within_boundaries = false -- Flag to keep notes within media item boundaries
-local jitter_enabled = false -- Flag to enable/disable jitter
 local jitter_min = 20 -- Minimum jitter amount in milliseconds (default 20ms, range 1-50ms)
-local jitter_max = 20 -- Maximum jitter amount in milliseconds (default same as min, range based on min, max 100ms)
+local jitter_max = 50 -- Maximum jitter amount in milliseconds (default 50ms, range based on min, max 400ms)
 local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
 local last_selected_note_indices = {} -- Store indices of selected notes to detect changes
@@ -465,6 +464,37 @@ function detect_overlays_count(current_take)
     return #overlay_indices
 end
 
+-- Function to select all notes in the current take
+function select_all_notes()
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take then return 0 end
+
+    reaper.Undo_BeginBlock()
+
+    local note_count = reaper.MIDI_CountEvts(current_take, nil, nil, nil)
+    local changes = 0
+
+    -- Deselect all currently selected notes first
+    for i = 0, note_count - 1 do
+        local _, selected = reaper.MIDI_GetNote(current_take, i)
+        if selected then
+            reaper.MIDI_SetNote(current_take, i, false, nil, nil, nil, nil, nil, nil, true)
+        end
+    end
+
+    -- Select all notes
+    for i = 0, note_count - 1 do
+        reaper.MIDI_SetNote(current_take, i, true, nil, nil, nil, nil, nil, nil, true)
+        changes = changes + 1
+    end
+
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Select all notes in take", -1)
+
+    return changes
+end
+
 -- Function to fill gaps between selected notes
 function fill_gaps()
     local current_take, midi_editor = get_midi_context()
@@ -731,7 +761,7 @@ function loop()
         -- Reset all state variables when script terminates
         legato_amount = 0
         jitter_min = 20
-        jitter_max = 20
+        jitter_max = 50
         jitter_enabled = false
         return
     end
@@ -751,7 +781,7 @@ function loop()
         -- Reset all state variables when undo occurs
         legato_amount = 0
         jitter_min = 20
-        jitter_max = 20
+        jitter_max = 50
         jitter_enabled = false
     end
 
@@ -765,7 +795,7 @@ function loop()
         -- Reset all state variables when redo occurs
         legato_amount = 0
         jitter_min = 20
-        jitter_max = 20
+        jitter_max = 50
         jitter_enabled = false
     end
 
@@ -777,7 +807,7 @@ function loop()
         -- Reset all state variables when script terminates via Escape key
         legato_amount = 0
         jitter_min = 20
-        jitter_max = 20
+        jitter_max = 50
         jitter_enabled = false
     end
 
@@ -831,7 +861,7 @@ function loop()
                     -- Reset to fresh state when selection changes (like just opened)
                     legato_amount = 0  -- Reset slider to 0
                     jitter_min = 20  -- Reset jitter min to default
-                    jitter_max = 20  -- Reset jitter max to default
+                    jitter_max = 50  -- Reset jitter max to default
                     drag_start_legato_amount = 0  -- Reset drag start to 0
                     drag_start_note_states = {}  -- Clear the drag start states
                     notes_cache = {}  -- Clear the drag cache
@@ -869,6 +899,7 @@ function loop()
                         -- Create an undo point for the current state
                         reaper.Undo_BeginBlock()
                         fill_gaps()  -- Call the new fill gaps function
+                        legato_amount = 0  -- Reset legato slider to 0
                         reaper.Undo_EndBlock("Fill gaps between notes", -1)
                     end
                     imgui.SameLine(ctx)  -- Put the Apply button next to Fill gaps
@@ -881,7 +912,7 @@ function loop()
                         drag_start_note_states = build_notes_cache()  -- Capture current visual state
                         legato_amount = 0  -- Reset slider to 0
                         jitter_min = 20  -- Reset jitter min to default
-                        jitter_max = 20  -- Reset jitter max to default
+                        jitter_max = 50  -- Reset jitter max to default
 
                         -- Also reset any other drag-related states to maintain consistency
                         -- If we're currently dragging, make sure to clear the cache
@@ -969,17 +1000,15 @@ function loop()
 
                 -- Jitter Section
                 imgui.Separator(ctx)
-                local _, new_jitter_min = imgui.SliderInt(ctx, "Jitter Min (ms)", jitter_min, 1, 50, "%d ms")
+                local _, new_jitter_min = imgui.SliderInt(ctx, "Jitter Min (ms)", jitter_min, 1, 400, "%d ms")
                 jitter_min = new_jitter_min
 
-                -- Ensure jitter_max is never less than jitter_min
-                if jitter_max < jitter_min then
-                    jitter_max = jitter_min
+                -- Draw jitter_max slider with min constraint (value can't be less than min)
+                local _, new_jitter_max = imgui.SliderInt(ctx, "Jitter Max (ms)", jitter_max, math.min(jitter_min, jitter_max), 400, "%d ms")
+                -- Update jitter_max only if it's valid (not less than min)
+                if new_jitter_max >= jitter_min then
+                    jitter_max = new_jitter_max
                 end
-
-                -- Draw jitter_max slider with updated min constraint
-                local _, new_jitter_max = imgui.SliderInt(ctx, "Jitter Max (ms)", jitter_max, jitter_min, 100, "%d ms")
-                jitter_max = new_jitter_max
 
                 -- Humanize Legato button to apply random jitter values to notes
                 if selected_note_count >= 2 then
@@ -993,6 +1022,14 @@ function loop()
                     imgui.BeginDisabled(ctx)
                     imgui.Button(ctx, "Humanize Legato")
                     imgui.EndDisabled(ctx)
+                end
+
+                -- Select all notes button
+                if imgui.Button(ctx, "Select all notes") then
+                    -- Create an undo point for the current state
+                    reaper.Undo_BeginBlock()
+                    select_all_notes()  -- Call the new select all function
+                    reaper.Undo_EndBlock("Select all notes in take", -1)
                 end
             end
         end
