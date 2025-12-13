@@ -786,6 +786,10 @@ function apply_legato(cache)
         return  -- Need at least 2 notes for legato
     end
 
+    -- Seed the random number generator once for non-deterministic humanization
+    local time_val = reaper.time_precise and reaper.time_precise() or os and os.time() or 0
+    math.randomseed(math.floor(time_val * 1000000))
+
     -- Calculate the delta from the drag start value
     local delta_ms = legato_amount - drag_start_legato_amount
     local delta_ppq = ms_to_ppq_corrected(delta_ms, current_take, selected_notes[1] and selected_notes[1].startppqpos or 0)
@@ -816,11 +820,6 @@ function apply_legato(cache)
             local humanize_range_ms = (humanize_strength / 100.0) * 100  -- Max 100ms variation at full strength
 
             if humanize_range_ms > 0 then
-                -- Seed the random number generator for humanization
-                local time_val = reaper.time_precise and reaper.time_precise() or os and os.time() or 0
-                local seed_val = math.floor(time_val * 1000000) + #selected_notes + i  -- Use note index for variation
-                math.randomseed(seed_val)
-
                 -- Generate random humanization value in milliseconds
                 local humanize_ms = math.random() * humanize_range_ms
                 local humanize_ppq = ms_to_ppq_corrected(humanize_ms, current_take, note.startppqpos)
