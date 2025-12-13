@@ -938,6 +938,15 @@ function loop()
                     imgui.EndDisabled(ctx)
                 end
 
+                -- Display overlay count text (red if overlays detected)
+                if overlay_count > 0 then
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
+                    imgui.Text(ctx, tostring(overlay_count) .. " overlays detected")
+                    reaper.ImGui_PopStyleColor(ctx)
+                else
+                    imgui.Text(ctx, tostring(overlay_count) .. " overlays detected")
+                end
+
                 imgui.Separator(ctx)
 
                 -- Legato Section
@@ -1008,8 +1017,6 @@ function loop()
                     imgui.Button(ctx, "Apply")
                     imgui.EndDisabled(ctx)
                 end
-                -- Display overlay count text
-                imgui.Text(ctx, tostring(overlay_count) .. " overlays detected")
                 imgui.Separator(ctx)
 
                 -- Keep within item boundaries checkbox
