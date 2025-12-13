@@ -35,7 +35,7 @@ local legato_amount = 0 -- Current legato amount in milliseconds (0-400ms)
 local drag_start_legato_amount = 0 -- Legato amount at the start of dragging
 local drag_start_note_states = {} -- Store the note states at drag start for delta calculations
 local keep_within_boundaries = false -- Flag to keep notes within media item boundaries
-local humanize_strength = 0 -- Strength of humanization effect (0-100)
+local humanize_strength = 50 -- Strength of humanization effect (0-100)
 local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
 local last_selected_note_indices = {} -- Store indices of selected notes to detect changes
@@ -815,7 +815,7 @@ function apply_legato(cache)
         local new_end_ppq = baseline_end_pos + delta_ppq
 
         -- Apply humanization if enabled (humanize_strength > 0)
-        if humanize_strength > 0 and i < #selected_notes then  -- Only for notes that have a next note
+        if humanize_strength > 0 then  -- Apply to all notes, regardless if they have a next note
             -- Calculate humanization range based on humanize_strength (0-100 scale)
             local humanize_range_ms = (humanize_strength / 100.0) * 100  -- Max 100ms variation at full strength
 
@@ -910,7 +910,7 @@ function loop()
         invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
         -- Reset all state variables when undo occurs
         legato_amount = 0
-        humanize_strength = 0
+        humanize_strength = 50
     end
 
     -- Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS)
@@ -923,7 +923,7 @@ function loop()
         invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
         -- Reset all state variables when redo occurs
         legato_amount = 0
-        humanize_strength = 0
+        humanize_strength = 50
     end
 
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
@@ -937,7 +937,7 @@ function loop()
         invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
         -- Reset all state variables when script terminates via Escape key
         legato_amount = 0
-        humanize_strength = 0
+        humanize_strength = 50
     end
 
     local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse
@@ -994,7 +994,6 @@ function loop()
                 if midi_selection_changed() then  -- This also handles cache invalidation
                     -- Reset to fresh state when selection changes (like just opened)
                     legato_amount = 0  -- Reset slider to 0
-                    humanize_strength = 0  -- Reset humanize strength to default
                     drag_start_legato_amount = 0  -- Reset drag start to 0
                     drag_start_note_states = {}  -- Clear the drag start states
                     notes_cache = {}  -- Clear the drag cache
@@ -1153,7 +1152,6 @@ function loop()
                         drag_start_legato_amount = legato_amount  -- Set baseline to current value
                         drag_start_note_states = build_notes_cache()  -- Capture current visual state
                         legato_amount = 0  -- Reset slider to 0
-                        humanize_strength = 0  -- Reset humanize strength to default
 
                         -- Also reset any other drag-related states to maintain consistency
                         -- If we're currently dragging, make sure to clear the cache
