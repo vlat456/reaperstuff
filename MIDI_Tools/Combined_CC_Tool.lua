@@ -35,6 +35,7 @@ local cc_redundancy_threshold = 0 -- New global variable for redundancy threshol
 local cc_list_cache = {}
 local selected_in_lane_count = 0
 local selected_ccs_cache_valid = false
+local last_selected_ccs_signature = "" -- Track selection changes to detect when to invalidate cache
 
 -- Function to get current MIDI context consistently
 function get_midi_context()
@@ -48,6 +49,29 @@ function get_midi_context()
     if current_lane < 0 or current_lane > 127 then return current_take, midi_editor, current_lane end
 
     return current_take, midi_editor, current_lane
+end
+
+-- Function to compute a signature of selected CCs in the current lane to detect selection changes
+function compute_selected_ccs_signature()
+    local current_take, midi_editor, lane = get_midi_context()
+
+    if not current_take or lane < 0 or lane > 127 then return "" end
+
+    local signature_parts = {}
+    local i = -1
+    while true do
+        i = reaper.MIDI_EnumSelCC(current_take, i)
+        if i == -1 then break end
+
+        local _, _, _, ppqpos, _, _, cc, _ = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
+        if cc == lane then
+            table.insert(signature_parts, ppqpos) -- Use position to identify the selected CC
+        end
+    end
+
+    -- Sort to ensure consistent order and create a string signature
+    table.sort(signature_parts)
+    return table.concat(signature_parts, ",")
 end
 
 -- Helper function to get the active MIDI take
@@ -184,6 +208,25 @@ function select_all_ccs_in_lane()
     if #cc_list_cache > 0 then
         cc_list_cache = {}
     end
+    -- Reset the selection signature to force recalculation of selected count in the next GUI update
+    last_selected_ccs_signature = ""
+    -- Update the MIDI arrangement to ensure changes are reflected immediately
+    reaper.UpdateArrange()
+    -- Immediately update the selected count for the GUI to show correct value
+    local current_take, _, lane = get_midi_context()
+    if current_take and lane >= 0 and lane <= 127 then
+        selected_in_lane_count = 0
+        local i = -1
+        while true do
+            i = reaper.MIDI_EnumSelCC(current_take, i)
+            if i == -1 then break end
+            local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
+            if cc == lane then
+                selected_in_lane_count = selected_in_lane_count + 1
+            end
+        end
+        selected_ccs_cache_valid = true
+    end
 end
 
 
@@ -278,6 +321,7 @@ function loop()
                 end
                 -- Also invalidate the selected CCs count cache
                 selected_ccs_cache_valid = false
+                last_selected_ccs_signature = "" -- Reset signature when context changes
             end
 
             if not current_take then
@@ -285,6 +329,15 @@ function loop()
                 if #cc_list_cache > 0 then
                     cc_list_cache = {}
                 end
+                -- Reset all statistics when no take is available
+                selected_ccs_cache_valid = false
+                redundant_event_count = 0
+                total_event_count = 0
+                selected_in_lane_count = 0
+                last_selected_ccs_signature = ""
+                take = nil
+                last_clicked_cc_lane = -1
+                lane_name = ""
                 imgui.Text(ctx, "Could not get MIDI take.")
             else
                 -- Shared Info
@@ -315,6 +368,13 @@ function loop()
 
             -- Count selected CCs for the current lane (with caching to avoid repeated calculation)
             if current_take and current_lane >= 0 and current_lane <= 127 then
+                -- Check if selection has changed and invalidate cache if needed
+                local current_selection_signature = compute_selected_ccs_signature()
+                if current_selection_signature ~= last_selected_ccs_signature then
+                    selected_ccs_cache_valid = false
+                    last_selected_ccs_signature = current_selection_signature
+                end
+
                 -- Recalculate if cache is invalid or MIDI context changed
                 if not selected_ccs_cache_valid or take ~= current_take or last_clicked_cc_lane ~= current_lane then
                     selected_in_lane_count = 0
@@ -333,6 +393,7 @@ function loop()
                 -- Reset count if no valid context
                 selected_in_lane_count = 0
                 selected_ccs_cache_valid = false
+                last_selected_ccs_signature = ""
             end
 
             -- Smooth Section
@@ -399,7 +460,23 @@ function loop()
     
     imgui.Spacing(ctx)
     imgui.End(ctx)
-    
+
+    -- Clean up caches when the script is terminated to prevent memory leaks
+    if not script_running then
+        -- Clear all caches to ensure clean state on next run
+        if #cc_list_cache > 0 then
+            cc_list_cache = {}
+        end
+        selected_ccs_cache_valid = false
+        redundant_event_count = 0
+        total_event_count = 0
+        selected_in_lane_count = 0
+        last_selected_ccs_signature = ""
+        take = nil
+        last_clicked_cc_lane = -1
+        lane_name = ""
+    end
+
     if script_running then
         reaper.defer(loop)
     end
