@@ -154,8 +154,12 @@ function remove_redundant_ccs()
     reaper.Undo_EndBlock("Remove " .. changes .. " redundant CC events", -1)
     calculate_redundant_ccs() -- Recalculate after removal
     cc_redundancy_threshold = 0 -- Reset threshold to 0
-    -- Invalidate the selected CCs count cache since some events were removed
+    -- Invalidate all caches since CC events were removed
     selected_ccs_cache_valid = false
+    -- Clear the smoothing cache as well since CC indices may have changed
+    if #cc_list_cache > 0 then
+        cc_list_cache = {}
+    end
 end
 
 function select_all_ccs_in_lane()
@@ -174,8 +178,12 @@ function select_all_ccs_in_lane()
         end
     end
     reaper.Undo_EndBlock("Select all CCs in lane", -1)
-    -- Invalidate the selected CCs count cache since selection changed
+    -- Invalidate all caches since selection changed
     selected_ccs_cache_valid = false
+    -- Clear the smoothing cache as well since selected CCs have changed
+    if #cc_list_cache > 0 then
+        cc_list_cache = {}
+    end
 end
 
 
@@ -296,6 +304,11 @@ function loop()
             if current_take and current_lane >= 0 and current_lane <= 127 then
                 if imgui.Button(ctx, "Update") then
                     calculate_redundant_ccs()
+                    -- Invalidate caches to match the behavior of other UI actions
+                    selected_ccs_cache_valid = false
+                    if #cc_list_cache > 0 then
+                        cc_list_cache = {}
+                    end
                 end
             end
             imgui.Separator(ctx)
@@ -358,7 +371,12 @@ function loop()
                 else
                     reaper.Undo_EndBlock("", -1)
                 end
-                -- Cache is already cleared by the condition above, so no need to clear again
+                -- Clear the smoothing cache after the operation ends
+                if #cc_list_cache > 0 then
+                    cc_list_cache = {}
+                end
+                -- Also invalidate selected CCs cache since values have changed
+                selected_ccs_cache_valid = false
                 calculate_redundant_ccs() -- Recalculate redundant count after smoothing ends
             end
 
