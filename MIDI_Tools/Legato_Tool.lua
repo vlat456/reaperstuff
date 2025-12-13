@@ -34,8 +34,7 @@ local legato_amount = 0 -- Current legato amount in milliseconds (0-400ms)
 local drag_start_legato_amount = 0 -- Legato amount at the start of dragging
 local drag_start_note_states = {} -- Store the note states at drag start for delta calculations
 local keep_within_boundaries = false -- Flag to keep notes within media item boundaries
-local jitter_min = 20 -- Minimum jitter amount in milliseconds (default 20ms, range 1-50ms)
-local jitter_max = 50 -- Maximum jitter amount in milliseconds (default 50ms, range based on min, max 400ms)
+local humanize_strength = 0 -- Strength of humanization effect (0-100)
 local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
 local last_selected_note_indices = {} -- Store indices of selected notes to detect changes
@@ -559,96 +558,6 @@ function fill_gaps()
     reaper.UpdateArrange()
 end
 
--- Function to humanize legato by adding random jitter to note endings
-function humanize_legato()
-    local current_take, midi_editor = get_midi_context()
-
-    if not current_take then return end
-
-    local selected_notes = get_selected_notes()
-
-    if #selected_notes < 2 then
-        return  -- Need at least 2 notes for legato
-    end
-
-    -- Get project tempo at the MIDI item's location to convert milliseconds to PPQ
-    local tempo = reaper.Master_GetTempo()  -- Default to master tempo
-
-    local item = reaper.GetMediaItemTake_Item(current_take)
-    if item then
-        local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-        if item_pos and item_pos ~= -1 then
-            local item_tempo = reaper.TimeMap2_GetDividedBpmAtTime(0, item_pos) -- Use current project (0) and item position
-            if item_tempo and item_tempo > 0 then
-                tempo = item_tempo
-            end
-        end
-    end
-
-    -- Validate tempo value
-    if not tempo or tempo <= 0 then
-        tempo = 120.0  -- Default to 120 BPM if all methods fail
-    end
-
-    -- Convert milliseconds to PPQ (pulses per quarter note)
-    local ms_to_ppq = function(ms)
-        if not ms or ms < 0 then
-            return 0
-        end
-        return (ms * tempo * 480) / (60 * 1000)
-    end
-
-    -- Seed the random number generator
-    local time_val = reaper.time_precise and reaper.time_precise() or os and os.time() or 0
-    local seed_val = math.floor(time_val * 1000000) + #selected_notes
-    math.randomseed(seed_val)
-
-    -- Apply random jitter to each note's end position (except the last one)
-    for i, note in ipairs(selected_notes) do
-        if i < #selected_notes then -- Not the last note
-            -- Generate a random jitter value between jitter_min and jitter_max
-            local random_jitter_ms = math.random(jitter_min, jitter_max)
-            local jitter_ppq = ms_to_ppq(random_jitter_ms)
-
-            -- Calculate new end position by adding jitter to current end position
-            local new_end_ppq = note.endppqpos + jitter_ppq
-
-            -- Apply constraints:
-            -- 1. Same pitch notes must not overlap - search all notes for potential overlap
-            for _, potential_next_note in ipairs(selected_notes) do
-                if note.pitch == potential_next_note.pitch and
-                   potential_next_note.startppqpos > note.startppqpos and  -- Only look at notes that start after current note start
-                   potential_next_note.startppqpos < new_end_ppq then      -- And that start before the current note would end
-                    new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
-                end
-            end
-
-            -- 2. Keep within item boundaries if checkbox is enabled
-            if keep_within_boundaries then
-                local item_start_ppq, item_end_ppq = get_item_boundaries_in_ppq(current_take)
-                -- Constrain to item end boundary
-                new_end_ppq = math.min(new_end_ppq, item_end_ppq)
-                -- Constrain to item start boundary - note end should not be before item start
-                -- But only if the note is within the item boundaries
-                if note.startppqpos >= item_start_ppq and note.startppqpos < item_end_ppq then
-                    -- If note starts within the item, make sure end doesn't go before item start
-                    new_end_ppq = math.max(new_end_ppq, item_start_ppq)
-                end
-            end
-
-            -- Make sure the new end position is not before the start position
-            if new_end_ppq > note.startppqpos then
-                local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
-                if not result then
-                    reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
-                    return  -- Stop processing this note
-                end
-            end
-        end
-    end
-
-    reaper.UpdateArrange()
-end
 
 -- Function to apply legato to selected notes using delta from baseline state
 function apply_legato(cache)
@@ -716,6 +625,26 @@ function apply_legato(cache)
         -- Apply the delta to the baseline state
         local new_end_ppq = baseline_end_pos + delta_ppq
 
+        -- Apply humanization if enabled (humanize_strength > 0)
+        if humanize_strength > 0 and i < #selected_notes then  -- Only for notes that have a next note
+            -- Calculate humanization range based on humanize_strength (0-100 scale)
+            local humanize_range_ms = (humanize_strength / 100.0) * 100  -- Max 100ms variation at full strength
+
+            if humanize_range_ms > 0 then
+                -- Seed the random number generator for humanization
+                local time_val = reaper.time_precise and reaper.time_precise() or os and os.time() or 0
+                local seed_val = math.floor(time_val * 1000000) + #selected_notes + i  -- Use note index for variation
+                math.randomseed(seed_val)
+
+                -- Generate random humanization value in milliseconds
+                local humanize_ms = math.random() * humanize_range_ms
+                local humanize_ppq = (humanize_ms * tempo * 480) / (60 * 1000)
+
+                -- Add humanization to current position
+                new_end_ppq = new_end_ppq + humanize_ppq
+            end
+        end
+
         -- Apply constraints:
         -- 1. Same pitch notes must not overlap - search all notes for potential overlap
         -- Check all selected notes for same pitch that start after this note ends
@@ -725,6 +654,17 @@ function apply_legato(cache)
                potential_next_note.startppqpos < new_end_ppq then      -- And that start before the current note would end (with legato)
                 new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
             end
+        end
+
+        -- Apply humanization range constraints (only if humanization is active and next note exists)
+        if humanize_strength > 0 and i < #selected_notes then
+            -- Ensure the note doesn't end before the next note starts (with reasonable overlap)
+            local min_overlap_ppq = (2 * tempo * 480) / (60 * 1000) -- Minimum 2ms overlap
+            local min_end_position = next_note.startppqpos + min_overlap_ppq
+            new_end_ppq = math.max(new_end_ppq, min_end_position)
+
+            -- Ensure the note doesn't extend beyond the next note's end
+            new_end_ppq = math.min(new_end_ppq, next_note.endppqpos)
         end
 
 
@@ -763,9 +703,7 @@ function loop()
         drag_start_note_states = {}
         -- Reset all state variables when script terminates
         legato_amount = 0
-        jitter_min = 20
-        jitter_max = 50
-        jitter_enabled = false
+        humanize_strength = 0
         return
     end
 
@@ -783,9 +721,7 @@ function loop()
         drag_start_note_states = {}
         -- Reset all state variables when undo occurs
         legato_amount = 0
-        jitter_min = 20
-        jitter_max = 50
-        jitter_enabled = false
+        humanize_strength = 0
     end
 
     -- Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS)
@@ -797,9 +733,7 @@ function loop()
         drag_start_note_states = {}
         -- Reset all state variables when redo occurs
         legato_amount = 0
-        jitter_min = 20
-        jitter_max = 50
-        jitter_enabled = false
+        humanize_strength = 0
     end
 
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
@@ -809,9 +743,7 @@ function loop()
         drag_start_note_states = {}
         -- Reset all state variables when script terminates via Escape key
         legato_amount = 0
-        jitter_min = 20
-        jitter_max = 50
-        jitter_enabled = false
+        humanize_strength = 0
     end
 
     local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse
@@ -863,8 +795,7 @@ function loop()
                 if midi_selection_changed() then
                     -- Reset to fresh state when selection changes (like just opened)
                     legato_amount = 0  -- Reset slider to 0
-                    jitter_min = 20  -- Reset jitter min to default
-                    jitter_max = 50  -- Reset jitter max to default
+                    humanize_strength = 0  -- Reset humanize strength to default
                     drag_start_legato_amount = 0  -- Reset drag start to 0
                     drag_start_note_states = {}  -- Clear the drag start states
                     notes_cache = {}  -- Clear the drag cache
@@ -1003,8 +934,7 @@ function loop()
                         drag_start_legato_amount = legato_amount  -- Set baseline to current value
                         drag_start_note_states = build_notes_cache()  -- Capture current visual state
                         legato_amount = 0  -- Reset slider to 0
-                        jitter_min = 20  -- Reset jitter min to default
-                        jitter_max = 50  -- Reset jitter max to default
+                        humanize_strength = 0  -- Reset humanize strength to default
 
                         -- Also reset any other drag-related states to maintain consistency
                         -- If we're currently dragging, make sure to clear the cache
@@ -1017,37 +947,18 @@ function loop()
                     imgui.Button(ctx, "Apply")
                     imgui.EndDisabled(ctx)
                 end
+
+                -- Humanize strength slider
+                local _, new_humanize_strength = imgui.SliderInt(ctx, "Humanize Strength", humanize_strength, 0, 100, "%d")
+                humanize_strength = new_humanize_strength
+
                 imgui.Separator(ctx)
 
                 -- Keep within item boundaries checkbox
                 local _, new_keep_within_boundaries = imgui.Checkbox(ctx, "Keep within item boundaries", keep_within_boundaries)
                 keep_within_boundaries = new_keep_within_boundaries  -- Update the variable
 
-                -- Humanize Legato button to apply random jitter values to notes
-                if selected_note_count >= 2 then
-                    if imgui.Button(ctx, "Humanize Legato") then
-                        -- Create an undo point for the current state
-                        reaper.Undo_BeginBlock()
-                        humanize_legato()  -- Call the new humanize function
-                        reaper.Undo_EndBlock("Humanize legato with jitter", -1)
-                    end
-                else
-                    imgui.BeginDisabled(ctx)
-                    imgui.Button(ctx, "Humanize Legato")
-                    imgui.EndDisabled(ctx)
-                end
 
-                -- Jitter Section
-                imgui.Separator(ctx)
-                local _, new_jitter_min = imgui.SliderInt(ctx, "Jitter Min (ms)", jitter_min, 1, 400, "%d ms")
-                jitter_min = new_jitter_min
-
-                -- Draw jitter_max slider with min constraint (value can't be less than min)
-                local _, new_jitter_max = imgui.SliderInt(ctx, "Jitter Max (ms)", jitter_max, math.min(jitter_min, jitter_max), 400, "%d ms")
-                -- Update jitter_max only if it's valid (not less than min)
-                if new_jitter_max >= jitter_min then
-                    jitter_max = new_jitter_max
-                end
 
 
             end
