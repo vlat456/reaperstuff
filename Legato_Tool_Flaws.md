@@ -74,10 +74,18 @@
 ### Other Fixes
 4. Implement proper garbage collection and cache invalidation mechanisms
 5. Add better error handling and validation throughout
-6. Use more efficient algorithms for overlay detection (e.g., sweep line algorithm)
-7. Add bounds checking for all Reaper API calls
-8. Consolidate duplicate functions (`get_selected_notes()` and `build_notes_cache()`)
-9. Implement proper progress indication for long operations
-10. Fix random seeding to be deterministic for consistent humanization results
-11. Improve undo block management and naming
+6. **Overlay Detection Optimization**: Replace the O(n²) nested loop algorithm with an efficient O(n log n) sweep line algorithm that uses event-based processing to detect overlapping notes of the same pitch. This includes:
+   - Creating start and end events for each note
+   - Sorting events by time position
+   - Processing events in chronological order while tracking active notes by pitch
+   - Using a hash set to track overlay indices for O(1) lookup instead of using `table_contains()`
+7. **Undo Block Management Fixes**: Implement proper undo state tracking to prevent incomplete or nested undo blocks:
+   - Track undo state with a `undo_block_active` variable
+   - Create safe `begin` and `end` functions to prevent nested blocks
+   - Use descriptive names for undo blocks instead of empty strings
+   - Add cleanup function to ensure all active undo blocks are closed on script termination
+8. Add bounds checking for all Reaper API calls
+9. Consolidate duplicate functions (`get_selected_notes()` and `build_notes_cache()`)
+10. Implement proper progress indication for long operations
+11. Fix random seeding to be deterministic for consistent humanization results
 12. Add proper safety mechanisms for large MIDI files (allow user to configure or dynamically adjust safety limits)
