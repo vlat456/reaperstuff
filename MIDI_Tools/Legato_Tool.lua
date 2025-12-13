@@ -40,11 +40,11 @@ local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
 local last_selected_note_indices = {} -- Store indices of selected notes to detect changes
 
--- Cached sorted notes system to eliminate redundant sorting operations
-local cached_sorted_notes = {}  -- Cached version of selected notes sorted by start position
-local cached_sorted_notes_valid = false  -- Flag to track if the cached sorted notes are valid
-local cached_take = nil  -- Track which take the cache is for
-local cached_selection_change_time = 0  -- Track when selection last changed
+-- Optimized cached sorted notes system from optimized_sorting.lua
+local sorted_notes_cache = {}
+local sorted_notes_cache_valid = false
+local last_cache_take = nil
+local last_cache_note_count = 0
 
 -- Undo block management to prevent incomplete or nested undo blocks
 local undo_block_active = false  -- Track undo state to prevent nested blocks
@@ -186,6 +186,18 @@ function get_selected_notes()
     return notes
 end
 
+-- Optimized version of get_selected_notes (no longer needs sorting, uses cached version)
+function get_selected_notes_optimized()
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take then
+        return {}
+    end
+
+    -- Return the cached sorted version instead of re-sorting
+    return get_cached_sorted_selected_notes()
+end
+
 -- Function to get media item boundaries in PPQ for the given take
 function get_item_boundaries_in_ppq(take)
     if not take then return 0, math.huge end  -- Return a reasonable range if no take
@@ -251,7 +263,7 @@ function midi_selection_changed()
     -- Compare lengths first
     if #current_selection ~= #last_selection then
         last_selected_note_indices = current_selection
-        invalidate_cached_sorted_notes() -- Invalidate cache when selection changes
+        invalidate_sorted_notes_cache() -- Invalidate cache when selection changes
         return true
     end
 
@@ -259,7 +271,7 @@ function midi_selection_changed()
     for i = 1, #current_selection do
         if current_selection[i] ~= last_selection[i] then
             last_selected_note_indices = current_selection
-            invalidate_cached_sorted_notes() -- Invalidate cache when selection changes
+            invalidate_sorted_notes_cache() -- Invalidate cache when selection changes
             return true
         end
     end
@@ -304,20 +316,20 @@ function detect_overlays()
 
     if not current_take then return 0 end
 
-    -- Get cached sorted selected notes to avoid redundant sorting
+    -- Get cached sorted selected notes
     local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return 0  -- Need at least 2 notes to check for overlays
     end
 
-    -- Find overlapping notes of the same pitch (notes are already sorted by start position)
+    -- Find overlapping notes of the same pitch (no need to sort again)
     local overlay_indices = {}
     for i, note1 in ipairs(selected_notes) do
         for j = i + 1, #selected_notes do
             local note2 = selected_notes[j]
 
-            -- Stop checking if note2 starts after note1 ends (notes are sorted by start time)
+            -- Stop checking if note2 starts after note1 ends (notes are already sorted by start time)
             if note2.startppqpos >= note1.endppqpos then
                 break
             end
@@ -337,8 +349,9 @@ function detect_overlays()
 
     -- Only update selection if overlays were found
     if #overlay_indices > 0 then
-        -- Deselect all selected notes first
-        for _, note in ipairs(selected_notes) do
+        -- Deselect all selected notes first (get fresh list to avoid using cached list)
+        local fresh_selected_notes = get_selected_notes()
+        for _, note in ipairs(fresh_selected_notes) do
             reaper.MIDI_SetNote(current_take, note.index, false, nil, nil, nil, nil, nil, nil, true)  -- deselect only
         end
 
@@ -363,7 +376,6 @@ function table_contains(table, value)
 end
 
 -- Function to get cached sorted selected notes
--- This caches the sorted notes to avoid repeated sorting operations
 function get_cached_sorted_selected_notes()
     local current_take, midi_editor = get_midi_context()
 
@@ -371,31 +383,68 @@ function get_cached_sorted_selected_notes()
         return {}
     end
 
-    -- Check if we need to refresh the cache
-    local selection_changed = midi_selection_changed()
-    if selection_changed or not cached_sorted_notes_valid or cached_take ~= current_take then
-        -- Build fresh sorted notes cache
-        local notes = get_selected_notes()
+    -- Check if we need to rebuild the cache
+    if not sorted_notes_cache_valid or
+       last_cache_take ~= current_take or
+       last_cache_note_count ~= count_selected_notes() then
 
-        -- Sort notes by start position
-        table.sort(notes, function(a, b)
+        -- Build fresh sorted cache
+        sorted_notes_cache = {}
+        local note_index = -1
+        local safety_counter = 0
+        local max_notes = 10000
+
+        while safety_counter < max_notes do
+            note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
+            if note_index == -1 then
+                break
+            end
+
+            local retval, selected, muted, startppqpos, endppqpos, chan, pitch, vel = reaper.MIDI_GetNote(current_take, note_index)
+            if not retval then
+                reaper.MB("Error retrieving MIDI note at index " .. note_index, "Legato Tool Error", 0)
+                break
+            end
+
+            table.insert(sorted_notes_cache, {
+                index = note_index,
+                selected = selected,
+                muted = muted,
+                startppqpos = startppqpos,
+                endppqpos = endppqpos,
+                chan = chan,
+                pitch = pitch,
+                vel = vel
+            })
+
+            safety_counter = safety_counter + 1
+        end
+
+        -- Sort notes by start position only once
+        table.sort(sorted_notes_cache, function(a, b)
             return a.startppqpos < b.startppqpos
         end)
 
-        cached_sorted_notes = notes
-        cached_sorted_notes_valid = true
-        cached_take = current_take
-        cached_selection_change_time = reaper.time_precise() or os.clock()
+        -- Update cache metadata
+        sorted_notes_cache_valid = true
+        last_cache_take = current_take
+        last_cache_note_count = #sorted_notes_cache
     end
 
-    return cached_sorted_notes
+    return sorted_notes_cache
 end
 
--- Function to invalidate the cached sorted notes
+-- Function to invalidate the cache when needed
+function invalidate_sorted_notes_cache()
+    sorted_notes_cache_valid = false
+    sorted_notes_cache = {}
+    last_cache_take = nil
+    last_cache_note_count = 0
+end
+
+-- For backward compatibility, keep the old function name calling the new one
 function invalidate_cached_sorted_notes()
-    cached_sorted_notes_valid = false
-    cached_sorted_notes = {}
-    cached_take = nil
+    invalidate_sorted_notes_cache()
 end
 
 -- Function to safely begin an undo block
@@ -501,20 +550,20 @@ function heal_overlays()
 
     if not current_take then return 0 end
 
-    -- Get cached sorted selected notes to avoid redundant sorting
+    -- Get cached sorted selected notes
     local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return 0  -- Need at least 2 notes to check for overlays
     end
 
-    -- Find overlapping notes of the same pitch and resolve the overlays (notes are already sorted by start position)
+    -- Find overlapping notes of the same pitch and resolve the overlays (no need to sort again)
     local resolved_count = 0
     for i, note1 in ipairs(selected_notes) do
         for j = i + 1, #selected_notes do
             local note2 = selected_notes[j]
 
-            -- Stop checking if note2 starts after note1 ends (notes are sorted by start time)
+            -- Stop checking if note2 starts after note1 ends (notes are already sorted by start time)
             if note2.startppqpos >= note1.endppqpos then
                 break
             end
@@ -559,20 +608,23 @@ end
 function detect_overlays_count(current_take)
     if not current_take then return 0 end
 
-    -- Get cached sorted selected notes to avoid redundant sorting
+    -- Get the current MIDI context to get selected notes
+    local _, _ = get_midi_context()
+
+    -- Get cached sorted selected notes
     local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return 0  -- Need at least 2 notes to check for overlays
     end
 
-    -- Find overlapping notes of the same pitch (notes are already sorted by start position)
+    -- Find overlapping notes of the same pitch (no need to sort again)
     local overlay_indices = {}
     for i, note1 in ipairs(selected_notes) do
         for j = i + 1, #selected_notes do
             local note2 = selected_notes[j]
 
-            -- Stop checking if note2 starts after note1 ends (notes are sorted by start time)
+            -- Stop checking if note2 starts after note1 ends (notes are already sorted by start time)
             if note2.startppqpos >= note1.endppqpos then
                 break
             end
@@ -630,14 +682,14 @@ function non_legato()
 
     if not current_take then return end
 
-    -- Get cached sorted selected notes to avoid redundant sorting
+    -- Get cached sorted selected notes
     local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return  -- Need at least 2 notes for non-legato
     end
 
-    -- Process each note to ensure no overlaps (notes are already sorted by start position)
+    -- Process each note to ensure no overlaps (no need to sort again)
     for i, note in ipairs(selected_notes) do
         -- Find the next note that starts after this note
         if i < #selected_notes then
@@ -670,14 +722,14 @@ function fill_gaps()
 
     if not current_take then return end
 
-    -- Get cached sorted selected notes to avoid redundant sorting
+    -- Get cached sorted selected notes
     local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return  -- Need at least 2 notes to fill gaps
     end
 
-    -- Process each note to extend to the next note's start (notes are already sorted by start position)
+    -- Process each note to extend to the next note's start (no need to sort again)
     for i, note in ipairs(selected_notes) do
         -- Find the next note that starts after this note
         local next_note_start = nil
@@ -956,6 +1008,11 @@ function loop()
                     if selected_note_count ~= current_note_count or take ~= current_take then
                         selected_note_count = current_note_count
                         take = current_take
+
+                        -- Invalidate sorted notes cache when note count changes
+                        if last_cache_note_count ~= current_note_count then
+                            invalidate_sorted_notes_cache()
+                        end
                     end
 
                     -- Update overlay count when needed (for display)
