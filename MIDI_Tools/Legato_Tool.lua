@@ -774,6 +774,81 @@ function fill_gaps()
 end
 
 
+-- Function to apply only humanization to selected notes (without legato changes)
+function apply_humanization()
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take then return end
+
+    local selected_notes = get_cached_sorted_selected_notes()
+
+    if #selected_notes < 1 then
+        return  -- Need at least 1 note for humanization
+    end
+
+    -- Seed the random number generator once for non-deterministic humanization
+    local time_val = reaper.time_precise and reaper.time_precise() or os and os.time() or 0
+    math.randomseed(math.floor(time_val * 1000000))
+
+    -- Apply humanization to all selected notes
+    for i, note in ipairs(selected_notes) do
+        -- Get the current end position of the note
+        local _, _, _, _, current_end, _, _, _ = reaper.MIDI_GetNote(current_take, note.index)
+        local new_end_ppq = current_end
+
+        -- Apply humanization if enabled (humanize_strength > 0)
+        if humanize_strength > 0 then  -- Apply to all notes, regardless if they have a next note
+            -- Calculate humanization range based on humanize_strength (0-100 scale)
+            local humanize_range_ms = (humanize_strength / 100.0) * 100  -- Max 100ms variation at full strength
+
+            if humanize_range_ms > 0 then
+                -- Generate random humanization value in milliseconds
+                local humanize_ms = math.random() * humanize_range_ms  -- Random value between 0 and +range
+                local humanize_ppq = ms_to_ppq_corrected(humanize_ms, current_take, note.startppqpos)
+
+                -- Add humanization to current position
+                new_end_ppq = new_end_ppq + humanize_ppq
+            end
+        end
+
+        -- Apply constraints to make sure the new end position is valid
+        if new_end_ppq > note.startppqpos then
+            -- Apply same-pitch overlap prevention
+            for _, potential_next_note in ipairs(selected_notes) do
+                if note.pitch == potential_next_note.pitch and
+                   potential_next_note.startppqpos > note.startppqpos and  -- Only look at notes that start after current note start
+                   potential_next_note.startppqpos < new_end_ppq then      -- And that start before the current note would end (with humanization)
+                    new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
+                end
+            end
+
+            -- 2. Keep within item boundaries if checkbox is enabled
+            if keep_within_boundaries then
+                local item_start_ppq, item_end_ppq = get_item_boundaries_in_ppq(current_take)
+                -- Constrain to item end boundary
+                new_end_ppq = math.max(math.min(new_end_ppq, item_end_ppq), item_start_ppq)
+                -- Constrain to item start boundary - note end should not be before item start
+                -- But only if the note is within the item boundaries
+                if note.startppqpos >= item_start_ppq and note.startppqpos < item_end_ppq then
+                    -- If note starts within the item, make sure end doesn't go before item start
+                    new_end_ppq = math.max(new_end_ppq, item_start_ppq)
+                end
+            end
+
+            -- Final check - make sure end is after start
+            if new_end_ppq > note.startppqpos then
+                local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
+                if not result then
+                    reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
+                    return  -- Stop processing this note
+                end
+            end
+        end
+    end
+
+    reaper.UpdateArrange()
+end
+
 -- Function to apply legato to selected notes using delta from baseline state
 function apply_legato(cache)
     local current_take, midi_editor = get_midi_context()
@@ -785,10 +860,6 @@ function apply_legato(cache)
     if #selected_notes < 2 then
         return  -- Need at least 2 notes for legato
     end
-
-    -- Seed the random number generator once for non-deterministic humanization
-    local time_val = reaper.time_precise and reaper.time_precise() or os and os.time() or 0
-    math.randomseed(math.floor(time_val * 1000000))
 
     -- Calculate the delta from the drag start value
     local delta_ms = legato_amount - drag_start_legato_amount
@@ -814,21 +885,6 @@ function apply_legato(cache)
         -- Apply the delta to the baseline state
         local new_end_ppq = baseline_end_pos + delta_ppq
 
-        -- Apply humanization if enabled (humanize_strength > 0)
-        if humanize_strength > 0 then  -- Apply to all notes, regardless if they have a next note
-            -- Calculate humanization range based on humanize_strength (0-100 scale)
-            local humanize_range_ms = (humanize_strength / 100.0) * 100  -- Max 100ms variation at full strength
-
-            if humanize_range_ms > 0 then
-                -- Generate random humanization value in milliseconds
-                local humanize_ms = math.random() * humanize_range_ms
-                local humanize_ppq = ms_to_ppq_corrected(humanize_ms, current_take, note.startppqpos)
-
-                -- Add humanization to current position
-                new_end_ppq = new_end_ppq + humanize_ppq
-            end
-        end
-
         -- Apply constraints:
         -- 1. Same pitch notes must not overlap - search all notes for potential overlap
         -- Check all selected notes for same pitch that start after this note ends
@@ -838,17 +894,6 @@ function apply_legato(cache)
                potential_next_note.startppqpos < new_end_ppq then      -- And that start before the current note would end (with legato)
                 new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
             end
-        end
-
-        -- Apply humanization range constraints (only if humanization is active and next note exists)
-        if humanize_strength > 0 and i < #selected_notes then
-            -- Ensure the note doesn't end before the next note starts (with reasonable overlap)
-            local min_overlap_ppq = ms_to_ppq_corrected(2, current_take, next_note.startppqpos) -- Minimum 2ms overlap
-            local min_end_position = next_note.startppqpos + min_overlap_ppq
-            new_end_ppq = math.max(new_end_ppq, min_end_position)
-
-            -- Ensure the note doesn't extend beyond the next note's end
-            new_end_ppq = math.min(new_end_ppq, next_note.endppqpos)
         end
 
 
@@ -1169,6 +1214,19 @@ function loop()
                 -- Humanize strength slider
                 local _, new_humanize_strength = imgui.SliderInt(ctx, "Humanize Strength", humanize_strength, 0, 100, "%d")
                 humanize_strength = new_humanize_strength
+
+                -- Humanize button
+                if selected_note_count >= 1 then
+                    if imgui.Button(ctx, "Humanize") then
+                        safe_undo_begin("Apply humanization")
+                        apply_humanization()
+                        safe_undo_end("Apply humanization")
+                    end
+                else
+                    imgui.BeginDisabled(ctx)
+                    imgui.Button(ctx, "Humanize")
+                    imgui.EndDisabled(ctx)
+                end
 
                 imgui.Separator(ctx)
 
