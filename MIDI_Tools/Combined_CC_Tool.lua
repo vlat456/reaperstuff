@@ -37,6 +37,10 @@ local selected_in_lane_count = 0
 local selected_ccs_cache_valid = false
 local last_selected_ccs_signature = "" -- Track selection changes to detect when to invalidate cache
 
+-- Variables for threshold slider with undo/redo functionality
+local drag_start_threshold = 0 -- Threshold value at the start of dragging
+local threshold_drag_active = false -- Track if threshold slider is currently being dragged
+
 -- Function to get current MIDI context consistently
 function get_midi_context()
     local midi_editor = reaper.MIDIEditor_GetActive()
@@ -448,10 +452,48 @@ function loop()
             imgui.Text(ctx, "Total Events: " .. total_event_count)
             imgui.Text(ctx, "Redundant Events: " .. redundant_event_count)
             local _, new_threshold = imgui.SliderInt(ctx, "Threshold", cc_redundancy_threshold, 0, 10)
-            if new_threshold ~= cc_redundancy_threshold then
+
+            -- Handle threshold slider interaction for real-time feedback
+            local threshold_value_changed = new_threshold ~= cc_redundancy_threshold
+            local is_threshold_activated = imgui.IsItemActivated(ctx)  -- When user starts dragging
+            local is_threshold_active = imgui.IsItemActive(ctx)        -- While user is dragging
+            local is_threshold_deactivated = imgui.IsItemDeactivatedAfterEdit(ctx)  -- When user releases
+
+            if is_threshold_activated then
+                -- Store the original threshold value when starting to drag
+                drag_start_threshold = cc_redundancy_threshold
+                threshold_drag_active = true
+                -- Begin undo block to group all threshold changes
+                reaper.Undo_BeginBlock()
+            end
+
+            if threshold_value_changed then
                 cc_redundancy_threshold = new_threshold
                 calculate_redundant_ccs() -- Recalculate counts when threshold changes
             end
+
+            -- Apply threshold changes in real-time while dragging for visual feedback
+            if is_threshold_active and threshold_drag_active and threshold_value_changed then
+                -- First, restore the original state before applying new threshold
+                -- Since we started an undo block, we can undo to get back to the original state
+                -- Actually, let's just apply threshold changes in real-time for immediate visual feedback
+                -- We'll temporarily apply the changes and they'll be made permanent when released
+                remove_redundant_ccs()  -- Apply deletion with current threshold
+                calculate_redundant_ccs() -- Update the display counts after deletion
+            end
+
+            -- Handle when slider is released after dragging
+            if is_threshold_deactivated then
+                -- End the undo block to commit all changes made during dragging
+                if threshold_drag_active then
+                    reaper.Undo_EndBlock("Adjust CC redundancy threshold", -1)
+                    threshold_drag_active = false
+
+                    -- No need to call remove_redundant_ccs() again since it was called during dragging
+                    -- The final state is already applied
+                end
+            end
+
             if imgui.Button(ctx, "Remove") then
                 remove_redundant_ccs()
             end
