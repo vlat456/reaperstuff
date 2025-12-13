@@ -71,20 +71,29 @@
    - Convert back to PPQ using `MIDI_GetPPQPosFromProjTime`
 3. **Use Project-Specific PPQ**: Rather than assuming 480 PPQ, determine the actual PPQ value for the project using configuration variables or Reaper's time mapping functions.
 
-### Other Fixes
-4. Implement proper garbage collection and cache invalidation mechanisms
-5. Add better error handling and validation throughout
-6. **Overlay Detection Optimization**: Replace the O(n²) nested loop algorithm with an efficient O(n log n) sweep line algorithm that uses event-based processing to detect overlapping notes of the same pitch. This includes:
+### Performance Optimization Fixes
+4. **Eliminate Redundant Sorting Operations**: Implement a cached sorted notes system to prevent re-sorting the same data in multiple functions:
+   - Create a global cache that sorts notes once when retrieved
+   - Add cache validity tracking to know when to refresh the cache
+   - Invalidate the cache when MIDI selection changes
+   - Update all functions to use the cached sorted notes instead of sorting locally
+   - This changes complexity from O(k×n log n) to O(1×n log n + k×O(1)) where k is the number of functions that need sorted notes
+
+5. **Overlay Detection Optimization**: Replace the O(n²) nested loop algorithm with an efficient O(n log n) sweep line algorithm that uses event-based processing to detect overlapping notes of the same pitch:
    - Creating start and end events for each note
    - Sorting events by time position
    - Processing events in chronological order while tracking active notes by pitch
    - Using a hash set to track overlay indices for O(1) lookup instead of using `table_contains()`
-7. **Undo Block Management Fixes**: Implement proper undo state tracking to prevent incomplete or nested undo blocks:
+
+6. **Undo Block Management Fixes**: Implement proper undo state tracking to prevent incomplete or nested undo blocks:
    - Track undo state with a `undo_block_active` variable
    - Create safe `begin` and `end` functions to prevent nested blocks
    - Use descriptive names for undo blocks instead of empty strings
    - Add cleanup function to ensure all active undo blocks are closed on script termination
-8. Add bounds checking for all Reaper API calls
+
+### Other Fixes
+7. Implement proper garbage collection and cache invalidation mechanisms
+8. Add better error handling and validation throughout
 9. Consolidate duplicate functions (`get_selected_notes()` and `build_notes_cache()`)
 10. Implement proper progress indication for long operations
 11. Fix random seeding to be deterministic for consistent humanization results

@@ -40,6 +40,12 @@ local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
 local last_selected_note_indices = {} -- Store indices of selected notes to detect changes
 
+-- Cached sorted notes system to eliminate redundant sorting operations
+local cached_sorted_notes = {}  -- Cached version of selected notes sorted by start position
+local cached_sorted_notes_valid = false  -- Flag to track if the cached sorted notes are valid
+local cached_take = nil  -- Track which take the cache is for
+local cached_selection_change_time = 0  -- Track when selection last changed
+
 -- Function to get current MIDI context consistently
 function get_midi_context()
     local midi_editor = reaper.MIDIEditor_GetActive()
@@ -242,6 +248,7 @@ function midi_selection_changed()
     -- Compare lengths first
     if #current_selection ~= #last_selection then
         last_selected_note_indices = current_selection
+        invalidate_cached_sorted_notes() -- Invalidate cache when selection changes
         return true
     end
 
@@ -249,6 +256,7 @@ function midi_selection_changed()
     for i = 1, #current_selection do
         if current_selection[i] ~= last_selection[i] then
             last_selected_note_indices = current_selection
+            invalidate_cached_sorted_notes() -- Invalidate cache when selection changes
             return true
         end
     end
@@ -293,19 +301,14 @@ function detect_overlays()
 
     if not current_take then return 0 end
 
-    -- Get selected notes only
-    local selected_notes = get_selected_notes()
+    -- Get cached sorted selected notes to avoid redundant sorting
+    local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return 0  -- Need at least 2 notes to check for overlays
     end
 
-    -- Sort selected notes by start position
-    table.sort(selected_notes, function(a, b)
-        return a.startppqpos < b.startppqpos
-    end)
-
-    -- Find overlapping notes of the same pitch
+    -- Find overlapping notes of the same pitch (notes are already sorted by start position)
     local overlay_indices = {}
     for i, note1 in ipairs(selected_notes) do
         for j = i + 1, #selected_notes do
@@ -356,25 +359,129 @@ function table_contains(table, value)
     return false
 end
 
+-- Function to get cached sorted selected notes
+-- This caches the sorted notes to avoid repeated sorting operations
+function get_cached_sorted_selected_notes()
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take then
+        return {}
+    end
+
+    -- Check if we need to refresh the cache
+    local selection_changed = midi_selection_changed()
+    if selection_changed or not cached_sorted_notes_valid or cached_take ~= current_take then
+        -- Build fresh sorted notes cache
+        local notes = get_selected_notes()
+
+        -- Sort notes by start position
+        table.sort(notes, function(a, b)
+            return a.startppqpos < b.startppqpos
+        end)
+
+        cached_sorted_notes = notes
+        cached_sorted_notes_valid = true
+        cached_take = current_take
+        cached_selection_change_time = reaper.time_precise() or os.clock()
+    end
+
+    return cached_sorted_notes
+end
+
+-- Function to invalidate the cached sorted notes
+function invalidate_cached_sorted_notes()
+    cached_sorted_notes_valid = false
+    cached_sorted_notes = {}
+    cached_take = nil
+end
+
+-- Corrected version of the ms_to_ppq function that properly handles tempo changes
+-- This function converts milliseconds to PPQ (pulses per quarter note) changes for a specific note position
+function ms_to_ppq_corrected(ms, take, note_ppq_pos)
+    if not ms or ms < 0 then
+        return 0
+    end
+
+    if not take or not note_ppq_pos then
+        -- Fallback to original estimation if no take/position provided
+        local tempo = reaper.Master_GetTempo()
+        return (ms * tempo * 480) / (60 * 1000)
+    end
+
+    -- Convert the note's PPQ position to project time
+    local note_time = reaper.MIDI_GetProjTimeFromPPQPos(take, note_ppq_pos)
+    if not note_time or note_time < 0 then
+        -- Fallback if conversion fails
+        local tempo = reaper.Master_GetTempo()
+        return (ms * tempo * 480) / (60 * 1000)
+    end
+
+    -- Calculate the target time after adding the milliseconds (convert ms to seconds)
+    local target_time = note_time + (ms / 1000.0)
+
+    -- Convert both times to PPQ and calculate the difference
+    local target_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, target_time)
+    local current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, note_time)
+
+    if not target_ppq or not current_ppq then
+        -- Fallback if conversion fails
+        local tempo = reaper.Master_GetTempo()
+        return (ms * tempo * 480) / (60 * 1000)
+    end
+
+    -- Return the difference in PPQ, which represents the distance for the specified milliseconds
+    return target_ppq - current_ppq
+end
+
+-- Alternative function to get PPQ difference for legato extension at a specific position
+function get_ppq_delta_for_ms_at_position(ms, take, start_ppq_pos)
+    if not ms or ms <= 0 then
+        return 0
+    end
+
+    if not take or not start_ppq_pos then
+        -- Use default parameters if inputs are invalid
+        local tempo = reaper.Master_GetTempo()
+        return (ms * tempo * 480) / (60 * 1000)
+    end
+
+    -- Get the time for the starting PPQ position
+    local start_time = reaper.MIDI_GetProjTimeFromPPQPos(take, start_ppq_pos)
+    if not start_time then
+        -- Fallback to estimated conversion
+        local tempo = reaper.Master_GetTempo()
+        return (ms * tempo * 480) / (60 * 1000)
+    end
+
+    -- Calculate the end time by adding the milliseconds (converted to seconds)
+    local end_time = start_time + (ms / 1000.0)
+
+    -- Get the PPQ position for the end time
+    local end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, end_time)
+    if not end_ppq then
+        -- Fallback to estimated conversion
+        local tempo = reaper.Master_GetTempo()
+        return (ms * tempo * 480) / (60 * 1000)
+    end
+
+    -- Return the PPQ difference
+    return end_ppq - start_ppq_pos
+end
+
 -- Function to heal note overlays by adjusting note positions so that first note ends before second note starts
 function heal_overlays()
     local current_take, midi_editor = get_midi_context()
 
     if not current_take then return 0 end
 
-    -- Get selected notes only
-    local selected_notes = get_selected_notes()
+    -- Get cached sorted selected notes to avoid redundant sorting
+    local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return 0  -- Need at least 2 notes to check for overlays
     end
 
-    -- Sort selected notes by start position
-    table.sort(selected_notes, function(a, b)
-        return a.startppqpos < b.startppqpos
-    end)
-
-    -- Find overlapping notes of the same pitch and resolve the overlays
+    -- Find overlapping notes of the same pitch and resolve the overlays (notes are already sorted by start position)
     local resolved_count = 0
     for i, note1 in ipairs(selected_notes) do
         for j = i + 1, #selected_notes do
@@ -425,22 +532,14 @@ end
 function detect_overlays_count(current_take)
     if not current_take then return 0 end
 
-    -- Get the current MIDI context to get selected notes
-    local _, _ = get_midi_context()
-
-    -- Get selected notes only
-    local selected_notes = get_selected_notes()
+    -- Get cached sorted selected notes to avoid redundant sorting
+    local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return 0  -- Need at least 2 notes to check for overlays
     end
 
-    -- Sort selected notes by start position
-    table.sort(selected_notes, function(a, b)
-        return a.startppqpos < b.startppqpos
-    end)
-
-    -- Find overlapping notes of the same pitch
+    -- Find overlapping notes of the same pitch (notes are already sorted by start position)
     local overlay_indices = {}
     for i, note1 in ipairs(selected_notes) do
         for j = i + 1, #selected_notes do
@@ -504,18 +603,14 @@ function non_legato()
 
     if not current_take then return end
 
-    local selected_notes = get_selected_notes()
+    -- Get cached sorted selected notes to avoid redundant sorting
+    local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return  -- Need at least 2 notes for non-legato
     end
 
-    -- Sort notes by start position (in case they're not already sorted)
-    table.sort(selected_notes, function(a, b)
-        return a.startppqpos < b.startppqpos
-    end)
-
-    -- Process each note to ensure no overlaps
+    -- Process each note to ensure no overlaps (notes are already sorted by start position)
     for i, note in ipairs(selected_notes) do
         -- Find the next note that starts after this note
         if i < #selected_notes then
@@ -548,18 +643,14 @@ function fill_gaps()
 
     if not current_take then return end
 
-    local selected_notes = get_selected_notes()
+    -- Get cached sorted selected notes to avoid redundant sorting
+    local selected_notes = get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return  -- Need at least 2 notes to fill gaps
     end
 
-    -- Sort notes by start position (in case they're not already sorted)
-    table.sort(selected_notes, function(a, b)
-        return a.startppqpos < b.startppqpos
-    end)
-
-    -- Process each note to extend to the next note's start
+    -- Process each note to extend to the next note's start (notes are already sorted by start position)
     for i, note in ipairs(selected_notes) do
         -- Find the next note that starts after this note
         local next_note_start = nil
@@ -610,45 +701,15 @@ function apply_legato(cache)
 
     if not current_take then return end
 
-    local selected_notes = cache or get_selected_notes()
+    local selected_notes = cache or get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
         return  -- Need at least 2 notes for legato
     end
 
-    -- Get project tempo at the MIDI item's location to convert milliseconds to PPQ
-    -- Use time-based tempo function to handle projects with tempo changes
-    local tempo = reaper.Master_GetTempo()  -- Default to master tempo
-
-    local item = reaper.GetMediaItemTake_Item(current_take)
-    if item then
-        local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-        if item_pos and item_pos ~= -1 then
-            local item_tempo = reaper.TimeMap2_GetDividedBpmAtTime(0, item_pos) -- Use current project (0) and item position
-            if item_tempo and item_tempo > 0 then
-                tempo = item_tempo
-            end
-        end
-    end
-
-    -- Validate tempo value
-    if not tempo or tempo <= 0 then
-        tempo = 120.0  -- Default to 120 BPM if all methods fail
-    end
-
-    -- Convert milliseconds to PPQ (pulses per quarter note)
-    -- Standard MIDI timebase is 480 PPQ at 120 BPM
-    -- 1 ms = (tempo/60) * (480/1000) PPQ
-    local ms_to_ppq = function(ms)
-        if not ms or ms < 0 then
-            return 0
-        end
-        return (ms * tempo * 480) / (60 * 1000)
-    end
-
     -- Calculate the delta from the drag start value
     local delta_ms = legato_amount - drag_start_legato_amount
-    local delta_ppq = ms_to_ppq(delta_ms)
+    local delta_ppq = ms_to_ppq_corrected(delta_ms, current_take, selected_notes[1] and selected_notes[1].startppqpos or 0)
 
     -- Apply the delta to the baseline state from when dragging started
     for i, note in ipairs(selected_notes) do
@@ -683,7 +744,7 @@ function apply_legato(cache)
 
                 -- Generate random humanization value in milliseconds
                 local humanize_ms = math.random() * humanize_range_ms
-                local humanize_ppq = (humanize_ms * tempo * 480) / (60 * 1000)
+                local humanize_ppq = ms_to_ppq_corrected(humanize_ms, current_take, note.startppqpos)
 
                 -- Add humanization to current position
                 new_end_ppq = new_end_ppq + humanize_ppq
@@ -704,7 +765,7 @@ function apply_legato(cache)
         -- Apply humanization range constraints (only if humanization is active and next note exists)
         if humanize_strength > 0 and i < #selected_notes then
             -- Ensure the note doesn't end before the next note starts (with reasonable overlap)
-            local min_overlap_ppq = (2 * tempo * 480) / (60 * 1000) -- Minimum 2ms overlap
+            local min_overlap_ppq = ms_to_ppq_corrected(2, current_take, next_note.startppqpos) -- Minimum 2ms overlap
             local min_end_position = next_note.startppqpos + min_overlap_ppq
             new_end_ppq = math.max(new_end_ppq, min_end_position)
 
@@ -746,6 +807,7 @@ function loop()
         -- Clean up caches when the script is terminated to prevent memory leaks
         notes_cache = {}
         drag_start_note_states = {}
+        invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
         -- Reset all state variables when script terminates
         legato_amount = 0
         humanize_strength = 0
@@ -764,6 +826,7 @@ function loop()
         -- NOTE: For this tool, we should clear caches that may be invalidated
         notes_cache = {}
         drag_start_note_states = {}
+        invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
         -- Reset all state variables when undo occurs
         legato_amount = 0
         humanize_strength = 0
@@ -776,6 +839,7 @@ function loop()
         -- Invalidate caches when redo occurs
         notes_cache = {}
         drag_start_note_states = {}
+        invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
         -- Reset all state variables when redo occurs
         legato_amount = 0
         humanize_strength = 0
@@ -786,6 +850,7 @@ function loop()
         -- Clean up caches when the script is terminated to prevent memory leaks
         notes_cache = {}
         drag_start_note_states = {}
+        invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
         -- Reset all state variables when script terminates via Escape key
         legato_amount = 0
         humanize_strength = 0
@@ -813,6 +878,7 @@ function loop()
     if not script_running then
         notes_cache = {}
         drag_start_note_states = {}
+        invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
     end
 
     if visible and script_running then
@@ -829,6 +895,7 @@ function loop()
                 if #drag_start_note_states > 0 then
                     drag_start_note_states = {}
                 end
+                invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
             end
 
             take = current_take
@@ -837,7 +904,7 @@ function loop()
                 imgui.Text(ctx, "Could not get MIDI take.")
             else
                 -- Check if MIDI selection has changed
-                if midi_selection_changed() then
+                if midi_selection_changed() then  -- This also handles cache invalidation
                     -- Reset to fresh state when selection changes (like just opened)
                     legato_amount = 0  -- Reset slider to 0
                     humanize_strength = 0  -- Reset humanize strength to default
@@ -875,6 +942,7 @@ function loop()
                     -- Create an undo point for the current state
                     reaper.Undo_BeginBlock()
                     select_all_notes()  -- Call the new select all function
+                    invalidate_cached_sorted_notes() -- Invalidate cache after selection changes
                     reaper.Undo_EndBlock("Select all notes in take", -1)
                 end
 
@@ -887,6 +955,7 @@ function loop()
                         reaper.Undo_BeginBlock()
                         fill_gaps()  -- Call the new fill gaps function
                         legato_amount = 0  -- Reset legato slider to 0
+                        invalidate_cached_sorted_notes() -- Invalidate cache after changes
                         reaper.Undo_EndBlock("Fill gaps between notes", -1)
                     end
                     imgui.SameLine(ctx)  -- Put the Non-legato button next to Fill gaps
@@ -895,6 +964,7 @@ function loop()
                         reaper.Undo_BeginBlock()
                         non_legato()  -- Call the new non-legato function
                         legato_amount = 0  -- Reset legato slider to 0
+                        invalidate_cached_sorted_notes() -- Invalidate cache after changes
                         reaper.Undo_EndBlock("Apply non-legato (de-legato) to notes", -1)
                     end
                     imgui.SameLine(ctx)  -- Put the Detect overlays button next to Non-legato
@@ -902,6 +972,7 @@ function loop()
                         -- Create an undo point for the current state
                         reaper.Undo_BeginBlock()
                         overlay_count = detect_overlays()  -- Call the new detect overlays function and store count
+                        invalidate_cached_sorted_notes() -- Invalidate cache after changes
                         reaper.Undo_EndBlock("Detect and select overlays", -1)
                     end
                     imgui.SameLine(ctx)  -- Put the Heal overlays button next to Detect overlays
@@ -910,6 +981,7 @@ function loop()
                         reaper.Undo_BeginBlock()
                         local resolved_count = heal_overlays()  -- Call the heal overlays function
                         overlay_count = detect_overlays_count(current_take)  -- Update overlay count after healing
+                        invalidate_cached_sorted_notes() -- Invalidate cache after changes
                         reaper.Undo_EndBlock("Heal note overlays", -1)
                     end
                 else
@@ -996,6 +1068,7 @@ function loop()
                         if #notes_cache > 0 then
                             notes_cache = {}
                         end
+                        invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache after applying changes
                     end
                 else
                     imgui.BeginDisabled(ctx)
