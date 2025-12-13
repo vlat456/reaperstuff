@@ -1,6 +1,6 @@
 -- @description Legato Tool - Creating legato effects and stuff 
 -- @author drvlat
--- @version 0.1.2
+-- @version 0.1.3
 -- @provides [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] .
 -- @about
 --   This is a ReaScript for REAPER that provides tools for creating legato effects in MIDI.
@@ -9,6 +9,7 @@
 --
 --   The tool provides a user interface for adjusting settings and applying legato effects
 --   to selected MIDI notes in the MIDI editor.
+-- @changelog 0.1.3 - added Non-legato function and legato humanization.
 
 local reaper = reaper
 
