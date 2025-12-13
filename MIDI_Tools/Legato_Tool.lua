@@ -1049,8 +1049,6 @@ function loop()
                     jitter_max = new_jitter_max
                 end
 
-                -- Display overlay count text
-                imgui.Text(ctx, tostring(overlay_count) .. " overlays detected")
 
             end
         end
