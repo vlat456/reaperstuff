@@ -9,7 +9,10 @@
 --
 --   The tool provides a user interface for adjusting settings and applying legato effects
 --   to selected MIDI notes in the MIDI editor.
--- @changelog 0.1.3 - added Non-legato function and legato humanization.
+-- @changelog 
+--      0.1.4 - non-deterministic humanization
+--      0.1.3 - added Non-legato function and legato humanization.
+
 
 local reaper = reaper
 
