@@ -186,8 +186,19 @@ function apply_legato(cache, handle_undo)
             baseline_end_pos = note.original_endppqpos  -- This is the baseline when cache was made
         else
             -- Fallback to current state if no cache
-            local _, _, _, _, current_end, _, _, _ = reaper.MIDI_GetNote(current_take, note.index)
-            baseline_end_pos = current_end
+            local LEGATO_COMMON = require "legato_common"
+            local current_notes = LEGATO_COMMON.get_cached_sorted_selected_notes()
+            for _, current_note in ipairs(current_notes) do
+                if current_note.index == note.index then
+                    baseline_end_pos = current_note.endppqpos
+                    break
+                end
+            end
+            -- If still not found, use direct access as last resort
+            if not baseline_end_pos then
+                local _, _, _, _, current_end, _, _, _ = reaper.MIDI_GetNote(current_take, note.index)
+                baseline_end_pos = current_end
+            end
         end
 
         -- Apply the delta to the baseline state
@@ -215,7 +226,7 @@ function apply_legato(cache, handle_undo)
     -- Only handle undo if explicitly requested (for standalone calls, not during dragging)
     if handle_undo then
         local LEGATO_OPERATIONS = require "legato_operations"
-        local item = reaper.GetMediaItemTake_Item(current_take)
+        local item = reaper.GetMediaItemTake_Item(gui_state.take)
         UNDO_MANAGER.register_undo(item, "Apply legato changes", "Legato operation")
     end
 end
