@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="9c2442b01c318373571d60815d0b08d8d85adb9a">
+<index version="1" name="Walter Scripts" commit="7d7a99d603e5bf4ef8a779ee9c7a8627172eccf8">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
@@ -29,6 +29,15 @@
       </version>
     </reapack>
     <reapack name="Legato_Tool.lua" type="script" desc="Legato Tool - Creating legato effects and stuff">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 This package contains scripts for applying legato effects to MIDI notes. In midi Action List search for: Legato_Tool - Advanced legato editing tool with UI Quick_Heal - Heal overlapping notes with default settings (no UI) Quick_Legato - Fill gaps between selected notes and add 10% legato (no UI)\par}
+}
+]]></description>
+      </metadata>
       <version name="0.2.1" author="drvlat" time="2025-12-14T10:22:33Z">
         <source main="main">https://github.com/vlat456/reaperstuff/raw/9c2442b01c318373571d60815d0b08d8d85adb9a/MIDI_Tools/Legato_Tool.lua</source>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Quick_Heal.lua">https://github.com/vlat456/reaperstuff/raw/9c2442b01c318373571d60815d0b08d8d85adb9a/MIDI_Tools/Quick_Heal.lua</source>
