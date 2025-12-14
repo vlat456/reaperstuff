@@ -95,11 +95,38 @@ function M.get_selected_notes()
     return notes
 end
 
--- Optimized cached sorted notes system
-local sorted_notes_cache = {}
-local sorted_notes_cache_valid = false
-local last_cache_take = nil
-local last_cache_note_count = 0
+-- Optimized cached sorted notes system now uses unified cache manager
+
+-- Unified cache management system (defined before use)
+local cache_manager = {
+    -- Cache state
+    valid = false,
+    data = {},
+    last_take = nil,
+    last_note_count = 0,
+    
+    -- Function to invalidate the cache when needed
+    invalidate = function(self)
+        self.valid = false
+        self.data = {}
+        self.last_take = nil
+        self.last_note_count = 0
+    end,
+    
+    -- Function to check if cache is valid for current context
+    is_valid = function(self, current_take, current_note_count)
+        return self.valid and
+               self.last_take == current_take and
+               self.last_note_count == current_note_count
+    end,
+    
+    -- Function to mark cache as valid with current context
+    mark_valid = function(self, current_take, current_note_count)
+        self.valid = true
+        self.last_take = current_take
+        self.last_note_count = current_note_count
+    end
+}
 
 -- Optimized version of get_selected_notes (no longer needs sorting, uses cached version)
 function M.get_selected_notes_optimized()
@@ -204,13 +231,13 @@ function M.get_cached_sorted_selected_notes()
         return {}
     end
 
-    -- Check if we need to rebuild the cache
-    if not sorted_notes_cache_valid or
-       last_cache_take ~= current_take or
-       last_cache_note_count ~= M.count_selected_notes() then
+    local current_note_count = M.count_selected_notes()
+    
+    -- Check if we need to rebuild the cache using the unified cache manager
+    if not cache_manager:is_valid(current_take, current_note_count) then
 
         -- Build fresh sorted cache
-        sorted_notes_cache = {}
+        cache_manager.data = {}
         local note_index = -1
         local safety_counter = 0
         local max_notes = 10000
@@ -227,7 +254,7 @@ function M.get_cached_sorted_selected_notes()
                 break
             end
 
-            table.insert(sorted_notes_cache, {
+            table.insert(cache_manager.data, {
                 index = note_index,
                 selected = selected,
                 muted = muted,
@@ -242,30 +269,25 @@ function M.get_cached_sorted_selected_notes()
         end
 
         -- Sort notes by start position only once
-        table.sort(sorted_notes_cache, function(a, b)
+        table.sort(cache_manager.data, function(a, b)
             return a.startppqpos < b.startppqpos
         end)
 
-        -- Update cache metadata
-        sorted_notes_cache_valid = true
-        last_cache_take = current_take
-        last_cache_note_count = #sorted_notes_cache
+        -- Mark cache as valid with current context
+        cache_manager:mark_valid(current_take, #cache_manager.data)
     end
 
-    return sorted_notes_cache
+    return cache_manager.data
 end
 
--- Function to invalidate the cache when needed
+-- Primary cache invalidation function - now uses the unified cache manager
 function M.invalidate_sorted_notes_cache()
-    sorted_notes_cache_valid = false
-    sorted_notes_cache = {}
-    last_cache_take = nil
-    last_cache_note_count = 0
+    cache_manager:invalidate()
 end
 
--- For backward compatibility, keep the old function name calling the new one
+-- Backward compatibility wrapper - now uses the same unified cache manager
 function M.invalidate_cached_sorted_notes()
-    M.invalidate_sorted_notes_cache()
+    cache_manager:invalidate()
 end
 
 -- Corrected version of the ms_to_ppq function that properly handles tempo changes

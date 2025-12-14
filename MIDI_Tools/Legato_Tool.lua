@@ -290,9 +290,7 @@ function loop()
                         take = current_take
 
                         -- Invalidate sorted notes cache when note count changes
-                        if last_cache_note_count ~= current_note_count then
-                            invalidate_sorted_notes_cache()
-                        end
+                        invalidate_sorted_notes_cache()
                         
                         -- Invalidate overlay cache when note count or take changes
                         cached_overlay_count = -1
