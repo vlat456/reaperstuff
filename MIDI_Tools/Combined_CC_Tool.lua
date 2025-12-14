@@ -513,6 +513,37 @@ function loop()
             if imgui.Button(ctx, "Remove") then
                 remove_redundant_ccs()
             end
+
+            -- Threshold percentage buttons
+            imgui.Spacing(ctx)
+            imgui.Text(ctx, "Quick Thresholds:")
+
+            -- Create a row of buttons for quick threshold selection
+            local button_width = 50
+            if imgui.Button(ctx, "10%", button_width, 0) then
+                cc_redundancy_threshold = 1  -- 10% of max value 10
+                remove_redundant_ccs()
+            end
+            imgui.SameLine(ctx)
+            if imgui.Button(ctx, "20%", button_width, 0) then
+                cc_redundancy_threshold = 2  -- 20% of max value 10
+                remove_redundant_ccs()
+            end
+            imgui.SameLine(ctx)
+            if imgui.Button(ctx, "50%", button_width, 0) then
+                cc_redundancy_threshold = 5  -- 50% of max value 10
+                remove_redundant_ccs()
+            end
+            imgui.SameLine(ctx)
+            if imgui.Button(ctx, "70%", button_width, 0) then
+                cc_redundancy_threshold = 7  -- 70% of max value 10
+                remove_redundant_ccs()
+            end
+            imgui.SameLine(ctx)
+            if imgui.Button(ctx, "90%", button_width, 0) then
+                cc_redundancy_threshold = 9  -- 90% of max value 10
+                remove_redundant_ccs()
+            end
         end
     end
     
