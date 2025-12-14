@@ -1,8 +1,9 @@
+-- @metapackage
 -- @description Legato Tool - Creating legato effects and stuff. 
 -- @author drvlat
 -- @version 0.2.1
 -- @provides 
---      [nomain] modules/legato_common.lua
+--      modules/legato_common.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool_Quick_Heal.lua 
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool_Quick_Legato.lua
