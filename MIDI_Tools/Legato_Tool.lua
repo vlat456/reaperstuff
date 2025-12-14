@@ -307,6 +307,14 @@ function restore_original_notes(cache)
         end
     end
 
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
+    if current_take then
+        local item = reaper.GetMediaItemTake_Item(current_take)
+        -- Update the item and register the change in undo system
+        reaper.UpdateItemInProject(item)
+        reaper.Undo_OnStateChange_Item(0, "Restore original notes", item)
+    end
     reaper.UpdateArrange()
 end
 
@@ -1195,14 +1203,7 @@ function loop()
                 end
 
                 if imgui.IsItemDeactivatedAfterEdit(ctx) then
-                    -- Apply final changes and register undo when slider is released
-                    if #notes_cache > 0 then
-                        apply_legato(notes_cache, false) -- Apply final legato changes without undo handling during application
-                    else
-                        local temp_cache = build_notes_cache()
-                        apply_legato(temp_cache, false) -- Apply final legato changes without undo handling during application
-                    end
-
+                    -- Register undo when slider is released, but don't reapply changes since they were already applied during drag
                     if take then
                         reaper.MIDI_Sort(take)
                         local item = reaper.GetMediaItemTake_Item(take)
