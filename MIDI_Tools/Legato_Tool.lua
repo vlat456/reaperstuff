@@ -1203,14 +1203,26 @@ function loop()
                 end
 
                 if imgui.IsItemDeactivatedAfterEdit(ctx) then
-                    -- Register undo when slider is released, but don't reapply changes since they were already applied during drag
+                    -- Register undo when slider is released, and reset slider and states to 0 (like Apply button would)
                     if take then
                         reaper.MIDI_Sort(take)
                         local item = reaper.GetMediaItemTake_Item(take)
                         -- Update the item and register the change in undo system
                         reaper.UpdateItemInProject(item)
-                        reaper.Undo_OnStateChange_Item(0, "Adjust legato amount", item)
+                        reaper.Undo_OnStateChange_Item(0, "Apply legato changes", item)
                     end
+
+                    -- Update the drag start reference to current state for future delta calculations
+                    drag_start_legato_amount = legato_amount  -- Set baseline to current value
+                    drag_start_note_states = build_notes_cache()  -- Capture current visual state after changes
+                    legato_amount = 0  -- Reset slider to 0
+
+                    -- Also reset any other drag-related states to maintain consistency
+                    -- If we're currently dragging, make sure to clear the cache
+                    if #notes_cache > 0 then
+                        notes_cache = {}
+                    end
+                    invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache after applying changes
                 end
 
 
