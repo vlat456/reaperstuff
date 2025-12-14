@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="90edbb0713d7f0a9dfbc6e4b58a5407e0448063b">
+<index version="1" name="Walter Scripts" commit="e069ebf2945f95bfa91f8210ce92b7fe92a1fa76">
   <category name="MIDI_Tools">
     <reapack name="legato_package.lua" type="script" desc="Legato Tool - Creating legato effects and stuff.">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 This package contains scripts for applying legato effects to MIDI notes. In midi Action List search for: Legato_Tool - Advanced legato editing tool with UI Legato_Tool_Quick_Heal - Heal overlapping notes with default settings (no UI) Legato_Tool_Quick_Legato - Fill gaps between selected notes and add 10% legato (no UI) Legato_Tool_Quick_NonLegato - Remove legato effect and add small gaps between notes (no UI)\par}
+}
+]]></description>
+      </metadata>
       <version name="0.2.1" author="drvlat" time="2025-12-14T10:37:00Z">
         <changelog><![CDATA[0.2.1 - Documentation updates
 0.2.0 - extracted common functionality to shared library, added quick scripts
