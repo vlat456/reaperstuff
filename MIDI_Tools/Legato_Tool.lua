@@ -1181,8 +1181,8 @@ function loop()
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
                     end
 
-                    imgui.SameLine(ctx)  -- Put the guaranteed heal button next to Detect overlays
-                    if imgui.Button(ctx, "Heal all (guaranteed)") then
+                    imgui.SameLine(ctx)  -- Put the heal overlays button next to Detect overlays
+                    if imgui.Button(ctx, "Heal overlays") then
                         local resolved_count = heal_all_overlaps_guaranteed()  -- Call the guaranteed heal function
                         overlay_count = detect_overlays_count(current_take)  -- Update overlay count after healing
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
@@ -1194,8 +1194,8 @@ function loop()
                     imgui.Button(ctx, "Non-legato")
                     imgui.SameLine(ctx)  -- Put the disabled Detect overlays button next to Non-legato
                     imgui.Button(ctx, "Detect overlays")
-                    imgui.SameLine(ctx)  -- Put the disabled guaranteed heal button next to Detect overlays
-                    imgui.Button(ctx, "Heal all (guaranteed)")
+                    imgui.SameLine(ctx)  -- Put the disabled heal overlays button next to Detect overlays
+                    imgui.Button(ctx, "Heal overlays")
                     imgui.EndDisabled(ctx)
                 end
 
