@@ -7,12 +7,12 @@
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Quick_Legato.lua
 
 -- @about
---   This is a ReaScript for REAPER that provides tools for creating legato effects in MIDI.
---   It extends MIDI notes to create legato effects, detects and handles note overlays,
---   and fills gaps between notes.
---
---   The tool provides a user interface for adjusting settings and applying legato effects
---   to selected MIDI notes in the MIDI editor.
+--   This package contains scripts for applying legato effects to MIDI notes.
+--   In midi Action List search for: 
+--      Legato_Tool - Advanced legato editing tool with UI
+--      Quick_Heal - Heal overlapping notes with default settings (no UI)
+--      Quick_Legato - Fill gaps between selected notes and add 10% legato (no UI)
+
 -- @changelog
 --      0.2.0 - extracted common functionality to shared library, added quick scripts
 --      0.1.6 - resolve all overlays (guaranteed) at once
