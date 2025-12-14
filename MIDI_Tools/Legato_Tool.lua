@@ -1,5 +1,5 @@
 -- @noindex
--- @description Legato_Tool: Advanced legato editing tool with UI
+-- @description Legato_Tool: Advanced legato editing tool with UI (Refactored)
 
 local reaper = reaper
 
@@ -40,8 +40,6 @@ local non_legato = LEGATO_COMMON.non_legato
 local fill_gaps = LEGATO_COMMON.fill_gaps
 local build_notes_cache = LEGATO_COMMON.build_notes_cache
 local common_apply_legato = LEGATO_COMMON.apply_legato  -- Renamed to avoid conflict with GUI-specific function
-
--- The humanization function will be handled inline during GUI interaction to ensure proper access to current global state
 
 -- Check for reaimgui
 if not reaper.ImGui_GetBuiltinPath then
@@ -161,26 +159,26 @@ CLEANUP_MANAGER.setup_atexit_handler("Legato_Tool", cleanup_resources)
 -- This is different from the common apply_legato function and needs to stay here
 function apply_legato(cache, handle_undo)
     local current_take, midi_editor = get_midi_context()
-
+    
     if not current_take then return end
-
+    
     local selected_notes = cache or get_cached_sorted_selected_notes()
-
+    
     if #selected_notes < 2 then
         return  -- Need at least 2 notes for legato
     end
-
+    
     -- Calculate the delta from the drag start value
     local delta_ms = gui_state.legato_amount - gui_state.drag_start_legato_amount
     local delta_ppq = ms_to_ppq_corrected(delta_ms, current_take, selected_notes[1] and selected_notes[1].startppqpos or 0)
-
+    
     -- Apply the delta to the baseline state from when dragging started
     for i, note in ipairs(selected_notes) do
         local next_note = nil
         if i < #selected_notes then
             next_note = selected_notes[i + 1]
         end
-
+        
         -- Get the baseline end position from the cache (state when dragging started)
         local baseline_end_pos
         if cache and note.original_endppqpos then
@@ -196,14 +194,14 @@ function apply_legato(cache, handle_undo)
             end
             -- If still not found, use direct access as last resort
             if not baseline_end_pos then
-                local _, _, _, _, current_end, _, _, _ = reaper.MIDI_GetNote(current_take, note.index)
+                local _, _, _, current_end, _, _, _ = reaper.MIDI_GetNote(current_take, note.index)
                 baseline_end_pos = current_end
             end
         end
-
+        
         -- Apply the delta to the baseline state
         local new_end_ppq = baseline_end_pos + delta_ppq
-
+        
         -- Apply constraints using shared functions
         
         -- 1. Same pitch notes must not overlap
@@ -217,11 +215,11 @@ function apply_legato(cache, handle_undo)
             return  -- Stop processing this note if error occurs
         end
     end
-
+    
     -- Sort MIDI events to ensure correct ordering after changes
     reaper.MIDI_Sort(current_take)
     reaper.UpdateArrange()
-
+    
     -- Only handle undo if explicitly requested (for standalone calls, not during dragging)
     if handle_undo then
         local item = reaper.GetMediaItemTake_Item(gui_state.take)
@@ -229,16 +227,8 @@ function apply_legato(cache, handle_undo)
     end
 end
 
-
--- Main GUI loop
-function loop()
-    if not script_running then
-        -- Use robust cleanup manager instead of manual cleanup
-        CLEANUP_MANAGER.execute_cleanup("Legato_Tool")
-        return
-    end
-
-    -- Handle global keyboard shortcuts
+-- Handle global keyboard shortcuts
+function handle_keyboard_shortcuts()
     local is_ctrl_down = imgui.IsKeyDown(ctx, imgui.Key_LeftCtrl) or imgui.IsKeyDown(ctx, imgui.Key_RightCtrl)
     local is_super_down = imgui.IsKeyDown(ctx, imgui.Key_LeftSuper) or imgui.IsKeyDown(ctx, imgui.Key_RightSuper)
     local is_shift_down = imgui.IsKeyDown(ctx, imgui.Key_LeftShift) or imgui.IsKeyDown(ctx, imgui.Key_RightShift)
@@ -264,22 +254,259 @@ function loop()
         update_overlay_count()
     end
 
+    -- Escape key handling
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
         script_running = false
-
         -- Clean up caches when the script is terminated to prevent memory leaks
         invalidate_all_caches()
         -- Reset all state variables when script terminates via Escape key
         gui_state.legato_amount = 0
         gui_state.humanize_strength = 0
     end
+end
 
+
+-- Render UI controls for MIDI context
+function render_ui_controls()
+    if gui_state.selected_note_count < 2 then
+        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
+        imgui.Text(ctx, "Select at least 2 notes to apply legato.")
+        reaper.ImGui_PopStyleColor(ctx)
+    else
+        imgui.Text(ctx, tostring(gui_state.selected_note_count) .. " selected notes")
+    end
+
+    -- Select all notes button (full row)
+    if imgui.Button(ctx, "Select all notes", -1, 0) then
+        select_all_notes()  -- Call the new select all function
+        invalidate_all_caches()
+    end
+
+    imgui.Separator(ctx)
+
+    -- Group of action buttons: Fill gaps, Detect Overlays, Heal Overlays
+    render_action_buttons()
+    
+    imgui.Separator(ctx)
+    
+    -- Render legato controls
+    render_legato_controls()
+    
+    imgui.Separator(ctx)
+    
+    -- Render humanization controls
+    render_humanization_controls()
+    
+    -- Render options section
+    render_options_section()
+end
+
+-- Render action buttons group
+function render_action_buttons()
+    if gui_state.selected_note_count >= 2 then
+        if imgui.Button(ctx, "Fill gaps") then
+            fill_gaps()  -- Call the new fill gaps function
+            gui_state.legato_amount = 0  -- Reset legato slider to 0
+            invalidate_all_caches()
+        end
+        imgui.SameLine(ctx)  -- Put the Non-legato button next to Fill gaps
+        if imgui.Button(ctx, "Non-legato") then
+            non_legato()  -- Call the new non-legato function
+            gui_state.legato_amount = 0  -- Reset legato slider to 0
+            invalidate_all_caches()
+        end
+        imgui.SameLine(ctx)  -- Put the Detect overlays button next to Non-legato
+        if imgui.Button(ctx, "Detect overlays") then
+            gui_state.overlay_count = detect_overlays()  -- Call the new detect overlays function and store count
+            invalidate_all_caches()
+        end
+        imgui.SameLine(ctx)  -- Put the heal overlays button next to Detect overlays
+        if imgui.Button(ctx, "Heal overlays") then
+            local resolved_count = heal_all_overlaps_guaranteed()  -- Call the guaranteed heal function
+            gui_state.overlay_count = detect_overlays_count(gui_state.take)  -- Update overlay count after healing
+            invalidate_all_caches()
+        end
+    else
+        imgui.BeginDisabled(ctx)
+        imgui.Button(ctx, "Fill gaps")
+        imgui.SameLine(ctx)  -- Put the disabled Non-legato button next to Fill gaps
+        imgui.Button(ctx, "Non-legato")
+        imgui.SameLine(ctx)  -- Put the disabled Detect overlays button next to Non-legato
+        imgui.Button(ctx, "Detect overlays")
+        imgui.SameLine(ctx)  -- Put the disabled heal overlays button next to Detect overlays
+        imgui.Button(ctx, "Heal overlays")
+        imgui.EndDisabled(ctx)
+    end
+
+    -- Display overlay count text (red if overlays detected)
+    display_overlay_count()
+end
+
+-- Display overlay count text
+function display_overlay_count()
+    if gui_state.overlay_count > 0 then
+        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
+        imgui.Text(ctx, tostring(gui_state.overlay_count) .. " overlays detected")
+        reaper.ImGui_PopStyleColor(ctx)
+    else
+        imgui.Text(ctx, tostring(gui_state.overlay_count) .. " overlays detected")
+    end
+end
+
+-- Render legato controls
+function render_legato_controls()
+    imgui.Text(ctx, "Make Notes Legato")
+    local _, new_legato_amount = imgui.SliderInt(ctx, "Legato Amount (ms)", gui_state.legato_amount, 0, 400, "%d ms")
+
+    -- Handle legato slider interaction for real-time feedback
+    handle_legato_slider_interaction(new_legato_amount)
+end
+
+-- Handle legato slider interaction
+function handle_legato_slider_interaction(new_legato_amount)
+    local value_changed = new_legato_amount ~= gui_state.legato_amount
+    local is_activated = imgui.IsItemActivated(ctx)
+    local is_active = imgui.IsItemActive(ctx)
+
+    -- Build cache when slider interaction starts (when starting to drag)
+    if is_activated then
+        gui_state.drag_start_legato_amount = gui_state.legato_amount  -- Store the value at drag start
+        gui_state.drag_start_note_states = build_notes_cache()  -- Store the note states at drag start
+        gui_state.notes_cache = gui_state.drag_start_note_states  -- Use the drag start states as the reference
+    end
+
+    if value_changed then
+        -- Update legato_amount first
+        gui_state.legato_amount = new_legato_amount
+
+        if gui_state.selected_note_count >= 2 then
+            if is_active and #gui_state.notes_cache > 0 then
+                -- Currently dragging, apply delta from initial state (no undo handling during drag for visual feedback)
+                apply_legato(gui_state.notes_cache, false)
+            else
+                -- Not dragging, apply to current state (like Apply button would)
+                local temp_cache = build_notes_cache()
+                apply_legato(temp_cache, false)
+            end
+        end
+    end
+
+    -- Clear the cache when the slider is not active to prevent memory buildup
+    -- But only when not actively dragging (to preserve the cache during dragging)
+    if not imgui.IsItemActive(ctx) and not imgui.IsItemActivated(ctx) and #gui_state.notes_cache > 0 then
+        gui_state.notes_cache = {}
+    end
+
+    if imgui.IsItemDeactivatedAfterEdit(ctx) then
+        -- Register undo when slider is released, and reset slider and states to 0 (like Apply button would)
+        if gui_state.take then
+            reaper.MIDI_Sort(gui_state.take)
+            local item = reaper.GetMediaItemTake_Item(gui_state.take)
+            -- Use standardized undo management
+            UNDO_MANAGER.register_undo(item, "Apply legato changes", "Legato slider operation")
+        end
+
+        -- Update the drag start reference to current state for future delta calculations
+        gui_state.drag_start_legato_amount = gui_state.legato_amount  -- Set baseline to current value
+        gui_state.drag_start_note_states = build_notes_cache()  -- Capture current visual state after changes
+        gui_state.legato_amount = 0  -- Reset slider to 0
+
+        -- Also reset any other drag-related states to maintain consistency
+        -- If we're currently dragging, make sure to clear the cache
+        if #gui_state.notes_cache > 0 then
+            gui_state.notes_cache = {}
+        end
+        invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache after applying changes
+        gui_state.cached_overlay_count = -1  -- Invalidate overlay cache after applying changes
+        gui_state.last_overlay_calculation_take = nil
+    end
+end
+
+-- Render humanization controls
+function render_humanization_controls()
+    -- Humanize strength slider with real-time interaction
+    local _, new_humanize_strength = imgui.SliderInt(ctx, "Humanize Strength", gui_state.humanize_strength, 0, 100, "%d")
+
+    -- Handle humanize slider interaction for real-time feedback
+    handle_humanization_slider_interaction(new_humanize_strength)
+end
+
+-- Handle humanization slider interaction
+function handle_humanization_slider_interaction(new_humanize_strength)
+    local humanize_value_changed = new_humanize_strength ~= gui_state.humanize_strength
+    local is_humanize_activated = imgui.IsItemActivated(ctx)  -- When user starts dragging
+    local is_humanize_active = imgui.IsItemActive(ctx)        -- While user is dragging
+    local is_humanize_deactivated = imgui.IsItemDeactivatedAfterEdit(ctx)  -- When user releases
+
+    -- Store original state when humanization starts for proper undo behavior
+    if is_humanize_activated then
+        gui_state.drag_start_note_states = build_notes_cache()  -- Store original note states when dragging starts
+    end
+
+    if humanize_value_changed then
+        -- Update humanize_strength first
+        gui_state.humanize_strength = new_humanize_strength
+
+        -- Apply humanization for real-time feedback while dragging
+        -- First restore original state, then apply using current strength to avoid accumulation
+        if gui_state.selected_note_count >= 1 and is_humanize_active then
+            if gui_state.take and #gui_state.drag_start_note_states > 0 then
+                -- Restore to original state
+                restore_original_notes(gui_state.drag_start_note_states)
+                -- Apply humanization with current strength (no undo during dragging)
+                LEGATO_COMMON.apply_humanization(gui_state.humanize_strength, gui_state.keep_within_boundaries, false)
+            end
+        end
+    end
+
+    -- When slider is released, register undo for the current visual state (changes were already applied during drag)
+    if is_humanize_deactivated and gui_state.selected_note_count >= 1 then
+        if gui_state.take then
+            reaper.MIDI_Sort(gui_state.take)
+            local item = reaper.GetMediaItemTake_Item(gui_state.take)
+            -- Use standardized undo management
+            UNDO_MANAGER.register_undo(item, "Apply humanization", "Humanization operation")
+        end
+
+        -- Reset the humanize slider to 0 after applying
+        gui_state.humanize_strength = 0
+        -- Reset the drag start state for future operations
+        gui_state.drag_start_note_states = {}
+        reaper.UpdateArrange() -- Update display after reset
+    end
+end
+
+-- Render options section
+function render_options_section()
+    imgui.Separator(ctx)
+
+    -- Keep within item boundaries checkbox
+    local _, new_keep_within_boundaries = imgui.Checkbox(ctx, "Keep within item boundaries", gui_state.keep_within_boundaries)
+    gui_state.keep_within_boundaries = new_keep_within_boundaries  -- Update the variable
+end
+
+-- Main GUI loop
+function loop()
+    if not script_running then
+        -- Use robust cleanup manager instead of manual cleanup
+        CLEANUP_MANAGER.execute_cleanup("Legato_Tool")
+        return
+    end
+
+    -- Handle global keyboard shortcuts
+    handle_keyboard_shortcuts()
+
+    -- Handle escape key and window management
     local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse
     local visible, open = imgui.Begin(ctx, script_name, true, flags)
+    
+    if not open then
+        script_running = false
+        -- Use robust cleanup manager when window is closed
+        CLEANUP_MANAGER.execute_cleanup("Legato_Tool")
+    end
 
-    if not open then script_running = false end
-
-    -- Check for clicks outside the window to close it
+    -- Check for clicks outside of window to close it
     local is_window_hovered = imgui.IsWindowHovered(ctx, imgui.HoveredFlags_RootAndChildWindows)
     local is_window_focused = imgui.IsWindowFocused(ctx, imgui.FocusedFlags_RootAndChildWindows)
     local is_mouse_down = imgui.IsMouseDown(ctx, imgui.MouseButton_Left)
@@ -318,191 +545,11 @@ function loop()
                 update_note_count()
                 update_overlay_count()
 
-                if gui_state.selected_note_count < 2 then
-                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
-                    imgui.Text(ctx, "Select at least 2 notes to apply legato.")
-                    reaper.ImGui_PopStyleColor(ctx)
-                else
-                    imgui.Text(ctx, tostring(gui_state.selected_note_count) .. " selected notes")
-                end
-
-                -- Select all notes button (full row)
-                if imgui.Button(ctx, "Select all notes", -1, 0) then
-                    select_all_notes()  -- Call the new select all function
-                    invalidate_all_caches()
-                end
-
-                imgui.Separator(ctx)
-
-                -- Group of action buttons: Fill gaps, Detect Overlays, Heal Overlays
-                if gui_state.selected_note_count >= 2 then
-                    if imgui.Button(ctx, "Fill gaps") then
-                        fill_gaps()  -- Call the new fill gaps function
-                        gui_state.legato_amount = 0  -- Reset legato slider to 0
-                        invalidate_all_caches()
-                    end
-                    imgui.SameLine(ctx)  -- Put the Non-legato button next to Fill gaps
-                    if imgui.Button(ctx, "Non-legato") then
-                        non_legato()  -- Call the new non-legato function
-                        gui_state.legato_amount = 0  -- Reset legato slider to 0
-                        invalidate_all_caches()
-                    end
-                    imgui.SameLine(ctx)  -- Put the Detect overlays button next to Non-legato
-                    if imgui.Button(ctx, "Detect overlays") then
-                        gui_state.overlay_count = detect_overlays()  -- Call the new detect overlays function and store count
-                        invalidate_all_caches()
-                    end
-
-                    imgui.SameLine(ctx)  -- Put the heal overlays button next to Detect overlays
-                    if imgui.Button(ctx, "Heal overlays") then
-                        local resolved_count = heal_all_overlaps_guaranteed()  -- Call the guaranteed heal function
-                        gui_state.overlay_count = detect_overlays_count(gui_state.take)  -- Update overlay count after healing
-                        invalidate_all_caches()
-                    end
-                else
-                    imgui.BeginDisabled(ctx)
-                    imgui.Button(ctx, "Fill gaps")
-                    imgui.SameLine(ctx)  -- Put the disabled Non-legato button next to Fill gaps
-                    imgui.Button(ctx, "Non-legato")
-                    imgui.SameLine(ctx)  -- Put the disabled Detect overlays button next to Non-legato
-                    imgui.Button(ctx, "Detect overlays")
-                    imgui.SameLine(ctx)  -- Put the disabled heal overlays button next to Detect overlays
-                    imgui.Button(ctx, "Heal overlays")
-                    imgui.EndDisabled(ctx)
-                end
-
-                -- Display overlay count text (red if overlays detected)
-                if gui_state.overlay_count > 0 then
-                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
-                    imgui.Text(ctx, tostring(gui_state.overlay_count) .. " overlays detected")
-                    reaper.ImGui_PopStyleColor(ctx)
-                else
-                    imgui.Text(ctx, tostring(gui_state.overlay_count) .. " overlays detected")
-                end
-
-                imgui.Separator(ctx)
-
-                -- Legato Section
-                imgui.Text(ctx, "Make Notes Legato")
-                local _, new_legato_amount = imgui.SliderInt(ctx, "Legato Amount (ms)", gui_state.legato_amount, 0, 400, "%d ms")
-
-                -- Handle legato slider interaction for real-time feedback
-                local value_changed = new_legato_amount ~= gui_state.legato_amount
-                local is_activated = imgui.IsItemActivated(ctx)
-                local is_active = imgui.IsItemActive(ctx)
-
-                -- Build cache when slider interaction starts (when starting to drag)
-                if is_activated then
-                    gui_state.drag_start_legato_amount = gui_state.legato_amount  -- Store the value at drag start
-                    gui_state.drag_start_note_states = build_notes_cache()  -- Store the note states at drag start
-                    gui_state.notes_cache = gui_state.drag_start_note_states  -- Use the drag start states as the reference
-                end
-
-                if value_changed then
-                    -- Update legato_amount first
-                    gui_state.legato_amount = new_legato_amount
-
-                    if gui_state.selected_note_count >= 2 then
-                        if is_active and #gui_state.notes_cache > 0 then
-                            -- Currently dragging, apply delta from initial state (no undo handling during drag for visual feedback)
-                            apply_legato(gui_state.notes_cache, false)
-                        else
-                            -- Not dragging, apply to current state (like Apply button would)
-                            local temp_cache = build_notes_cache()
-                            apply_legato(temp_cache, false)
-                        end
-                    end
-                end
-
-                -- Clear the cache when the slider is not active to prevent memory buildup
-                -- But only when not actively dragging (to preserve the cache during dragging)
-                if not imgui.IsItemActive(ctx) and not imgui.IsItemActivated(ctx) and #gui_state.notes_cache > 0 then
-                    gui_state.notes_cache = {}
-                end
-
-                if imgui.IsItemDeactivatedAfterEdit(ctx) then
-                    -- Register undo when slider is released, and reset slider and states to 0 (like Apply button would)
-                    if gui_state.take then
-                        reaper.MIDI_Sort(gui_state.take)
-                        local item = reaper.GetMediaItemTake_Item(gui_state.take)
-                        -- Use standardized undo management
-                        UNDO_MANAGER.register_undo(item, "Apply legato changes", "Legato slider operation")
-                    end
-
-                    -- Update the drag start reference to current state for future delta calculations
-                    gui_state.drag_start_legato_amount = gui_state.legato_amount  -- Set baseline to current value
-                    gui_state.drag_start_note_states = build_notes_cache()  -- Capture current visual state after changes
-                    gui_state.legato_amount = 0  -- Reset slider to 0
-
-                    -- Also reset any other drag-related states to maintain consistency
-                    -- If we're currently dragging, make sure to clear the cache
-                    if #gui_state.notes_cache > 0 then
-                        gui_state.notes_cache = {}
-                    end
-                    invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache after applying changes
-                    gui_state.cached_overlay_count = -1  -- Invalidate overlay cache after applying changes
-                    gui_state.last_overlay_calculation_take = nil
-                end
-
-
-                -- Humanize strength slider with real-time interaction
-                local _, new_humanize_strength = imgui.SliderInt(ctx, "Humanize Strength", gui_state.humanize_strength, 0, 100, "%d")
-
-                -- Handle humanize slider interaction for real-time feedback
-                local humanize_value_changed = new_humanize_strength ~= gui_state.humanize_strength
-                local is_humanize_activated = imgui.IsItemActivated(ctx)  -- When user starts dragging
-                local is_humanize_active = imgui.IsItemActive(ctx)        -- While user is dragging
-                local is_humanize_deactivated = imgui.IsItemDeactivatedAfterEdit(ctx)  -- When user releases
-
-                -- Store original state when humanization starts for proper undo behavior
-                if is_humanize_activated then
-                    gui_state.drag_start_note_states = build_notes_cache()  -- Store original note states when dragging starts
-                end
-
-                if humanize_value_changed then
-                    -- Update humanize_strength first
-                    gui_state.humanize_strength = new_humanize_strength
-
-                    -- Apply humanization for real-time feedback while dragging
-                    -- First restore original state, then apply using current strength to avoid accumulation
-                    if gui_state.selected_note_count >= 1 and is_humanize_active then
-                        if gui_state.take and #gui_state.drag_start_note_states > 0 then
-                            -- Restore to original state
-                            restore_original_notes(gui_state.drag_start_note_states)
-                            -- Apply humanization with current strength (no undo during dragging)
-                            LEGATO_COMMON.apply_humanization(gui_state.humanize_strength, gui_state.keep_within_boundaries, false)
-                        end
-                    end
-                end
-
-                -- When slider is released, register undo for the current visual state (changes were already applied during drag)
-                if is_humanize_deactivated and gui_state.selected_note_count >= 1 then
-                    if gui_state.take then
-                        reaper.MIDI_Sort(gui_state.take)
-                        local item = reaper.GetMediaItemTake_Item(gui_state.take)
-                        -- Use standardized undo management
-                        UNDO_MANAGER.register_undo(item, "Apply humanization", "Humanization operation")
-                    end
-
-                    -- Reset the humanize slider to 0 after applying
-                    gui_state.humanize_strength = 0
-                    -- Reset the drag start state for future operations
-                    gui_state.drag_start_note_states = {}
-                    reaper.UpdateArrange() -- Update display after reset
-                end
-
-                imgui.Separator(ctx)
-
-                -- Keep within item boundaries checkbox
-                local _, new_keep_within_boundaries = imgui.Checkbox(ctx, "Keep within item boundaries", gui_state.keep_within_boundaries)
-                gui_state.keep_within_boundaries = new_keep_within_boundaries  -- Update the variable
-
-
-
-
-            end
-        end
-    end
+                -- Render UI controls
+                render_ui_controls()
+            end -- end of current_take check
+        end -- end of midi_editor check
+    end -- end of visible check
 
     imgui.Spacing(ctx)
     imgui.End(ctx)
