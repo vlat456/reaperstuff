@@ -1,7 +1,7 @@
 -- @metapackage
 -- @description Legato Tool - Creating legato effects and stuff. 
 -- @author drvlat
--- @version 0.2.1
+-- @version 0.2.2
 -- @provides 
 --      [nomain] modules/legato_common.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool.lua
@@ -14,7 +14,7 @@
 --          Legato_Tool_Quick_Heal - Heal overlapping notes with default settings (no UI)
 --          Legato_Tool_Quick_Legato - Fill gaps between selected notes and add 10% legato (no UI)
 -- @changelog
---      0.2.1 - Documentation updates
+--      0.2.2 - Documentation updates
 --      0.2.0 - extracted common functionality to shared library, added quick scripts
 --      0.1.6 - resolve all overlays (guaranteed) at once
 --      0.1.5 - some minor optimization, proper undo handling
