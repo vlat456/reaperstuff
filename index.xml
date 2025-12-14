@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="d0a27ce0af6c2ea99a7fe45093945c6982ea3e22">
+<index version="1" name="Walter Scripts" commit="0e4fe07a78ab68c02872a0f59355169e7f5e5076">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
@@ -34,22 +34,6 @@
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool.lua">https://github.com/vlat456/reaperstuff/raw/d0a27ce0af6c2ea99a7fe45093945c6982ea3e22/MIDI_Tools/Legato_Tool.lua</source>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Quick_Heal.lua">https://github.com/vlat456/reaperstuff/raw/d0a27ce0af6c2ea99a7fe45093945c6982ea3e22/MIDI_Tools/Quick_Heal.lua</source>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Quick_Legato.lua">https://github.com/vlat456/reaperstuff/raw/d0a27ce0af6c2ea99a7fe45093945c6982ea3e22/MIDI_Tools/Quick_Legato.lua</source>
-      </version>
-    </reapack>
-  </category>
-  <category name="MIDI_Tools/modules">
-    <reapack name="legato_common.lua" type="script" desc="Common functions for Legato Tool scripts">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 This file contains common functions shared between the main Legato Tool and the quick scripts (Quick-Legato, Quick-Heal, etc.).\par}
-}
-]]></description>
-      </metadata>
-      <version name="0.1.0" author="drvlat" time="2025-12-14T09:32:54Z">
-        <source main="midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/96e50fd0ff2d33bba50c642548b29c4fcded5f3e/MIDI_Tools/modules/legato_common.lua</source>
       </version>
     </reapack>
   </category>
