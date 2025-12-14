@@ -25,23 +25,11 @@ end
 
 local selected_notes = LEGATO_COMMON.get_selected_notes_optimized()
 if #selected_notes < 2 then
-    reaper.MB("Please select at least 2 MIDI notes to heal overlays.", "Not enough notes", 0)
+    -- Not enough notes to heal, exit silently
     return
 end
 
--- Heal overlays using the common function
-local resolved_count = LEGATO_COMMON.heal_overlays(true)  -- true to register undo
+-- Heal ALL overlays using the guaranteed function (iterative healing)
+LEGATO_COMMON.heal_all_overlaps_guaranteed()  -- registers undo internally
 
-if resolved_count > 0 then
-    reaper.MB("Healed " .. resolved_count .. " note overlay(s).", "Quick Heal Result", 0)
-else
-    -- Check if there were any overlays to begin with
-    local overlay_count = LEGATO_COMMON.detect_overlays_count(current_take)
-    if overlay_count == 0 then
-        reaper.MB("No overlays found to heal.", "Quick Heal Result", 0)
-    else
-        reaper.MB("No overlays could be resolved.", "Quick Heal Result", 0)
-    end
-end
-
-reaper.Undo_OnStateChange_Item(0, "Quick Heal Overlays", reaper.GetMediaItemTake_Item(current_take))
+-- Quick script: no messages, silent operation
