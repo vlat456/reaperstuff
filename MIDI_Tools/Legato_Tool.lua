@@ -1,6 +1,6 @@
 -- @description Legato Tool - Creating legato effects and stuff 
 -- @author drvlat
--- @version 0.1.5
+-- @version 0.1.6
 -- @provides [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] .
 -- @about
 --   This is a ReaScript for REAPER that provides tools for creating legato effects in MIDI.
@@ -10,6 +10,7 @@
 --   The tool provides a user interface for adjusting settings and applying legato effects
 --   to selected MIDI notes in the MIDI editor.
 -- @changelog 
+--      0.1.6 - resolve all overlays (guaranteed) at once
 --      0.1.5 - some minor optimization, proper undo handling
 --      0.1.4 - non-deterministic humanization
 --      0.1.3 - added Non-legato function and legato humanization.
@@ -539,7 +540,12 @@ function get_ppq_delta_for_ms_at_position(ms, take, start_ppq_pos)
 end
 
 -- Function to heal note overlays by adjusting note positions so that first note ends before second note starts
-function heal_overlays()
+function heal_overlays(register_undo)
+    -- Default to true if register_undo is nil
+    if register_undo == nil then
+        register_undo = true
+    end
+
     local current_take, midi_editor = get_midi_context()
 
     if not current_take then return 0 end
@@ -596,9 +602,12 @@ function heal_overlays()
 
     -- Sort MIDI events to ensure correct ordering after changes
     reaper.MIDI_Sort(current_take)
-    -- Update the item and register the change in undo system
-    reaper.UpdateItemInProject(item)
-    reaper.Undo_OnStateChange_Item(0, "Heal note overlays", item)
+
+    if register_undo then
+        -- Update the item and register the change in undo system
+        reaper.UpdateItemInProject(item)
+        reaper.Undo_OnStateChange_Item(0, "Heal note overlays", item)
+    end
     reaper.UpdateArrange()
 
     return resolved_count
@@ -626,7 +635,7 @@ function heal_all_overlaps_guaranteed()
             break  -- No overlaps remain
         end
 
-        local resolved_count = heal_overlays()  -- Apply healing pass
+        local resolved_count = heal_overlays(false)  -- Apply healing pass without undo registration
         total_resolved = total_resolved + resolved_count
 
         iterations = iterations + 1
