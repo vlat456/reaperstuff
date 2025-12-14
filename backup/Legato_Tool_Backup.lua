@@ -10,7 +10,7 @@
 --   The tool provides a user interface for adjusting settings and applying legato effects
 --   to selected MIDI notes in the MIDI editor.
 -- @changelog
---      0.2.0 - extracted common functionality to shared library, added quick scripts
+--      0.2.0 - extracted common functionality to shared library, added quick scripts. Search for LegatoTool in Action List
 --      0.1.6 - resolve all overlays (guaranteed) at once
 --      0.1.5 - some minor optimization, proper undo handling
 --      0.1.4 - non-deterministic humanization
