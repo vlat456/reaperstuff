@@ -1,3 +1,4 @@
+-- @metapackage
 -- @description Offline/Restore all track inserts and save state
 -- @author drvlat
 -- @version 0.0.1
