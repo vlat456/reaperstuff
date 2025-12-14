@@ -2,6 +2,7 @@
 -- @author drvlat
 -- @version 0.2.1
 -- @provides 
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] .
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool_Quick_Heal.lua 
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool_Quick_Legato.lua
 -- @about 
