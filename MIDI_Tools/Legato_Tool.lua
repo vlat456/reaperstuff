@@ -1,6 +1,23 @@
--- @noindex
--- @description Legato Tool: Advanced legato editing tool
+-- @description Legato Tool - Creating legato effects and stuff
+-- @author drvlat
+-- @version 0.2.1
+-- @provides 
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Quick_Heal.lua 
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Quick_Legato.lua
 
+-- @about This package contains scripts for applying legato effects to MIDI notes.
+--      In midi Action List search for: 
+--      Legato_Tool - Advanced legato editing tool with UI
+--      Quick_Heal - Heal overlapping notes with default settings (no UI)
+--      Quick_Legato - Fill gaps between selected notes and add 10% legato (no UI)
+
+-- @changelog
+--      0.2.1 - Documentation updates
+--      0.2.0 - extracted common functionality to shared library, added quick scripts
+--      0.1.6 - resolve all overlays (guaranteed) at once
+--      0.1.5 - some minor optimization, proper undo handling
+--      0.1.4 - non-deterministic humanization
+--      0.1.3 - added Non-legato function and legato humanization.
 local reaper = reaper
 
 -- Get the path of the current script and add modules directory to the search path
