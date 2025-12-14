@@ -20,6 +20,7 @@ local imgui = require('imgui')('0.9.3')
 -- Centralized require statements at the top of the file
 local CLEANUP_MANAGER = require "cleanup_manager"
 local UNDO_MANAGER = require "undo_manager"
+local MIDI_UTILS = require "midi_utils"
 
 -- Script variables
 local script_name = "Combined CC Tool"
@@ -92,12 +93,9 @@ end
 CLEANUP_MANAGER.setup_atexit_handler("Combined_CC_Tool", cleanup_resources)
 
 
--- Function to get current MIDI context consistently
+-- Function to get current MIDI context consistently (wrapper for shared utility)
 function get_midi_context()
-    local midi_editor = reaper.MIDIEditor_GetActive()
-    if not midi_editor then return nil, nil, nil end
-
-    local current_take = reaper.MIDIEditor_GetTake(midi_editor)
+    local current_take, midi_editor = MIDI_UTILS.get_midi_context()
     if not current_take then return nil, nil, nil end
 
     -- Update gui_state.take when we have a valid take
@@ -132,7 +130,7 @@ function compute_selected_ccs_signature()
     return table.concat(signature_parts, ",")
 end
 
--- Helper function to get the active MIDI take
+-- Helper function to get the active MIDI take (wrapper for shared utility)
 function get_active_take()
     return gui_state.take
 end
@@ -238,8 +236,7 @@ function remove_redundant_ccs()
     end
 
     -- Use standardized undo management
-    local item = reaper.GetMediaItemTake_Item(gui_state.take)
-    UNDO_MANAGER.register_undo(item, "Remove " .. changes .. " redundant CC events", "CC removal operation")
+    MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Remove " .. changes .. " redundant CC events", UNDO_MANAGER)
     reaper.MIDI_Sort(gui_state.take) -- Ensure MIDI events are properly sorted after modifications
     calculate_redundant_ccs() -- Recalculate after removal
     gui_state.cc_redundancy_threshold = 0 -- Reset threshold to 0
@@ -267,8 +264,7 @@ function select_all_ccs_in_lane()
     end
 
     -- Use standardized undo management
-    local item = reaper.GetMediaItemTake_Item(gui_state.take)
-    UNDO_MANAGER.register_undo(item, "Select all CCs in lane", "CC selection operation")
+    MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Select all CCs in lane", UNDO_MANAGER)
     reaper.MIDI_Sort(gui_state.take) -- Ensure MIDI events are properly sorted after modifications
     -- Invalidate all caches since selection changed
     gui_state.selected_ccs_cache_valid = false
@@ -490,9 +486,8 @@ function loop()
                 smooth_ccs()  -- Apply once with final smooth_amount
                 if gui_state.take then
                     -- Use standardized undo management
-                    local item = reaper.GetMediaItemTake_Item(gui_state.take)
                     reaper.MIDI_Sort(gui_state.take) -- Ensure MIDI events are properly sorted after modifications
-                    UNDO_MANAGER.register_undo(item, "Smooth CC events", "CC smoothing operation")
+                    MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Smooth CC events", UNDO_MANAGER)
                 end
                 invalidate_all_caches()
                 calculate_redundant_ccs() -- Recalculate redundant count after smoothing ends
@@ -554,27 +549,27 @@ function loop()
             -- Create a row of buttons for quick threshold selection
             local button_width = 50
             if imgui.Button(ctx, "10%", button_width, 0) then
-                gui_state.cc_redundancy_threshold = 1  -- 10% of max value 10
+                gui_state.cc_redundancy_threshold = math.floor(10 * 0.1)  -- 10% of max value 10
                 remove_redundant_ccs()
             end
             imgui.SameLine(ctx)
             if imgui.Button(ctx, "20%", button_width, 0) then
-                gui_state.cc_redundancy_threshold = 2  -- 20% of max value 10
+                gui_state.cc_redundancy_threshold = math.floor(10 * 0.2)  -- 20% of max value 10
                 remove_redundant_ccs()
             end
             imgui.SameLine(ctx)
             if imgui.Button(ctx, "50%", button_width, 0) then
-                gui_state.cc_redundancy_threshold = 5  -- 50% of max value 10
+                gui_state.cc_redundancy_threshold = math.floor(10 * 0.5)  -- 50% of max value 10
                 remove_redundant_ccs()
             end
             imgui.SameLine(ctx)
             if imgui.Button(ctx, "70%", button_width, 0) then
-                gui_state.cc_redundancy_threshold = 7  -- 70% of max value 10
+                gui_state.cc_redundancy_threshold = math.floor(10 * 0.7)  -- 70% of max value 10
                 remove_redundant_ccs()
             end
             imgui.SameLine(ctx)
             if imgui.Button(ctx, "90%", button_width, 0) then
-                gui_state.cc_redundancy_threshold = 9  -- 90% of max value 10
+                gui_state.cc_redundancy_threshold = math.floor(10 * 0.9)  -- 90% of max value 10
                 remove_redundant_ccs()
             end
         end

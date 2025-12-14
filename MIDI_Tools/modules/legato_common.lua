@@ -8,22 +8,16 @@ local M = {} -- Module table
 local UNDO_MANAGER = require "undo_manager"
 local SCRIPT_INIT = require "script_init"
 local LEGATO_OPERATIONS = require "legato_operations"
+local MIDI_UTILS = require "midi_utils"
 
--- Function to get current MIDI context consistently
+-- Function to get current MIDI context consistently (wrapper for shared utility)
 function M.get_midi_context()
-    local midi_editor = reaper.MIDIEditor_GetActive()
-    if not midi_editor then return nil, nil end
-
-    local current_take = reaper.MIDIEditor_GetTake(midi_editor)
-    if not current_take then return nil, nil end
-
-    return current_take, midi_editor
+    return MIDI_UTILS.get_midi_context()
 end
 
--- Helper function to get the active MIDI take
+-- Helper function to get the active MIDI take (wrapper for shared utility)
 function M.get_active_take()
-    local current_take, midi_editor = M.get_midi_context()
-    return current_take
+    return MIDI_UTILS.get_active_take()
 end
 
 -- Function to count selected notes in the current take
@@ -37,7 +31,7 @@ function M.count_selected_notes()
     local note_count = 0
     local note_index = -1
     local safety_counter = 0
-    local max_notes = 10000  -- Safety limit to prevent infinite loops
+    local max_notes = MIDI_UTILS.CONSTANTS.MAX_NOTES_LIMIT  -- Safety limit to prevent infinite loops
 
     while safety_counter < max_notes do
         note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
@@ -62,7 +56,7 @@ function M.get_selected_notes()
     local notes = {}
     local note_index = -1
     local safety_counter = 0
-    local max_notes = 10000  -- Safety limit to prevent infinite loops
+    local max_notes = MIDI_UTILS.CONSTANTS.MAX_NOTES_LIMIT  -- Safety limit to prevent infinite loops
 
     while safety_counter < max_notes do
         note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
@@ -144,39 +138,9 @@ function M.get_selected_notes_optimized()
     return M.get_cached_sorted_selected_notes()
 end
 
--- Function to get media item boundaries in PPQ for the given take
+-- Function to get media item boundaries in PPQ for the given take (wrapper for shared utility)
 function M.get_item_boundaries_in_ppq(take)
-    if not take then return 0, math.huge end  -- Return a reasonable range if no take
-
-    -- Get the media item that contains the take
-    local item = reaper.GetMediaItemTake_Item(take)
-    if not item then return 0, math.huge end
-
-    -- Get item position and length in project time
-    local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-    local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-    if item_pos == nil or item_pos == -1 or item_len == nil or item_len == -1 then
-        -- Error getting item info
-        reaper.MB("Error getting media item info", "Legato Tool Error", 0)
-        return 0, math.huge
-    end
-
-    local item_end = item_pos + item_len
-
-    -- Convert to PPQ relative to the take - check for valid conversion
-    local start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, item_pos)
-    if start_ppq == nil or start_ppq == -1 then
-        reaper.MB("Error converting start time to PPQ", "Legato Tool Error", 0)
-        return 0, math.huge
-    end
-
-    local end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, item_end)
-    if end_ppq == nil or end_ppq == -1 then
-        reaper.MB("Error converting end time to PPQ", "Legato Tool Error", 0)
-        return 0, math.huge
-    end
-
-    return start_ppq, end_ppq
+    return MIDI_UTILS.get_item_boundaries_in_ppq(take)
 end
 
 -- Function to get current selected note indices
@@ -187,7 +151,7 @@ function M.get_current_selected_note_info()
     local selected_indices = {}
     local note_index = -1
     local safety_counter = 0
-    local max_notes = 10000  -- Safety limit to prevent infinite loops
+    local max_notes = MIDI_UTILS.CONSTANTS.MAX_NOTES_LIMIT  -- Safety limit to prevent infinite loops
 
     while safety_counter < max_notes do
         note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
@@ -244,7 +208,7 @@ function M.get_cached_sorted_selected_notes()
         cache_manager.data = {}
         local note_index = -1
         local safety_counter = 0
-        local max_notes = 10000
+        local max_notes = MIDI_UTILS.CONSTANTS.MAX_NOTES_LIMIT
 
         while safety_counter < max_notes do
             note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
@@ -294,42 +258,9 @@ function M.invalidate_cached_sorted_notes()
     cache_manager:invalidate()
 end
 
--- Corrected version of the ms_to_ppq function that properly handles tempo changes
--- This function converts milliseconds to PPQ (pulses per quarter note) changes for a specific note position
+-- Corrected version of the ms_to_ppq function that properly handles tempo changes (wrapper for shared utility)
 function M.ms_to_ppq_corrected(ms, take, note_ppq_pos)
-    if not ms or ms < 0 then
-        return 0
-    end
-
-    if not take or not note_ppq_pos then
-        -- Fallback to original estimation if no take/position provided
-        local tempo = reaper.Master_GetTempo()
-        return (ms * tempo * 480) / (60 * 1000)
-    end
-
-    -- Convert the note's PPQ position to project time
-    local note_time = reaper.MIDI_GetProjTimeFromPPQPos(take, note_ppq_pos)
-    if not note_time or note_time < 0 then
-        -- Fallback if conversion fails
-        local tempo = reaper.Master_GetTempo()
-        return (ms * tempo * 480) / (60 * 1000)
-    end
-
-    -- Calculate the target time after adding the milliseconds (convert ms to seconds)
-    local target_time = note_time + (ms / 1000.0)
-
-    -- Convert both times to PPQ and calculate the difference
-    local target_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, target_time)
-    local current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, note_time)
-
-    if not target_ppq or not current_ppq then
-        -- Fallback if conversion fails
-        local tempo = reaper.Master_GetTempo()
-        return (ms * tempo * 480) / (60 * 1000)
-    end
-
-    -- Return the difference in PPQ, which represents the distance for the specified milliseconds
-    return target_ppq - current_ppq
+    return MIDI_UTILS.ms_to_ppq_corrected(ms, take, note_ppq_pos)
 end
 
 -- Alternative function to get PPQ difference for legato extension at a specific position
@@ -341,7 +272,7 @@ function M.get_ppq_delta_for_ms_at_position(ms, take, start_ppq_pos)
     if not take or not start_ppq_pos then
         -- Use default parameters if inputs are invalid
         local tempo = reaper.Master_GetTempo()
-        return (ms * tempo * 480) / (60 * 1000)
+        return (ms * tempo * MIDI_UTILS.CONSTANTS.DEFAULT_PPQ_RESOLUTION) / (60 * 1000)
     end
 
     -- Get the time for the starting PPQ position
@@ -349,7 +280,7 @@ function M.get_ppq_delta_for_ms_at_position(ms, take, start_ppq_pos)
     if not start_time then
         -- Fallback to estimated conversion
         local tempo = reaper.Master_GetTempo()
-        return (ms * tempo * 480) / (60 * 1000)
+        return (ms * tempo * MIDI_UTILS.CONSTANTS.DEFAULT_PPQ_RESOLUTION) / (60 * 1000)
     end
 
     -- Calculate the end time by adding the milliseconds (converted to seconds)
@@ -360,7 +291,7 @@ function M.get_ppq_delta_for_ms_at_position(ms, take, start_ppq_pos)
     if not end_ppq then
         -- Fallback to estimated conversion
         local tempo = reaper.Master_GetTempo()
-        return (ms * tempo * 480) / (60 * 1000)
+        return (ms * tempo * MIDI_UTILS.CONSTANTS.DEFAULT_PPQ_RESOLUTION) / (60 * 1000)
     end
 
     -- Return the PPQ difference
@@ -591,7 +522,7 @@ function M.non_legato()
             -- Check if this note extends beyond or to the start of the next note
             if note.endppqpos >= next_note.startppqpos then
                 -- Calculate new end position: couple of ten PPQ before next note starts
-                local gap_ppq = 10  -- 10 PPQ gap to avoid mess
+                local gap_ppq = MIDI_UTILS.CONSTANTS.DEFAULT_PPQ_GAP  -- 10 PPQ gap to avoid mess
                 local new_end_ppq = next_note.startppqpos - gap_ppq
 
                 -- Make sure the new end position is not before the start position
@@ -687,7 +618,7 @@ function M.apply_humanization(humanize_strength, keep_within_boundaries, registe
         -- Apply humanization if enabled (humanize_strength > 0)
         if humanize_strength and humanize_strength > 0 then  -- Apply to all notes, regardless if they have a next note
             -- Calculate humanization range based on humanize_strength (0-100 scale)
-            local humanize_range_ms = (humanize_strength / 100.0) * 300  -- Max 300ms variation at full strength (3x stronger)
+            local humanize_range_ms = (humanize_strength / 100.0) * MIDI_UTILS.CONSTANTS.HUMANIZATION_MAX_RANGE_MS  -- Max 300ms variation at full strength (3x stronger)
 
             if humanize_range_ms > 0 then
                 -- Generate bidirectional random humanization value in milliseconds
@@ -712,7 +643,7 @@ function M.apply_humanization(humanize_strength, keep_within_boundaries, registe
                 if next_note_start then
                     -- Ensure the note extends at least to the start of the next note
                     -- We allow a small gap (e.g., 5 PPQ) to avoid exact overlaps
-                    local min_end_ppq = next_note_start - 5
+                    local min_end_ppq = next_note_start - MIDI_UTILS.CONSTANTS.MIN_GAP_PPQ
                     preliminary_end_ppq = math.max(preliminary_end_ppq, min_end_ppq)
                 end
                 
@@ -758,7 +689,7 @@ function M.build_notes_cache()
     local notes = {}
     local note_index = -1
     local safety_counter = 0
-    local max_notes = 10000  -- Safety limit to prevent infinite loops
+    local max_notes = MIDI_UTILS.CONSTANTS.MAX_NOTES_LIMIT  -- Safety limit to prevent infinite loops
 
     while safety_counter < max_notes do
         note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
@@ -861,7 +792,7 @@ function M.apply_legato(cache, legato_amount, humanize_strength, keep_within_bou
         -- Apply humanization if enabled
         if humanize_strength and humanize_strength > 0 then
             -- Calculate humanization range based on humanize_strength (0-100 scale)
-            local humanize_range_ms = (humanize_strength / 100.0) * 300  -- Max 300ms variation at full strength (3x stronger)
+            local humanize_range_ms = (humanize_strength / 100.0) * MIDI_UTILS.CONSTANTS.HUMANIZATION_MAX_RANGE_MS  -- Max 300ms variation at full strength (3x stronger)
 
             if humanize_range_ms > 0 then
                 -- Generate random humanization value in milliseconds

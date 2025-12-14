@@ -11,6 +11,7 @@ package.path = package.path .. ';' .. script_path .. 'modules/?.lua'
 -- Centralized require statements at the top of the file
 local SCRIPT_INIT = require "script_init"
 local LEGATO_COMMON = require "legato_common"
+local MIDI_UTILS = require "midi_utils"
 
 -- Initialize script with validation
 local current_take, selected_notes = SCRIPT_INIT.quick_script_init(2)
