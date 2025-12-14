@@ -1,10 +1,4 @@
--- @description Common functions for Legato Tool scripts
--- @author drvlat
--- @version 0.1.0
--- @provides [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] .
--- @about
---   This file contains common functions shared between the main Legato Tool
---   and the quick scripts (Quick-Legato, Quick-Heal, etc.).
+-- @noindex
 
 local reaper = reaper
 
