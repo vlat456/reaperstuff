@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="b738bf74034a2d336eb9b2237c4488cc220282b0">
+<index version="1" name="Walter Scripts" commit="f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2">
   <category name="MIDI_Tools">
     <reapack name="legato_package.lua" type="script" desc="Legato Tool - Creating legato effects and stuff.">
       <version name="0.2.1" author="drvlat" time="2025-12-14T10:37:00Z">
@@ -106,6 +106,18 @@
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_Legato.lua">https://github.com/vlat456/reaperstuff/raw/b738bf74034a2d336eb9b2237c4488cc220282b0/MIDI_Tools/Legato_Tool_Quick_Legato.lua</source>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_NonLegato.lua">https://github.com/vlat456/reaperstuff/raw/b738bf74034a2d336eb9b2237c4488cc220282b0/MIDI_Tools/Legato_Tool_Quick_NonLegato.lua</source>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_CC_Tool.lua">https://github.com/vlat456/reaperstuff/raw/b738bf74034a2d336eb9b2237c4488cc220282b0/MIDI_Tools/Legato_Tool_CC_Tool.lua</source>
+      </version>
+      <version name="0.3.3testing" author="drvlat" time="2025-12-14T20:41:10Z">
+        <source file="modules/cleanup_manager.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/modules/cleanup_manager.lua</source>
+        <source file="modules/legato_common.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/modules/legato_common.lua</source>
+        <source file="modules/legato_operations.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/modules/legato_operations.lua</source>
+        <source file="modules/script_init.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/modules/script_init.lua</source>
+        <source file="modules/undo_manager.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/modules/undo_manager.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/Legato_Tool.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_Heal.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/Legato_Tool_Quick_Heal.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_Legato.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/Legato_Tool_Quick_Legato.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_NonLegato.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/Legato_Tool_Quick_NonLegato.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_CC_Tool.lua">https://github.com/vlat456/reaperstuff/raw/f76eb32f15f9a5cedaf12b3cc9abb1ff73b779d2/MIDI_Tools/Legato_Tool_CC_Tool.lua</source>
       </version>
     </reapack>
   </category>
