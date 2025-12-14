@@ -665,7 +665,7 @@ function M.fill_gaps()
 end
 
 -- Function to apply only humanization to selected notes (without legato changes)
-function M.apply_humanization(humanize_strength)
+function M.apply_humanization(humanize_strength, keep_within_boundaries)
     local current_take, midi_editor = M.get_midi_context()
 
     if not current_take then return end
@@ -716,7 +716,7 @@ function M.apply_humanization(humanize_strength)
             end
 
             -- 2. Keep within item boundaries if checkbox is enabled
-            local keep_within_boundaries = false -- Default to false for this function
+            keep_within_boundaries = keep_within_boundaries or false -- Default to false if not provided
             if keep_within_boundaries then
                 local item_start_ppq, item_end_ppq = M.get_item_boundaries_in_ppq(current_take)
                 -- Constrain to item end boundary

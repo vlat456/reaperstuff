@@ -49,9 +49,10 @@ local detect_overlays_count = LEGATO_COMMON.detect_overlays_count
 local select_all_notes = LEGATO_COMMON.select_all_notes
 local non_legato = LEGATO_COMMON.non_legato
 local fill_gaps = LEGATO_COMMON.fill_gaps
-local apply_humanization = LEGATO_COMMON.apply_humanization
 local build_notes_cache = LEGATO_COMMON.build_notes_cache
 local common_apply_legato = LEGATO_COMMON.apply_legato  -- Renamed to avoid conflict with GUI-specific function
+
+-- The humanization function will be handled inline during GUI interaction to ensure proper access to current global state
 
 -- Check for reaimgui
 if not reaper.ImGui_GetBuiltinPath then
@@ -456,7 +457,7 @@ function loop()
                             -- Restore to original state
                             restore_original_notes(drag_start_note_states)
                             -- Apply humanization with current strength
-                            apply_humanization()
+                            LEGATO_COMMON.apply_humanization(humanize_strength, keep_within_boundaries)
                         end
                     end
                 end
