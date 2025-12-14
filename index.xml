@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="edc8f7e471826f453ece46eb1b1e59b2c60329f3">
+<index version="1" name="Walter Scripts" commit="c325bf9e1c6a6cd08220f6e91f8e7794b5e3e33d">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
