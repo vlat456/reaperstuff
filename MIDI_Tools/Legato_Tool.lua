@@ -1213,42 +1213,6 @@ function loop()
                     end
                 end
 
-                -- Apply button after legato slider
-                if selected_note_count >= 2 then
-                    if imgui.Button(ctx, "Apply") then
-                        -- Apply current legato amount and register undo
-                        if #notes_cache > 0 then
-                            apply_legato(notes_cache, false) -- Apply with current settings, no undo handling during application
-                        else
-                            local temp_cache = build_notes_cache()
-                            apply_legato(temp_cache, false) -- Apply with current settings, no undo handling during application
-                        end
-
-                        if take then
-                            reaper.MIDI_Sort(take)
-                            local item = reaper.GetMediaItemTake_Item(take)
-                            -- Update the item and register the change in undo system
-                            reaper.UpdateItemInProject(item)
-                            reaper.Undo_OnStateChange_Item(0, "Apply legato changes", item)
-                        end
-
-                        -- Update the drag start reference to current state for future delta calculations
-                        drag_start_legato_amount = legato_amount  -- Set baseline to current value
-                        drag_start_note_states = build_notes_cache()  -- Capture current visual state
-                        legato_amount = 0  -- Reset slider to 0
-
-                        -- Also reset any other drag-related states to maintain consistency
-                        -- If we're currently dragging, make sure to clear the cache
-                        if #notes_cache > 0 then
-                            notes_cache = {}
-                        end
-                        invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache after applying changes
-                    end
-                else
-                    imgui.BeginDisabled(ctx)
-                    imgui.Button(ctx, "Apply")
-                    imgui.EndDisabled(ctx)
-                end
 
                 -- Humanize strength slider
                 local _, new_humanize_strength = imgui.SliderInt(ctx, "Humanize Strength", humanize_strength, 0, 100, "%d")
