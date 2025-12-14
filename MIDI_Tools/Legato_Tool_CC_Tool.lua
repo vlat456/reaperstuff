@@ -1,19 +1,4 @@
--- @description Combined CC Tool - Removing redundant CCs and smoothing selected CCs
--- @author drvlat
--- @version 0.3.1testing
--- @provides 
---      [nomain] modules/*.lua
---      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] .
--- @about
---   This is a ReaScript for REAPER that provides tools for cleaning up MIDI CC data.
---   It removes redundant control change events and smooths selected CCs in the MIDI editor.
---
---   The tool provides a user interface for adjusting settings and applying CC cleanup
---   operations to selected MIDI CCs in the MIDI editor.
--- @changelog 
---      0.3.1testing - Refactored to use unified GUI state management
---      0.1.5 - redundancy removal quick buttons and visual feedback regression fix
---      0.1.4 - working undo
+-- @noindex
 
 local reaper = reaper
 
