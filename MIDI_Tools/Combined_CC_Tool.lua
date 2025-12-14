@@ -37,44 +37,71 @@ local UNDO_MANAGER = require "undo_manager"
 local script_name = "Combined CC Tool"
 local ctx = imgui.CreateContext(script_name)
 local script_running = true
-local take = nil
-local last_clicked_cc_lane = -1
-local lane_name = ""
-local redundant_event_count = 0
-local total_event_count = 0
-local smooth_amount = 0 -- 0-100%
-local cc_redundancy_threshold = 0 -- New global variable for redundancy threshold
-local cc_list_cache = {}
-local selected_in_lane_count = 0
-local selected_ccs_cache_valid = false
-local last_selected_ccs_signature = "" -- Track selection changes to detect when to invalidate cache
+
+-- Unified GUI State Management System
+local gui_state = {
+    -- MIDI context
+    take = nil,
+    last_clicked_cc_lane = -1,
+    lane_name = "",
+    
+    -- CC statistics
+    redundant_event_count = 0,
+    total_event_count = 0,
+    selected_in_lane_count = 0,
+    
+    -- CC controls
+    smooth_amount = 0, -- 0-100%
+    cc_redundancy_threshold = 0,
+    
+    -- Cache management
+    cc_list_cache = {},
+    selected_ccs_cache_valid = false,
+    last_selected_ccs_signature = "", -- Track selection changes to detect when to invalidate cache
+    
+    -- Drag state
+    drag_start_threshold = 0,
+    threshold_drag_active = false
+}
+
+-- Centralized state management functions
+local function invalidate_all_caches()
+    gui_state.cc_list_cache = {}
+    gui_state.selected_ccs_cache_valid = false
+    gui_state.last_selected_ccs_signature = ""
+end
+
+-- Function to ensure gui_state.take is properly updated
+local function update_gui_state_take()
+    local midi_editor = reaper.MIDIEditor_GetActive()
+    if midi_editor then
+        local current_take = reaper.MIDIEditor_GetTake(midi_editor)
+        if current_take then
+            gui_state.take = current_take
+        end
+    end
+end
 
 -- Robust cleanup function
 local function cleanup_resources()
-    -- Clear all caches
-    cc_list_cache = {}
-    selected_ccs_cache_valid = false
-    redundant_event_count = 0
-    total_event_count = 0
-    selected_in_lane_count = 0
-    last_selected_ccs_signature = ""
+    -- Clear all caches using unified state management
+    invalidate_all_caches()
     
     -- Reset all state variables
-    take = nil
-    last_clicked_cc_lane = -1
-    lane_name = ""
-    smooth_amount = 0
-    cc_redundancy_threshold = 0
-    drag_start_threshold = 0
-    threshold_drag_active = false
+    gui_state.take = nil
+    gui_state.last_clicked_cc_lane = -1
+    gui_state.lane_name = ""
+    gui_state.smooth_amount = 0
+    gui_state.cc_redundancy_threshold = 0
+    gui_state.redundant_event_count = 0
+    gui_state.total_event_count = 0
+    gui_state.selected_in_lane_count = 0
+    gui_state.drag_start_threshold = 0
+    gui_state.threshold_drag_active = false
 end
 
 -- Register cleanup function with robust protection
 CLEANUP_MANAGER.setup_atexit_handler("Combined_CC_Tool", cleanup_resources)
-
--- Variables for threshold slider with undo/redo functionality
-local drag_start_threshold = 0 -- Threshold value at the start of dragging
-local threshold_drag_active = false -- Track if threshold slider is currently being dragged
 
 
 -- Function to get current MIDI context consistently
@@ -85,25 +112,28 @@ function get_midi_context()
     local current_take = reaper.MIDIEditor_GetTake(midi_editor)
     if not current_take then return nil, nil, nil end
 
-    local current_lane = reaper.MIDIEditor_GetSetting_int(midi_editor, "last_clicked_cc_lane")
-    if current_lane < 0 or current_lane > 127 then return current_take, midi_editor, current_lane end
+    -- Update gui_state.take when we have a valid take
+    gui_state.take = current_take
 
-    return current_take, midi_editor, current_lane
+    local current_lane = reaper.MIDIEditor_GetSetting_int(midi_editor, "last_clicked_cc_lane")
+    if current_lane < 0 or current_lane > 127 then return gui_state.take, midi_editor, current_lane end
+
+    return gui_state.take, midi_editor, current_lane
 end
 
 -- Function to compute a signature of selected CCs in the current lane to detect selection changes
 function compute_selected_ccs_signature()
     local current_take, midi_editor, lane = get_midi_context()
 
-    if not current_take or lane < 0 or lane > 127 then return "" end
+    if not gui_state.take or lane < 0 or lane > 127 then return "" end
 
     local signature_parts = {}
     local i = -1
     while true do
-        i = reaper.MIDI_EnumSelCC(current_take, i)
+        i = reaper.MIDI_EnumSelCC(gui_state.take, i)
         if i == -1 then break end
 
-        local _, _, _, ppqpos, _, _, cc, _ = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
+        local _, _, _, ppqpos, _, _, cc, _ = reaper.MIDI_GetCC(gui_state.take, i, false, false, 0, 0, 0, 0, 0)
         if cc == lane then
             table.insert(signature_parts, ppqpos) -- Use position to identify the selected CC
         end
@@ -116,8 +146,7 @@ end
 
 -- Helper function to get the active MIDI take
 function get_active_take()
-    local current_take, midi_editor, lane = get_midi_context()
-    return current_take
+    return gui_state.take
 end
 
 -- Logic from "Remove redundant CCs"
@@ -125,53 +154,53 @@ function calculate_redundant_ccs()
     local current_take, midi_editor, lane = get_midi_context()
 
     if not midi_editor then
-        lane_name = "Please open a MIDI editor."
-        total_event_count = 0
-        redundant_event_count = 0
-        take = nil
-        last_clicked_cc_lane = -1  -- Reset to indicate no valid lane
-        selected_ccs_cache_valid = false  -- Invalidate cache when context is invalid
+        gui_state.lane_name = "Please open a MIDI editor."
+        gui_state.total_event_count = 0
+        gui_state.redundant_event_count = 0
+        gui_state.take = nil
+        gui_state.last_clicked_cc_lane = -1  -- Reset to indicate no valid lane
+        gui_state.selected_ccs_cache_valid = false  -- Invalidate cache when context is invalid
         return
     end
 
     if not current_take then
-        lane_name = "Could not get MIDI take."
-        total_event_count = 0
-        redundant_event_count = 0
-        take = nil
-        last_clicked_cc_lane = -1  -- Reset to indicate no valid lane
-        selected_ccs_cache_valid = false  -- Invalidate cache when context is invalid
+        gui_state.lane_name = "Could not get MIDI take."
+        gui_state.total_event_count = 0
+        gui_state.redundant_event_count = 0
+        gui_state.take = nil
+        gui_state.last_clicked_cc_lane = -1  -- Reset to indicate no valid lane
+        gui_state.selected_ccs_cache_valid = false  -- Invalidate cache when context is invalid
         return
     end
 
-    take = current_take
+    -- gui_state.take is already updated in get_midi_context()
 
     if lane < 0 or lane > 127 then
-        redundant_event_count = 0
-        total_event_count = 0
-        lane_name = "Select a CC lane"
-        last_clicked_cc_lane = lane  -- Still update to the invalid lane number so the condition will be accurate
-        selected_ccs_cache_valid = false  -- Invalidate cache when context is invalid
+        gui_state.redundant_event_count = 0
+        gui_state.total_event_count = 0
+        gui_state.lane_name = "Select a CC lane"
+        gui_state.last_clicked_cc_lane = lane  -- Still update to the invalid lane number so the condition will be accurate
+        gui_state.selected_ccs_cache_valid = false  -- Invalidate cache when context is invalid
         return
     end
 
-    last_clicked_cc_lane = lane
+    gui_state.last_clicked_cc_lane = lane
     local _, name = reaper.MIDIEditor_GetSetting_str(midi_editor, "last_clicked_cc_lane", "")
-    lane_name = "CC" .. lane .. " " .. name
+    gui_state.lane_name = "CC" .. lane .. " " .. name
 
-    local _, _, cc_count, _ = reaper.MIDI_CountEvts(take, 0, 0, 0)
+    local _, _, cc_count, _ = reaper.MIDI_CountEvts(gui_state.take, 0, 0, 0)
 
     local last_event_value = nil  -- Use nil to indicate no previous event has been processed yet
-    redundant_event_count = 0
-    total_event_count = 0
+    gui_state.redundant_event_count = 0
+    gui_state.total_event_count = 0
 
     for i = 0, cc_count - 1 do
-        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(take, i, false, false, 0, 0, 0, 0, 0)
-        if cc == last_clicked_cc_lane then
-            total_event_count = total_event_count + 1
+        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(gui_state.take, i, false, false, 0, 0, 0, 0, 0)
+        if cc == gui_state.last_clicked_cc_lane then
+            gui_state.total_event_count = gui_state.total_event_count + 1
             -- Only check for redundancy if this is not the first event in the lane
-            if last_event_value ~= nil and math.abs(val - last_event_value) <= cc_redundancy_threshold then
-                redundant_event_count = redundant_event_count + 1
+            if last_event_value ~= nil and math.abs(val - last_event_value) <= gui_state.cc_redundancy_threshold then
+                gui_state.redundant_event_count = gui_state.redundant_event_count + 1
             end
             -- For the first event, just set it as the reference; for subsequent events, always update the reference
             last_event_value = val
@@ -182,26 +211,30 @@ end
 function remove_redundant_ccs()
     local current_take, midi_editor, lane = get_midi_context()
 
-    if not current_take then return end
+    if not gui_state.take then return end
     if lane < 0 or lane > 127 then return end
 
     -- First, collect all indices of redundant CCs to avoid index shifting issues during deletion
     -- The algorithm processes events in order and marks events as redundant based on similarity
     -- to the last NON-redundant event in the same lane
     local redundant_indices = {}
-    local last_event_value = -1
-    local _, _, cc_count, _ = reaper.MIDI_CountEvts(current_take, 0, 0, 0)
+    local last_event_value = nil  -- Initialize as nil to handle first event properly
+    local first_event_in_lane = true  -- Track if this is the first event in the lane
+    local _, _, cc_count, _ = reaper.MIDI_CountEvts(gui_state.take, 0, 0, 0)
 
     for i = 0, cc_count - 1 do
-        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
+        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(gui_state.take, i, false, false, 0, 0, 0, 0, 0)
         if cc == lane then
-            if math.abs(val - last_event_value) <= cc_redundancy_threshold then
+            if not first_event_in_lane and math.abs(val - last_event_value) <= gui_state.cc_redundancy_threshold then
                 -- This CC is redundant (similar to the last non-redundant value)
                 table.insert(redundant_indices, i)
             else
                 -- This CC is not redundant, so update the reference value
                 last_event_value = val
+                first_event_in_lane = false  -- We've seen the first event now
             end
+            -- Mark that we've seen at least one event in this lane
+            first_event_in_lane = false
         end
         -- CCs in other lanes are ignored for the redundancy calculation
     end
@@ -212,67 +245,66 @@ function remove_redundant_ccs()
     -- Delete redundant CCs in reverse order to avoid index shifting issues
     local changes = 0
     for i = #redundant_indices, 1, -1 do
-        reaper.MIDI_DeleteCC(current_take, redundant_indices[i])
+        reaper.MIDI_DeleteCC(gui_state.take, redundant_indices[i])
         changes = changes + 1
     end
 
     -- Use standardized undo management
-    local item = reaper.GetMediaItemTake_Item(current_take)
+    local item = reaper.GetMediaItemTake_Item(gui_state.take)
     UNDO_MANAGER.register_undo(item, "Remove " .. changes .. " redundant CC events", "CC removal operation")
-    reaper.MIDI_Sort(current_take) -- Ensure MIDI events are properly sorted after modifications
+    reaper.MIDI_Sort(gui_state.take) -- Ensure MIDI events are properly sorted after modifications
     calculate_redundant_ccs() -- Recalculate after removal
-    cc_redundancy_threshold = 0 -- Reset threshold to 0
+    gui_state.cc_redundancy_threshold = 0 -- Reset threshold to 0
     -- Invalidate all caches since CC events were removed
-    selected_ccs_cache_valid = false
+    gui_state.selected_ccs_cache_valid = false
     -- Clear the smoothing cache as well since CC indices may have changed
-    if #cc_list_cache > 0 then
-        cc_list_cache = {}
+    if #gui_state.cc_list_cache > 0 then
+        gui_state.cc_list_cache = {}
     end
 end
 
 function select_all_ccs_in_lane()
     local current_take, midi_editor, lane = get_midi_context()
 
-    if not current_take or lane < 0 or lane > 127 then return end
+    if not gui_state.take or lane < 0 or lane > 127 then return end
 
     local changes = 0
-    local _, _, cc_count, _ = reaper.MIDI_CountEvts(current_take, 0, 0, 0)
+    local _, _, cc_count, _ = reaper.MIDI_CountEvts(gui_state.take, 0, 0, 0)
     for i = 0, cc_count - 1 do
-        local _, selected, muted, ppqpos, chanmsg, chan, msg2, msg3 = reaper.MIDI_GetCC(current_take, i)
+        local _, selected, muted, ppqpos, chanmsg, chan, msg2, msg3 = reaper.MIDI_GetCC(gui_state.take, i)
         if msg2 == lane and not selected then
-            reaper.MIDI_SetCC(current_take, i, true, muted, ppqpos, chanmsg, chan, msg2, msg3, false)
+            reaper.MIDI_SetCC(gui_state.take, i, true, muted, ppqpos, chanmsg, chan, msg2, msg3, 0)
             changes = changes + 1
         end
     end
 
     -- Use standardized undo management
-    local item = reaper.GetMediaItemTake_Item(current_take)
+    local item = reaper.GetMediaItemTake_Item(gui_state.take)
     UNDO_MANAGER.register_undo(item, "Select all CCs in lane", "CC selection operation")
-    reaper.MIDI_Sort(current_take) -- Ensure MIDI events are properly sorted after modifications
+    reaper.MIDI_Sort(gui_state.take) -- Ensure MIDI events are properly sorted after modifications
     -- Invalidate all caches since selection changed
-    selected_ccs_cache_valid = false
+    gui_state.selected_ccs_cache_valid = false
     -- Clear the smoothing cache as well since selected CCs have changed
-    if #cc_list_cache > 0 then
-        cc_list_cache = {}
+    if #gui_state.cc_list_cache > 0 then
+        gui_state.cc_list_cache = {}
     end
     -- Reset the selection signature to force recalculation of selected count in the next GUI update
-    last_selected_ccs_signature = ""
+    gui_state.last_selected_ccs_signature = ""
     -- Update the MIDI arrangement to ensure changes are reflected immediately
     reaper.UpdateArrange()
     -- Immediately update the selected count for the GUI to show correct value
-    local current_take, _, lane = get_midi_context()
-    if current_take and lane >= 0 and lane <= 127 then
-        selected_in_lane_count = 0
+    if gui_state.take and lane >= 0 and lane <= 127 then
+        gui_state.selected_in_lane_count = 0
         local i = -1
         while true do
-            i = reaper.MIDI_EnumSelCC(current_take, i)
+            i = reaper.MIDI_EnumSelCC(gui_state.take, i)
             if i == -1 then break end
-            local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
+            local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(gui_state.take, i, false, false, 0, 0, 0, 0, 0)
             if cc == lane then
-                selected_in_lane_count = selected_in_lane_count + 1
+                gui_state.selected_in_lane_count = gui_state.selected_in_lane_count + 1
             end
         end
-        selected_ccs_cache_valid = true
+        gui_state.selected_ccs_cache_valid = true
     end
 end
 
@@ -281,16 +313,16 @@ end
 function build_cc_cache()
     local current_take, midi_editor, lane = get_midi_context()
 
-    if not current_take then return {} end
+    if not gui_state.take then return {} end
     if lane < 0 or lane > 127 then return {} end
 
     local list = {}
     local i = -1
     while true do
-        i = reaper.MIDI_EnumSelCC(current_take, i)
+        i = reaper.MIDI_EnumSelCC(gui_state.take, i)
         if i == -1 then break end
 
-        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
+        local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(gui_state.take, i, false, false, 0, 0, 0, 0, 0)
         if cc == lane then
             table.insert(list, {idx = i, val = val})
         end
@@ -299,21 +331,21 @@ function build_cc_cache()
 end
 
 function smooth_ccs()
-    if not take or #cc_list_cache < 3 then return end
+    if not gui_state.take or #gui_state.cc_list_cache < 3 then return end
 
-    local c = smooth_amount / 100
+    local c = gui_state.smooth_amount / 100
 
-    for i = 2, #cc_list_cache - 1 do
-        local prev_val = cc_list_cache[i-1].val
-        local curr_val = cc_list_cache[i].val
-        local next_val = cc_list_cache[i+1].val
+    for i = 2, #gui_state.cc_list_cache - 1 do
+        local prev_val = gui_state.cc_list_cache[i-1].val
+        local curr_val = gui_state.cc_list_cache[i].val
+        local next_val = gui_state.cc_list_cache[i+1].val
 
         local avg = (prev_val + curr_val + next_val) / 3
         local new_val = curr_val - c * (curr_val - avg)
         new_val = math.floor(math.max(0, math.min(127, new_val + 0.5)))
 
-        local cc_event = cc_list_cache[i]
-        reaper.MIDI_SetCC(take, cc_event.idx, true, false, nil, nil, nil, nil, new_val, false)
+        local cc_event = gui_state.cc_list_cache[i]
+        reaper.MIDI_SetCC(gui_state.take, cc_event.idx, true, false, nil, nil, nil, nil, new_val, false)
     end
     reaper.UpdateArrange()
 end
@@ -331,11 +363,7 @@ function loop()
     if (is_ctrl_down or is_super_down) and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false) then
         reaper.Undo_DoUndo2(0)  -- Actually, using project-specific as standard Undo_DoUndo() doesn't exist
         -- Invalidate all caches since undo may change CCs or selection
-        selected_ccs_cache_valid = false
-        if #cc_list_cache > 0 then
-            cc_list_cache = {}
-        end
-        last_selected_ccs_signature = ""  -- Reset selection signature after undo
+        invalidate_all_caches()
         -- Recalculate redundant CCs to update display after undo
         calculate_redundant_ccs()
     end
@@ -345,11 +373,7 @@ function loop()
        (is_super_down and is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false)) then
         reaper.Undo_DoRedo2(0)  -- Using project-specific function as it's more reliable
         -- Invalidate all caches since redo may change CCs or selection
-        selected_ccs_cache_valid = false
-        if #cc_list_cache > 0 then
-            cc_list_cache = {}
-        end
-        last_selected_ccs_signature = ""  -- Reset selection signature after redo
+        invalidate_all_caches()
         -- Recalculate redundant CCs to update display after redo
         calculate_redundant_ccs()
     end
@@ -374,96 +398,84 @@ function loop()
 
         if not midi_editor then
             -- Clear cache when no MIDI editor is active
-            if #cc_list_cache > 0 then
-                cc_list_cache = {}
-            end
+            invalidate_all_caches()
             imgui.Text(ctx, "Please open a MIDI editor.")
         else
             -- Clear cache if take or lane changes
-            if take ~= current_take or last_clicked_cc_lane ~= current_lane then
-                if #cc_list_cache > 0 then
-                    cc_list_cache = {}
-                end
-                -- Also invalidate the selected CCs count cache
-                selected_ccs_cache_valid = false
-                last_selected_ccs_signature = "" -- Reset signature when context changes
+            if gui_state.take ~= current_take or gui_state.last_clicked_cc_lane ~= current_lane then
+                invalidate_all_caches()
             end
 
             if not current_take then
                 -- Clear cache if no take is available
-                if #cc_list_cache > 0 then
-                    cc_list_cache = {}
-                end
+                invalidate_all_caches()
                 -- Reset all statistics when no take is available
-                selected_ccs_cache_valid = false
-                redundant_event_count = 0
-                total_event_count = 0
-                selected_in_lane_count = 0
-                last_selected_ccs_signature = ""
-                take = nil
-                last_clicked_cc_lane = -1
-                lane_name = ""
+                gui_state.redundant_event_count = 0
+                gui_state.total_event_count = 0
+                gui_state.selected_in_lane_count = 0
+                gui_state.take = nil
+                gui_state.last_clicked_cc_lane = -1
+                gui_state.lane_name = ""
                 imgui.Text(ctx, "Could not get MIDI take.")
             else
+                -- gui_state.take is already updated in get_midi_context()
+                
                 -- Shared Info
-                if last_clicked_cc_lane ~= current_lane or lane_name == "" then
+                if gui_state.last_clicked_cc_lane ~= current_lane or gui_state.lane_name == "" then
                     calculate_redundant_ccs()
                 end
 
-                if last_clicked_cc_lane < 0 or last_clicked_cc_lane > 127 then
+                if gui_state.last_clicked_cc_lane < 0 or gui_state.last_clicked_cc_lane > 127 then
                     reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
                     imgui.Text(ctx, "Please select a CC lane")
                     reaper.ImGui_PopStyleColor(ctx)
                 else
-                    imgui.Text(ctx, lane_name)
+                    imgui.Text(ctx, gui_state.lane_name)
                 end
             end -- end of current_take check
 
-            if current_take and current_lane >= 0 and current_lane <= 127 then
+            if gui_state.take and current_lane >= 0 and current_lane <= 127 then
                 if imgui.Button(ctx, "Update") then
                     calculate_redundant_ccs()
                     -- Invalidate caches to match the behavior of other UI actions
-                    selected_ccs_cache_valid = false
-                    if #cc_list_cache > 0 then
-                        cc_list_cache = {}
-                    end
+                    invalidate_all_caches()
                 end
             end
             imgui.Separator(ctx)
 
             -- Count selected CCs for the current lane (with caching to avoid repeated calculation)
-            if current_take and current_lane >= 0 and current_lane <= 127 then
+            if gui_state.take and current_lane >= 0 and current_lane <= 127 then
                 -- Check if selection has changed and invalidate cache if needed
                 local current_selection_signature = compute_selected_ccs_signature()
-                if current_selection_signature ~= last_selected_ccs_signature then
-                    selected_ccs_cache_valid = false
-                    last_selected_ccs_signature = current_selection_signature
+                if current_selection_signature ~= gui_state.last_selected_ccs_signature then
+                    gui_state.selected_ccs_cache_valid = false
+                    gui_state.last_selected_ccs_signature = current_selection_signature
                 end
 
                 -- Recalculate if cache is invalid or MIDI context changed
-                if not selected_ccs_cache_valid or take ~= current_take or last_clicked_cc_lane ~= current_lane then
-                    selected_in_lane_count = 0
+                if not gui_state.selected_ccs_cache_valid or gui_state.take ~= current_take or gui_state.last_clicked_cc_lane ~= current_lane then
+                    gui_state.selected_in_lane_count = 0
                     local i = -1
                     while true do
-                        i = reaper.MIDI_EnumSelCC(current_take, i)
+                        i = reaper.MIDI_EnumSelCC(gui_state.take, i)
                         if i == -1 then break end
-                        local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(current_take, i, false, false, 0, 0, 0, 0, 0)
+                        local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(gui_state.take, i, false, false, 0, 0, 0, 0, 0)
                         if cc == current_lane then
-                            selected_in_lane_count = selected_in_lane_count + 1
+                            gui_state.selected_in_lane_count = gui_state.selected_in_lane_count + 1
                         end
                     end
-                    selected_ccs_cache_valid = true
+                    gui_state.selected_ccs_cache_valid = true
                 end
             else
                 -- Reset count if no valid context
-                selected_in_lane_count = 0
-                selected_ccs_cache_valid = false
-                last_selected_ccs_signature = ""
+                gui_state.selected_in_lane_count = 0
+                gui_state.selected_ccs_cache_valid = false
+                gui_state.last_selected_ccs_signature = ""
             end
 
             -- Smooth Section
             imgui.Text(ctx, "Smooth Selected CCs")
-            if selected_in_lane_count < 3 then
+            if gui_state.selected_in_lane_count < 3 then
                 reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
                 imgui.Text(ctx, "Select at least 3 CC events to use smoother.")
                 reaper.ImGui_PopStyleColor(ctx)
@@ -471,68 +483,66 @@ function loop()
                     select_all_ccs_in_lane()
                 end
             end
-            local _, new_smooth_amount = imgui.SliderInt(ctx, "Amount", smooth_amount, 0, 100, "%d%%")
-            smooth_amount = new_smooth_amount
+            local _, new_smooth_amount = imgui.SliderInt(ctx, "Amount", gui_state.smooth_amount, 0, 100, "%d%%")
+            gui_state.smooth_amount = new_smooth_amount
 
             -- Handle smoothing logic
             if imgui.IsItemActivated(ctx) then
                 UNDO_MANAGER.begin_undo_block("CC smoothing operation")
-                cc_list_cache = build_cc_cache()  -- Cache once
+                gui_state.cc_list_cache = build_cc_cache()  -- Cache once
             end
 
             -- Real-time smoothing while dragging the slider
-            if imgui.IsItemActive(ctx) and #cc_list_cache > 0 then
+            if imgui.IsItemActive(ctx) and #gui_state.cc_list_cache > 0 then
                 smooth_ccs()  -- Apply smoothing in real-time while dragging
                 reaper.UpdateArrange() -- Update the view to show real-time changes
             end
 
             if imgui.IsItemDeactivatedAfterEdit(ctx) then
                 smooth_ccs()  -- Apply once with final smooth_amount
-                if take then
+                if gui_state.take then
                     -- Use standardized undo management
-                    local item = reaper.GetMediaItemTake_Item(take)
-                    reaper.MIDI_Sort(take) -- Ensure MIDI events are properly sorted after modifications
+                    local item = reaper.GetMediaItemTake_Item(gui_state.take)
+                    reaper.MIDI_Sort(gui_state.take) -- Ensure MIDI events are properly sorted after modifications
                     UNDO_MANAGER.register_undo(item, "Smooth CC events", "CC smoothing operation")
                 end
-                cc_list_cache = {}
-                -- Also invalidate selected CCs cache since values have changed
-                selected_ccs_cache_valid = false
+                invalidate_all_caches()
                 calculate_redundant_ccs() -- Recalculate redundant count after smoothing ends
             end
 
             -- Clear the cache when the slider is not active to prevent memory buildup
             -- But only when not actively dragging (to preserve the cache during dragging)
-            if not imgui.IsItemActive(ctx) and not imgui.IsItemActivated(ctx) and #cc_list_cache > 0 then
-                cc_list_cache = {}
+            if not imgui.IsItemActive(ctx) and not imgui.IsItemActivated(ctx) and #gui_state.cc_list_cache > 0 then
+                invalidate_all_caches()
             end
 
             imgui.Separator(ctx)
 
             -- Remove Redundant Section
             imgui.Text(ctx, "Remove Redundant CCs")
-            imgui.Text(ctx, "Total Events: " .. total_event_count)
-            imgui.Text(ctx, "Redundant Events: " .. redundant_event_count)
-            local _, new_threshold = imgui.SliderInt(ctx, "Threshold", cc_redundancy_threshold, 0, 10)
+            imgui.Text(ctx, "Total Events: " .. gui_state.total_event_count)
+            imgui.Text(ctx, "Redundant Events: " .. gui_state.redundant_event_count)
+            local _, new_threshold = imgui.SliderInt(ctx, "Threshold", gui_state.cc_redundancy_threshold, 0, 10)
 
             -- Handle threshold slider interaction for real-time feedback
-            local threshold_value_changed = new_threshold ~= cc_redundancy_threshold
+            local threshold_value_changed = new_threshold ~= gui_state.cc_redundancy_threshold
             local is_threshold_activated = imgui.IsItemActivated(ctx)  -- When user starts dragging
             local is_threshold_active = imgui.IsItemActive(ctx)        -- While user is dragging
             local is_threshold_deactivated = imgui.IsItemDeactivatedAfterEdit(ctx)  -- When user releases
 
             if is_threshold_activated then
                 -- Store the original threshold value when starting to drag
-                drag_start_threshold = cc_redundancy_threshold
-                threshold_drag_active = true
+                gui_state.drag_start_threshold = gui_state.cc_redundancy_threshold
+                gui_state.threshold_drag_active = true
             end
 
             if threshold_value_changed then
-                cc_redundancy_threshold = new_threshold
+                gui_state.cc_redundancy_threshold = new_threshold
                 calculate_redundant_ccs() -- Recalculate counts when threshold changes
             end
 
             -- Apply threshold changes in real-time while dragging for visual feedback
-            if is_threshold_active and threshold_drag_active and threshold_value_changed then
+            if is_threshold_active and gui_state.threshold_drag_active and threshold_value_changed then
                 -- Update the display counts in real-time without actually applying deletions during dragging
                 calculate_redundant_ccs() -- Update the display counts based on current threshold
             end
@@ -540,8 +550,8 @@ function loop()
             -- Handle when slider is released after dragging
             if is_threshold_deactivated then
                 -- Just update internal state, don't apply changes automatically
-                if threshold_drag_active then
-                    threshold_drag_active = false
+                if gui_state.threshold_drag_active then
+                    gui_state.threshold_drag_active = false
                 end
             end
 
@@ -556,27 +566,27 @@ function loop()
             -- Create a row of buttons for quick threshold selection
             local button_width = 50
             if imgui.Button(ctx, "10%", button_width, 0) then
-                cc_redundancy_threshold = 1  -- 10% of max value 10
+                gui_state.cc_redundancy_threshold = 1  -- 10% of max value 10
                 remove_redundant_ccs()
             end
             imgui.SameLine(ctx)
             if imgui.Button(ctx, "20%", button_width, 0) then
-                cc_redundancy_threshold = 2  -- 20% of max value 10
+                gui_state.cc_redundancy_threshold = 2  -- 20% of max value 10
                 remove_redundant_ccs()
             end
             imgui.SameLine(ctx)
             if imgui.Button(ctx, "50%", button_width, 0) then
-                cc_redundancy_threshold = 5  -- 50% of max value 10
+                gui_state.cc_redundancy_threshold = 5  -- 50% of max value 10
                 remove_redundant_ccs()
             end
             imgui.SameLine(ctx)
             if imgui.Button(ctx, "70%", button_width, 0) then
-                cc_redundancy_threshold = 7  -- 70% of max value 10
+                gui_state.cc_redundancy_threshold = 7  -- 70% of max value 10
                 remove_redundant_ccs()
             end
             imgui.SameLine(ctx)
             if imgui.Button(ctx, "90%", button_width, 0) then
-                cc_redundancy_threshold = 9  -- 90% of max value 10
+                gui_state.cc_redundancy_threshold = 9  -- 90% of max value 10
                 remove_redundant_ccs()
             end
         end
