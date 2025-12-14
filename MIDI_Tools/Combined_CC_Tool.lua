@@ -1,6 +1,6 @@
 -- @description Combined CC Tool - Removing redundant CCs and smoothing selected CCs
 -- @author drvlat
--- @version 0.1.2
+-- @version 0.1.4
 -- @provides [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] .
 -- @about
 --   This is a ReaScript for REAPER that provides tools for cleaning up MIDI CC data.
@@ -8,6 +8,8 @@
 --
 --   The tool provides a user interface for adjusting settings and applying CC cleanup
 --   operations to selected MIDI CCs in the MIDI editor.
+-- @changelog 
+--      0.1.4 - working undo
 
 local reaper = reaper
 
@@ -40,6 +42,7 @@ local last_selected_ccs_signature = "" -- Track selection changes to detect when
 -- Variables for threshold slider with undo/redo functionality
 local drag_start_threshold = 0 -- Threshold value at the start of dragging
 local threshold_drag_active = false -- Track if threshold slider is currently being dragged
+
 
 -- Function to get current MIDI context consistently
 function get_midi_context()
@@ -146,10 +149,8 @@ end
 function remove_redundant_ccs()
     local current_take, midi_editor, lane = get_midi_context()
 
-    if not current_take or redundant_event_count == 0 then return end
+    if not current_take then return end
     if lane < 0 or lane > 127 then return end
-
-    reaper.Undo_BeginBlock()
 
     -- First, collect all indices of redundant CCs to avoid index shifting issues during deletion
     -- The algorithm processes events in order and marks events as redundant based on similarity
@@ -172,6 +173,9 @@ function remove_redundant_ccs()
         -- CCs in other lanes are ignored for the redundancy calculation
     end
 
+    -- If no redundant CCs found, return early without doing anything
+    if #redundant_indices == 0 then return end
+
     -- Delete redundant CCs in reverse order to avoid index shifting issues
     local changes = 0
     for i = #redundant_indices, 1, -1 do
@@ -179,7 +183,13 @@ function remove_redundant_ccs()
         changes = changes + 1
     end
 
-    reaper.Undo_EndBlock("Remove " .. changes .. " redundant CC events", -1)
+    -- Get the media item associated with the take
+    local item = reaper.GetMediaItemTake_Item(current_take)
+
+    -- Update the item and register the change in undo system
+    reaper.UpdateItemInProject(item)
+    reaper.Undo_OnStateChange_Item(0, "Remove " .. changes .. " redundant CC events", item)
+    reaper.MIDI_Sort(current_take) -- Ensure MIDI events are properly sorted after modifications
     calculate_redundant_ccs() -- Recalculate after removal
     cc_redundancy_threshold = 0 -- Reset threshold to 0
     -- Invalidate all caches since CC events were removed
@@ -195,7 +205,6 @@ function select_all_ccs_in_lane()
 
     if not current_take or lane < 0 or lane > 127 then return end
 
-    reaper.Undo_BeginBlock()
     local changes = 0
     local _, _, cc_count, _ = reaper.MIDI_CountEvts(current_take, 0, 0, 0)
     for i = 0, cc_count - 1 do
@@ -205,7 +214,14 @@ function select_all_ccs_in_lane()
             changes = changes + 1
         end
     end
-    reaper.Undo_EndBlock("Select all CCs in lane", -1)
+
+    -- Get the media item associated with the take
+    local item = reaper.GetMediaItemTake_Item(current_take)
+
+    -- Update the item and register the change in undo system
+    reaper.UpdateItemInProject(item)
+    reaper.Undo_OnStateChange_Item(0, "Select all CCs in lane", item)
+    reaper.MIDI_Sort(current_take) -- Ensure MIDI events are properly sorted after modifications
     -- Invalidate all caches since selection changed
     selected_ccs_cache_valid = false
     -- Clear the smoothing cache as well since selected CCs have changed
@@ -286,17 +302,29 @@ function loop()
 
     -- Undo (Ctrl+Z or Cmd+Z)
     if (is_ctrl_down or is_super_down) and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false) then
-        reaper.Undo_DoUndo2(0)
-        -- Invalidate the selected CCs count cache since undo may change CCs or selection
+        reaper.Undo_DoUndo2(0)  -- Actually, using project-specific as standard Undo_DoUndo() doesn't exist
+        -- Invalidate all caches since undo may change CCs or selection
         selected_ccs_cache_valid = false
+        if #cc_list_cache > 0 then
+            cc_list_cache = {}
+        end
+        last_selected_ccs_signature = ""  -- Reset selection signature after undo
+        -- Recalculate redundant CCs to update display after undo
+        calculate_redundant_ccs()
     end
 
     -- Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS)
     if (is_ctrl_down and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Y, false)) or
        (is_super_down and is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false)) then
-        reaper.Undo_DoRedo2(0)
-        -- Invalidate the selected CCs count cache since redo may change CCs or selection
+        reaper.Undo_DoRedo2(0)  -- Using project-specific function as it's more reliable
+        -- Invalidate all caches since redo may change CCs or selection
         selected_ccs_cache_valid = false
+        if #cc_list_cache > 0 then
+            cc_list_cache = {}
+        end
+        last_selected_ccs_signature = ""  -- Reset selection signature after redo
+        -- Recalculate redundant CCs to update display after redo
+        calculate_redundant_ccs()
     end
     
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
@@ -306,7 +334,9 @@ function loop()
     local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse
     local visible, open = imgui.Begin(ctx, script_name, true, flags)
     
-    if not open then script_running = false end
+    if not open then
+        script_running = false
+    end
     
     if visible and script_running then
         local current_take, midi_editor, current_lane = get_midi_context()
@@ -415,34 +445,30 @@ function loop()
 
             -- Handle smoothing logic
             if imgui.IsItemActivated(ctx) then
-                reaper.Undo_BeginBlock()
-                cc_list_cache = build_cc_cache()
+                reaper.Undo_BeginBlock2(0)
+                cc_list_cache = build_cc_cache()  -- Cache once
             end
 
-            if imgui.IsItemActive(ctx) and #cc_list_cache > 0 then
-                smooth_ccs()
-                calculate_redundant_ccs() -- Recalculate redundant count after smoothing
+            if imgui.IsItemDeactivatedAfterEdit(ctx) then
+                smooth_ccs()  -- Apply once with final smooth_amount
+                if take then
+                    -- Get the media item associated with the take
+                    local item = reaper.GetMediaItemTake_Item(take)
+                    reaper.MIDI_Sort(take) -- Ensure MIDI events are properly sorted after modifications
+                    -- Update the item and register the change in undo system
+                    reaper.UpdateItemInProject(item)
+                    reaper.Undo_OnStateChange_Item(0, "Smooth CC events", item)
+                end
+                cc_list_cache = {}
+                -- Also invalidate selected CCs cache since values have changed
+                selected_ccs_cache_valid = false
+                calculate_redundant_ccs() -- Recalculate redundant count after smoothing ends
             end
 
             -- Clear the cache when the slider is not active to prevent memory buildup
             -- But only when not actively dragging (to preserve the cache during dragging)
             if not imgui.IsItemActive(ctx) and not imgui.IsItemActivated(ctx) and #cc_list_cache > 0 then
                 cc_list_cache = {}
-            end
-
-            if imgui.IsItemDeactivatedAfterEdit(ctx) then
-                if #cc_list_cache > 0 then
-                    reaper.Undo_EndBlock("Smooth CC events", -1)
-                else
-                    reaper.Undo_EndBlock("", -1)
-                end
-                -- Clear the smoothing cache after the operation ends
-                if #cc_list_cache > 0 then
-                    cc_list_cache = {}
-                end
-                -- Also invalidate selected CCs cache since values have changed
-                selected_ccs_cache_valid = false
-                calculate_redundant_ccs() -- Recalculate redundant count after smoothing ends
             end
 
             imgui.Separator(ctx)
@@ -463,8 +489,6 @@ function loop()
                 -- Store the original threshold value when starting to drag
                 drag_start_threshold = cc_redundancy_threshold
                 threshold_drag_active = true
-                -- Begin undo block to group all threshold changes
-                reaper.Undo_BeginBlock()
             end
 
             if threshold_value_changed then
@@ -474,23 +498,15 @@ function loop()
 
             -- Apply threshold changes in real-time while dragging for visual feedback
             if is_threshold_active and threshold_drag_active and threshold_value_changed then
-                -- First, restore the original state before applying new threshold
-                -- Since we started an undo block, we can undo to get back to the original state
-                -- Actually, let's just apply threshold changes in real-time for immediate visual feedback
-                -- We'll temporarily apply the changes and they'll be made permanent when released
-                remove_redundant_ccs()  -- Apply deletion with current threshold
-                calculate_redundant_ccs() -- Update the display counts after deletion
+                -- Update the display counts in real-time without actually applying deletions during dragging
+                calculate_redundant_ccs() -- Update the display counts based on current threshold
             end
 
             -- Handle when slider is released after dragging
             if is_threshold_deactivated then
-                -- End the undo block to commit all changes made during dragging
+                -- Just update internal state, don't apply changes automatically
                 if threshold_drag_active then
-                    reaper.Undo_EndBlock("Adjust CC redundancy threshold", -1)
                     threshold_drag_active = false
-
-                    -- No need to call remove_redundant_ccs() again since it was called during dragging
-                    -- The final state is already applied
                 end
             end
 
