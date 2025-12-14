@@ -1226,19 +1226,40 @@ function loop()
                 end
 
 
-                -- Humanize strength slider
+                -- Humanize strength slider with real-time interaction
                 local _, new_humanize_strength = imgui.SliderInt(ctx, "Humanize Strength", humanize_strength, 0, 100, "%d")
-                humanize_strength = new_humanize_strength
 
-                -- Humanize button
-                if selected_note_count >= 1 then
-                    if imgui.Button(ctx, "Humanize") then
-                        apply_humanization()
+                -- Handle humanize slider interaction for real-time feedback
+                local humanize_value_changed = new_humanize_strength ~= humanize_strength
+                local is_humanize_activated = imgui.IsItemActivated(ctx)  -- When user starts dragging
+                local is_humanize_active = imgui.IsItemActive(ctx)        -- While user is dragging
+                local is_humanize_deactivated = imgui.IsItemDeactivatedAfterEdit(ctx)  -- When user releases
+
+                if humanize_value_changed then
+                    -- Update humanize_strength first
+                    humanize_strength = new_humanize_strength
+
+                    -- Apply humanization for real-time feedback while dragging
+                    if selected_note_count >= 1 and is_humanize_active then
+                        if take then
+                            apply_humanization()  -- Apply humanization in real-time while dragging
+                        end
                     end
-                else
-                    imgui.BeginDisabled(ctx)
-                    imgui.Button(ctx, "Humanize")
-                    imgui.EndDisabled(ctx)
+                end
+
+                -- When slider is released, register undo for the current visual state (changes were already applied during drag)
+                if is_humanize_deactivated and selected_note_count >= 1 then
+                    if take then
+                        reaper.MIDI_Sort(take)
+                        local item = reaper.GetMediaItemTake_Item(take)
+                        -- Update the item and register the change in undo system
+                        reaper.UpdateItemInProject(item)
+                        reaper.Undo_OnStateChange_Item(0, "Apply humanization", item)
+                    end
+
+                    -- Reset the humanize slider to 0 after applying
+                    humanize_strength = 0
+                    reaper.UpdateArrange() -- Update display after reset
                 end
 
                 imgui.Separator(ctx)
