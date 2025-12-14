@@ -11,7 +11,6 @@
 --   The tool provides a user interface for adjusting settings and applying CC cleanup
 --   operations to selected MIDI CCs in the MIDI editor.
 -- @changelog 
-
 --      0.3.1testing - Refactored to use unified GUI state management
 --      0.1.5 - redundancy removal quick buttons and visual feedback regression fix
 --      0.1.4 - working undo
