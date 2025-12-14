@@ -66,6 +66,8 @@ local keep_within_boundaries = false -- Flag to keep notes within media item bou
 local humanize_strength = 0 -- Strength of humanization effect (0-100)
 local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
+local cached_overlay_count = -1  -- Cache for overlay count (-1 = not calculated yet)
+local last_overlay_calculation_take = nil  -- Track which take was used for overlay calculation
 
 -- GUI-specific function for applying legato with delta calculations during dragging
 -- This is different from the common apply_legato function and needs to stay here
@@ -159,6 +161,8 @@ function loop()
         drag_start_note_states = {}
         invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
         last_selected_note_indices = {}  -- Reset selection signature to force recalculation
+        cached_overlay_count = -1  -- Invalidate overlay cache
+        last_overlay_calculation_take = nil
         -- Recalculate statistics to update display after undo
         selected_note_count = count_selected_notes()
         if take then
@@ -175,6 +179,8 @@ function loop()
         drag_start_note_states = {}
         invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
         last_selected_note_indices = {}  -- Reset selection signature to force recalculation
+        cached_overlay_count = -1  -- Invalidate overlay cache
+        last_overlay_calculation_take = nil
         -- Recalculate statistics to update display after redo
         selected_note_count = count_selected_notes()
         if take then
@@ -189,6 +195,8 @@ function loop()
         notes_cache = {}
         drag_start_note_states = {}
         invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
+        cached_overlay_count = -1  -- Invalidate overlay cache
+        last_overlay_calculation_take = nil
         -- Reset all state variables when script terminates via Escape key
         legato_amount = 0
         humanize_strength = 50
@@ -218,6 +226,8 @@ function loop()
         notes_cache = {}
         drag_start_note_states = {}
         invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
+        cached_overlay_count = -1  -- Invalidate overlay cache
+        last_overlay_calculation_take = nil
     end
 
     if visible and script_running then
@@ -235,6 +245,8 @@ function loop()
                     drag_start_note_states = {}
                 end
                 invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
+                cached_overlay_count = -1  -- Invalidate overlay cache when take changes
+                last_overlay_calculation_take = nil
             end
 
             take = current_take
@@ -249,6 +261,8 @@ function loop()
                     drag_start_legato_amount = 0  -- Reset drag start to 0
                     drag_start_note_states = {}  -- Clear the drag start states
                     notes_cache = {}  -- Clear the drag cache
+                    cached_overlay_count = -1  -- Invalidate overlay cache when selection changes
+                    last_overlay_calculation_take = nil
                 end
 
                 -- Count selected notes and overlays (with caching to avoid repeated calculation)
@@ -263,13 +277,23 @@ function loop()
                         if last_cache_note_count ~= current_note_count then
                             invalidate_sorted_notes_cache()
                         end
+                        
+                        -- Invalidate overlay cache when note count or take changes
+                        cached_overlay_count = -1
+                        last_overlay_calculation_take = nil
                     end
 
-                    -- Update overlay count when needed (for display)
-                    overlay_count = detect_overlays_count(current_take)  -- Update overlay count for selected notes
+                    -- Update overlay count only when needed (intelligent caching)
+                    if cached_overlay_count == -1 or last_overlay_calculation_take ~= current_take then
+                        cached_overlay_count = detect_overlays_count(current_take)
+                        last_overlay_calculation_take = current_take
+                    end
+                    overlay_count = cached_overlay_count
                 else
                     selected_note_count = 0
                     overlay_count = 0  -- Reset overlay count when there's no take
+                    cached_overlay_count = -1  -- Invalidate overlay cache
+                    last_overlay_calculation_take = nil
                 end
 
                 if selected_note_count < 2 then
@@ -294,17 +318,23 @@ function loop()
                         fill_gaps()  -- Call the new fill gaps function
                         legato_amount = 0  -- Reset legato slider to 0
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
+                        cached_overlay_count = -1  -- Invalidate overlay cache after changes
+                        last_overlay_calculation_take = nil
                     end
                     imgui.SameLine(ctx)  -- Put the Non-legato button next to Fill gaps
                     if imgui.Button(ctx, "Non-legato") then
                         non_legato()  -- Call the new non-legato function
                         legato_amount = 0  -- Reset legato slider to 0
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
+                        cached_overlay_count = -1  -- Invalidate overlay cache after changes
+                        last_overlay_calculation_take = nil
                     end
                     imgui.SameLine(ctx)  -- Put the Detect overlays button next to Non-legato
                     if imgui.Button(ctx, "Detect overlays") then
                         overlay_count = detect_overlays()  -- Call the new detect overlays function and store count
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
+                        cached_overlay_count = -1  -- Invalidate overlay cache after changes
+                        last_overlay_calculation_take = nil
                     end
 
                     imgui.SameLine(ctx)  -- Put the heal overlays button next to Detect overlays
@@ -312,6 +342,8 @@ function loop()
                         local resolved_count = heal_all_overlaps_guaranteed()  -- Call the guaranteed heal function
                         overlay_count = detect_overlays_count(current_take)  -- Update overlay count after healing
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
+                        cached_overlay_count = -1  -- Invalidate overlay cache after changes
+                        last_overlay_calculation_take = nil
                     end
                 else
                     imgui.BeginDisabled(ctx)
@@ -395,6 +427,8 @@ function loop()
                         notes_cache = {}
                     end
                     invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache after applying changes
+                    cached_overlay_count = -1  -- Invalidate overlay cache after applying changes
+                    last_overlay_calculation_take = nil
                 end
 
 

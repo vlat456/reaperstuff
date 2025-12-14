@@ -81,6 +81,12 @@ This document summarizes the refactoring performed to address code duplication i
 
 - **Consistent behavior**: All scripts now handle edge cases identically
 - **Reduced bugs**: Less chance for inconsistencies between implementations
+
+### 4. Performance Optimization
+
+- **Intelligent caching**: Added caching for overlay count calculation in GUI loop
+- **Reduced CPU usage**: Overlay count now only recalculated when needed (take/selection changes)
+- **Eliminated redundant calculations**: Previously called `detect_overlays_count()` every GUI frame
 - **Easier testing**: Shared functions can be tested once and reused
 
 ## File Structure After Refactoring
