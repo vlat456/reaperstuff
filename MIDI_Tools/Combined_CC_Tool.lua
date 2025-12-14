@@ -9,6 +9,7 @@
 --   The tool provides a user interface for adjusting settings and applying CC cleanup
 --   operations to selected MIDI CCs in the MIDI editor.
 -- @changelog 
+--      0.1.5 - redundancy removal quick buttons and visual feedback regression fix
 --      0.1.4 - working undo
 
 local reaper = reaper
@@ -447,6 +448,12 @@ function loop()
             if imgui.IsItemActivated(ctx) then
                 reaper.Undo_BeginBlock2(0)
                 cc_list_cache = build_cc_cache()  -- Cache once
+            end
+
+            -- Real-time smoothing while dragging the slider
+            if imgui.IsItemActive(ctx) and #cc_list_cache > 0 then
+                smooth_ccs()  -- Apply smoothing in real-time while dragging
+                reaper.UpdateArrange() -- Update the view to show real-time changes
             end
 
             if imgui.IsItemDeactivatedAfterEdit(ctx) then
