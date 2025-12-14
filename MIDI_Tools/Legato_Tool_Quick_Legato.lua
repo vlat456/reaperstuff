@@ -20,7 +20,6 @@ end
 
 local selected_notes = LEGATO_COMMON.get_selected_notes_optimized()
 if #selected_notes < 2 then
-    reaper.MB("Please select at least 2 MIDI notes to apply legato.", "Not enough notes", 0)
     return
 end
 
