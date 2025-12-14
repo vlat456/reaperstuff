@@ -1,11 +1,5 @@
--- @description Quick Legato - Apply legato effect with default settings
--- @author drvlat
--- @version 0.1.0
--- @provides [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] .
--- @about
---   This is a quick legato script that applies legato to selected MIDI notes
---   without any UI. It extends MIDI notes to create legato effects with a
---   default legato amount of 50ms, no humanization, and no boundary constraints.
+-- @noindex
+-- @description LegatoTool: Fill gaps between selected notes and add 10% legato
 
 local reaper = reaper
 

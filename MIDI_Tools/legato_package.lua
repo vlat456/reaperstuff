@@ -2,9 +2,9 @@
 -- @author drvlat
 -- @version 0.2.0
 -- @provides 
---      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool.lua LegatoTool: Advanced legato editing tool
---      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Quick_Heal.lua LegatoTool: Heal overlapping notes quickly
---      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] LegatoTool:Quick_Legato.lua Fill gaps between selected notes and add 10% legato
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool.lua
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Quick_Heal.lua 
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Quick_Legato.lua
 
 -- @about
 --   This is a ReaScript for REAPER that provides tools for creating legato effects in MIDI.

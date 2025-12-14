@@ -1,4 +1,5 @@
 -- @noindex
+-- @description Legato Tool: Advanced legato editing tool
 
 local reaper = reaper
 

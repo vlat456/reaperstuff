@@ -1,10 +1,5 @@
--- @description Quick Heal - Heal note overlays with default settings
--- @author drvlat
--- @version 0.1.0
--- @provides [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] .
--- @about
---   This is a quick heal script that heals note overlays in selected MIDI notes
---   without any UI. It adjusts notes so that same-pitch notes don't overlap.
+-- @noindex
+-- @description LegatoTool: Heal overlapping notes quickly
 
 local reaper = reaper
 
