@@ -49,9 +49,6 @@ local sorted_notes_cache_valid = false
 local last_cache_take = nil
 local last_cache_note_count = 0
 
--- Undo block management to prevent incomplete or nested undo blocks
-local undo_block_active = false  -- Track undo state to prevent nested blocks
-
 -- Function to get current MIDI context consistently
 function get_midi_context()
     local midi_editor = reaper.MIDIEditor_GetActive()
@@ -319,6 +316,9 @@ function detect_overlays()
 
     if not current_take then return 0 end
 
+    -- Get the media item associated with the take
+    local item = reaper.GetMediaItemTake_Item(current_take)
+
     -- Get cached sorted selected notes
     local selected_notes = get_cached_sorted_selected_notes()
 
@@ -364,6 +364,11 @@ function detect_overlays()
         end
     end  -- If no overlays found, keep original selection unchanged
 
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
+    -- Update the item and register the change in undo system
+    reaper.UpdateItemInProject(item)
+    reaper.Undo_OnStateChange_Item(0, "Detect and select overlays", item)
     reaper.UpdateArrange()
     return #overlay_indices
 end
@@ -450,29 +455,6 @@ function invalidate_cached_sorted_notes()
     invalidate_sorted_notes_cache()
 end
 
--- Function to safely begin an undo block
-function safe_undo_begin(description)
-    if not undo_block_active then
-        reaper.Undo_BeginBlock()
-        undo_block_active = true
-    end
-end
-
--- Function to safely end an undo block
-function safe_undo_end(description)
-    if undo_block_active then
-        reaper.Undo_EndBlock(description or "Legato Tool Operation", -1)
-        undo_block_active = false
-    end
-end
-
--- Function to ensure all active undo blocks are closed (for script termination)
-function ensure_undo_blocks_closed()
-    if undo_block_active then
-        reaper.Undo_EndBlock("Legato Tool (cancelled)", -1)
-        undo_block_active = false
-    end
-end
 
 -- Corrected version of the ms_to_ppq function that properly handles tempo changes
 -- This function converts milliseconds to PPQ (pulses per quarter note) changes for a specific note position
@@ -553,6 +535,9 @@ function heal_overlays()
 
     if not current_take then return 0 end
 
+    -- Get the media item associated with the take
+    local item = reaper.GetMediaItemTake_Item(current_take)
+
     -- Get cached sorted selected notes
     local selected_notes = get_cached_sorted_selected_notes()
 
@@ -602,6 +587,9 @@ function heal_overlays()
 
     -- Sort MIDI events to ensure correct ordering after changes
     reaper.MIDI_Sort(current_take)
+    -- Update the item and register the change in undo system
+    reaper.UpdateItemInProject(item)
+    reaper.Undo_OnStateChange_Item(0, "Heal note overlays", item)
     reaper.UpdateArrange()
 
     return resolved_count
@@ -654,7 +642,8 @@ function select_all_notes()
 
     if not current_take then return 0 end
 
-    safe_undo_begin("Select all notes in take")
+    -- Get the media item associated with the take
+    local item = reaper.GetMediaItemTake_Item(current_take)
 
     local note_count = reaper.MIDI_CountEvts(current_take, nil, nil, nil)
     local changes = 0
@@ -674,7 +663,10 @@ function select_all_notes()
     end
 
     reaper.UpdateArrange()
-    safe_undo_end("Select all notes in take")
+
+    -- Update the item and register the change in undo system
+    reaper.UpdateItemInProject(item)
+    reaper.Undo_OnStateChange_Item(0, "Select all notes in take", item)
 
     return changes
 end
@@ -684,6 +676,9 @@ function non_legato()
     local current_take, midi_editor = get_midi_context()
 
     if not current_take then return end
+
+    -- Get the media item associated with the take
+    local item = reaper.GetMediaItemTake_Item(current_take)
 
     -- Get cached sorted selected notes
     local selected_notes = get_cached_sorted_selected_notes()
@@ -716,6 +711,11 @@ function non_legato()
         end
     end
 
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
+    -- Update the item and register the change in undo system
+    reaper.UpdateItemInProject(item)
+    reaper.Undo_OnStateChange_Item(0, "Apply non-legato (de-legato) to notes", item)
     reaper.UpdateArrange()
 end
 
@@ -724,6 +724,9 @@ function fill_gaps()
     local current_take, midi_editor = get_midi_context()
 
     if not current_take then return end
+
+    -- Get the media item associated with the take
+    local item = reaper.GetMediaItemTake_Item(current_take)
 
     -- Get cached sorted selected notes
     local selected_notes = get_cached_sorted_selected_notes()
@@ -773,6 +776,11 @@ function fill_gaps()
         end
     end
 
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
+    -- Update the item and register the change in undo system
+    reaper.UpdateItemInProject(item)
+    reaper.Undo_OnStateChange_Item(0, "Fill gaps between notes", item)
     reaper.UpdateArrange()
 end
 
@@ -782,6 +790,9 @@ function apply_humanization()
     local current_take, midi_editor = get_midi_context()
 
     if not current_take then return end
+
+    -- Get the media item associated with the take
+    local item = reaper.GetMediaItemTake_Item(current_take)
 
     local selected_notes = get_cached_sorted_selected_notes()
 
@@ -849,11 +860,16 @@ function apply_humanization()
         end
     end
 
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
+    -- Update the item and register the change in undo system
+    reaper.UpdateItemInProject(item)
+    reaper.Undo_OnStateChange_Item(0, "Apply humanization", item)
     reaper.UpdateArrange()
 end
 
 -- Function to apply legato to selected notes using delta from baseline state
-function apply_legato(cache)
+function apply_legato(cache, handle_undo)
     local current_take, midi_editor = get_midi_context()
 
     if not current_take then return end
@@ -923,15 +939,23 @@ function apply_legato(cache)
         end
     end
 
+    -- Sort MIDI events to ensure correct ordering after changes
+    reaper.MIDI_Sort(current_take)
     reaper.UpdateArrange()
+
+    -- Only handle undo if explicitly requested (for standalone calls, not during dragging)
+    if handle_undo then
+        local item = reaper.GetMediaItemTake_Item(current_take)
+        -- Update the item and register the change in undo system
+        reaper.UpdateItemInProject(item)
+        reaper.Undo_OnStateChange_Item(0, "Apply legato changes", item)
+    end
 end
 
 
 -- Main GUI loop
 function loop()
     if not script_running then
-        -- Ensure any active undo blocks are closed before terminating
-        ensure_undo_blocks_closed()
 
         -- Clean up caches when the script is terminated to prevent memory leaks
         notes_cache = {}
@@ -950,34 +974,37 @@ function loop()
 
     -- Undo (Ctrl+Z or Cmd+Z)
     if (is_ctrl_down or is_super_down) and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false) then
-        reaper.Undo_DoUndo2(0)
-        -- Invalidate the selected CCs count cache since undo may change CCs or selection
-        -- NOTE: For this tool, we should clear caches that may be invalidated
+        reaper.Undo_DoUndo2(0)  -- Actually, using project-specific as standard Undo_DoUndo() doesn't exist
+        -- Invalidate all caches since undo may change CCs or selection
         notes_cache = {}
         drag_start_note_states = {}
         invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
-        -- Reset all state variables when undo occurs
-        legato_amount = 0
-        humanize_strength = 50
+        last_selected_note_indices = {}  -- Reset selection signature to force recalculation
+        -- Recalculate statistics to update display after undo
+        selected_note_count = count_selected_notes()
+        if take then
+            overlay_count = detect_overlays_count(take)  -- Update overlay count after undo
+        end
     end
 
     -- Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS)
-    if ((is_ctrl_down and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Y, false)) or
-       (is_super_down and is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false))) then
-        reaper.Undo_DoRedo2(0)
-        -- Invalidate caches when redo occurs
+    if (is_ctrl_down and not is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Y, false)) or
+       (is_super_down and is_shift_down and imgui.IsKeyPressed(ctx, imgui.Key_Z, false)) then
+        reaper.Undo_DoRedo2(0)  -- Using project-specific function as it's more reliable
+        -- Invalidate all caches since redo may change CCs or selection
         notes_cache = {}
         drag_start_note_states = {}
         invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
-        -- Reset all state variables when redo occurs
-        legato_amount = 0
-        humanize_strength = 50
+        last_selected_note_indices = {}  -- Reset selection signature to force recalculation
+        -- Recalculate statistics to update display after redo
+        selected_note_count = count_selected_notes()
+        if take then
+            overlay_count = detect_overlays_count(take)  -- Update overlay count after redo
+        end
     end
 
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
         script_running = false
-        -- Ensure any active undo blocks are closed before terminating
-        ensure_undo_blocks_closed()
 
         -- Clean up caches when the script is terminated to prevent memory leaks
         notes_cache = {}
@@ -1008,8 +1035,6 @@ function loop()
 
     -- Clean up caches when the script is terminated to prevent memory leaks
     if not script_running then
-        -- Ensure any active undo blocks are closed before terminating
-        ensure_undo_blocks_closed()
 
         notes_cache = {}
         drag_start_note_states = {}
@@ -1078,11 +1103,8 @@ function loop()
 
                 -- Select all notes button (full row)
                 if imgui.Button(ctx, "Select all notes", -1, 0) then
-                    -- Create an undo point for the current state
-                    safe_undo_begin("Select all notes in take")
                     select_all_notes()  -- Call the new select all function
                     invalidate_cached_sorted_notes() -- Invalidate cache after selection changes
-                    safe_undo_end("Select all notes in take")
                 end
 
                 imgui.Separator(ctx)
@@ -1090,38 +1112,26 @@ function loop()
                 -- Group of action buttons: Fill gaps, Detect Overlays, Heal Overlays
                 if selected_note_count >= 2 then
                     if imgui.Button(ctx, "Fill gaps") then
-                        -- Create an undo point for the current state
-                        safe_undo_begin("Fill gaps between notes")
                         fill_gaps()  -- Call the new fill gaps function
                         legato_amount = 0  -- Reset legato slider to 0
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
-                        safe_undo_end("Fill gaps between notes")
                     end
                     imgui.SameLine(ctx)  -- Put the Non-legato button next to Fill gaps
                     if imgui.Button(ctx, "Non-legato") then
-                        -- Create an undo point for the current state
-                        safe_undo_begin("Apply non-legato (de-legato) to notes")
                         non_legato()  -- Call the new non-legato function
                         legato_amount = 0  -- Reset legato slider to 0
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
-                        safe_undo_end("Apply non-legato (de-legato) to notes")
                     end
                     imgui.SameLine(ctx)  -- Put the Detect overlays button next to Non-legato
                     if imgui.Button(ctx, "Detect overlays") then
-                        -- Create an undo point for the current state
-                        safe_undo_begin("Detect and select overlays")
                         overlay_count = detect_overlays()  -- Call the new detect overlays function and store count
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
-                        safe_undo_end("Detect and select overlays")
                     end
                     imgui.SameLine(ctx)  -- Put the Heal overlays button next to Detect overlays
                     if imgui.Button(ctx, "Heal overlays") then
-                        -- Create an undo point for the current state
-                        safe_undo_begin("Heal note overlays")
                         local resolved_count = heal_overlays()  -- Call the heal overlays function
                         overlay_count = detect_overlays_count(current_take)  -- Update overlay count after healing
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
-                        safe_undo_end("Heal note overlays")
                     end
                 else
                     imgui.BeginDisabled(ctx)
@@ -1157,7 +1167,6 @@ function loop()
 
                 -- Build cache when slider interaction starts (when starting to drag)
                 if is_activated then
-                    safe_undo_begin("Adjust legato amount")
                     drag_start_legato_amount = legato_amount  -- Store the value at drag start
                     drag_start_note_states = build_notes_cache()  -- Store the note states at drag start
                     notes_cache = drag_start_note_states  -- Use the drag start states as the reference
@@ -1169,12 +1178,12 @@ function loop()
 
                     if selected_note_count >= 2 then
                         if is_active and #notes_cache > 0 then
-                            -- Currently dragging, apply delta from initial state
-                            apply_legato(notes_cache)
+                            -- Currently dragging, apply delta from initial state (no undo handling during drag for visual feedback)
+                            apply_legato(notes_cache, false)
                         else
-                            -- Not dragging, apply to current state (no delta)
+                            -- Not dragging, apply to current state (no delta) - no undo handling here as it's just updating visual feedback
                             local temp_cache = build_notes_cache()
-                            apply_legato(temp_cache)
+                            apply_legato(temp_cache, false)
                         end
                     end
                 end
@@ -1186,16 +1195,42 @@ function loop()
                 end
 
                 if imgui.IsItemDeactivatedAfterEdit(ctx) then
-                    -- End the undo block that was started on activation
-                    safe_undo_end("Adjust legato amount")
+                    -- Apply final changes and register undo when slider is released
+                    if #notes_cache > 0 then
+                        apply_legato(notes_cache, false) -- Apply final legato changes without undo handling during application
+                    else
+                        local temp_cache = build_notes_cache()
+                        apply_legato(temp_cache, false) -- Apply final legato changes without undo handling during application
+                    end
+
+                    if take then
+                        reaper.MIDI_Sort(take)
+                        local item = reaper.GetMediaItemTake_Item(take)
+                        -- Update the item and register the change in undo system
+                        reaper.UpdateItemInProject(item)
+                        reaper.Undo_OnStateChange_Item(0, "Adjust legato amount", item)
+                    end
                 end
 
                 -- Apply button after legato slider
                 if selected_note_count >= 2 then
                     if imgui.Button(ctx, "Apply") then
-                        -- Create an undo point for the current state
-                        safe_undo_begin("Apply legato changes")
-                        safe_undo_end("Apply legato changes")
+                        -- Apply current legato amount and register undo
+                        if #notes_cache > 0 then
+                            apply_legato(notes_cache, false) -- Apply with current settings, no undo handling during application
+                        else
+                            local temp_cache = build_notes_cache()
+                            apply_legato(temp_cache, false) -- Apply with current settings, no undo handling during application
+                        end
+
+                        if take then
+                            reaper.MIDI_Sort(take)
+                            local item = reaper.GetMediaItemTake_Item(take)
+                            -- Update the item and register the change in undo system
+                            reaper.UpdateItemInProject(item)
+                            reaper.Undo_OnStateChange_Item(0, "Apply legato changes", item)
+                        end
+
                         -- Update the drag start reference to current state for future delta calculations
                         drag_start_legato_amount = legato_amount  -- Set baseline to current value
                         drag_start_note_states = build_notes_cache()  -- Capture current visual state
@@ -1221,9 +1256,7 @@ function loop()
                 -- Humanize button
                 if selected_note_count >= 1 then
                     if imgui.Button(ctx, "Humanize") then
-                        safe_undo_begin("Apply humanization")
                         apply_humanization()
-                        safe_undo_end("Apply humanization")
                     end
                 else
                     imgui.BeginDisabled(ctx)
