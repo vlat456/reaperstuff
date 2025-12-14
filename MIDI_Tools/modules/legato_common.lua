@@ -690,15 +690,39 @@ function M.apply_humanization(humanize_strength, keep_within_boundaries, registe
         -- Apply humanization if enabled (humanize_strength > 0)
         if humanize_strength and humanize_strength > 0 then  -- Apply to all notes, regardless if they have a next note
             -- Calculate humanization range based on humanize_strength (0-100 scale)
-            local humanize_range_ms = (humanize_strength / 100.0) * 100  -- Max 100ms variation at full strength
+            local humanize_range_ms = (humanize_strength / 100.0) * 300  -- Max 300ms variation at full strength (3x stronger)
 
             if humanize_range_ms > 0 then
-                -- Generate random humanization value in milliseconds
-                local humanize_ms = math.random() * humanize_range_ms  -- Random value between 0 and +range
+                -- Generate bidirectional random humanization value in milliseconds
+                -- Random value between -range/2 and +range/2 for more natural variation
+                local humanize_ms = (math.random() - 0.5) * humanize_range_ms
                 local humanize_ppq = M.ms_to_ppq_corrected(humanize_ms, current_take, note.startppqpos)
 
-                -- Add humanization to current position
-                new_end_ppq = new_end_ppq + humanize_ppq
+                -- Calculate preliminary new end position
+                local preliminary_end_ppq = new_end_ppq + humanize_ppq
+                
+                -- Ensure legato is maintained: the note should not end before the next note starts
+                -- Find the next note that starts after this note
+                local next_note_start = nil
+                for j = i + 1, #selected_notes do
+                    if selected_notes[j].startppqpos > note.startppqpos then
+                        next_note_start = selected_notes[j].startppqpos
+                        break
+                    end
+                end
+                
+                -- If there's a next note, ensure we don't shorten this note too much
+                if next_note_start then
+                    -- Ensure the note extends at least to the start of the next note
+                    -- We allow a small gap (e.g., 5 PPQ) to avoid exact overlaps
+                    local min_end_ppq = next_note_start - 5
+                    preliminary_end_ppq = math.max(preliminary_end_ppq, min_end_ppq)
+                end
+                
+                -- Ensure the note doesn't end before it starts
+                preliminary_end_ppq = math.max(preliminary_end_ppq, note.startppqpos + 1)
+                
+                new_end_ppq = preliminary_end_ppq
             end
         end
 
@@ -844,7 +868,7 @@ function M.apply_legato(cache, legato_amount, humanize_strength, keep_within_bou
         -- Apply humanization if enabled
         if humanize_strength and humanize_strength > 0 then
             -- Calculate humanization range based on humanize_strength (0-100 scale)
-            local humanize_range_ms = (humanize_strength / 100.0) * 100  -- Max 100ms variation at full strength
+            local humanize_range_ms = (humanize_strength / 100.0) * 300  -- Max 300ms variation at full strength (3x stronger)
 
             if humanize_range_ms > 0 then
                 -- Generate random humanization value in milliseconds
