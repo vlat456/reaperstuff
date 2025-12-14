@@ -57,7 +57,7 @@ function M.quick_script_init(min_notes)
         return nil, nil
     end
     
-    local selected_notes = M.validate_min_selected_notes(min_notes)
+    local selected_notes = M.validate_min_selected_notes(min_notes, false)
     if not selected_notes then
         return nil, nil
     end
