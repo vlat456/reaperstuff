@@ -7,8 +7,8 @@
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Quick_Legato.lua
 
 -- @about
---   This package contains scripts for applying legato effects to MIDI notes.
---   In midi Action List search for: 
+--      This package contains scripts for applying legato effects to MIDI notes.
+--      In midi Action List search for: 
 --      Legato_Tool - Advanced legato editing tool with UI
 --      Quick_Heal - Heal overlapping notes with default settings (no UI)
 --      Quick_Legato - Fill gaps between selected notes and add 10% legato (no UI)
