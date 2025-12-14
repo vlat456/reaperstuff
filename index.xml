@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="971587b01c55639e2105fade65aea3bd62f2a934">
+<index version="1" name="Walter Scripts" commit="7a5670d06e71c0c5804bd453031a8aedb267ee41">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
@@ -75,6 +75,21 @@
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_Heal.lua">https://github.com/vlat456/reaperstuff/raw/971587b01c55639e2105fade65aea3bd62f2a934/MIDI_Tools/Legato_Tool_Quick_Heal.lua</source>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_Legato.lua">https://github.com/vlat456/reaperstuff/raw/971587b01c55639e2105fade65aea3bd62f2a934/MIDI_Tools/Legato_Tool_Quick_Legato.lua</source>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_NonLegato.lua">https://github.com/vlat456/reaperstuff/raw/971587b01c55639e2105fade65aea3bd62f2a934/MIDI_Tools/Legato_Tool_Quick_NonLegato.lua</source>
+      </version>
+      <version name="0.2.4" author="drvlat" time="2025-12-14T16:09:40Z">
+        <changelog><![CDATA[0.2.4 - Removed MessageBox warnings
+0.2.3 - Added Quick_NonLegato script
+0.2.2 - Documentation updates
+0.2.0 - extracted common functionality to shared library, added quick scripts
+0.1.6 - resolve all overlays (guaranteed) at once
+0.1.5 - some minor optimization, proper undo handling
+0.1.4 - non-deterministic humanization
+0.1.3 - added Non-legato function and legato humanization.]]></changelog>
+        <source file="modules/legato_common.lua">https://github.com/vlat456/reaperstuff/raw/7a5670d06e71c0c5804bd453031a8aedb267ee41/MIDI_Tools/modules/legato_common.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool.lua">https://github.com/vlat456/reaperstuff/raw/7a5670d06e71c0c5804bd453031a8aedb267ee41/MIDI_Tools/Legato_Tool.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_Heal.lua">https://github.com/vlat456/reaperstuff/raw/7a5670d06e71c0c5804bd453031a8aedb267ee41/MIDI_Tools/Legato_Tool_Quick_Heal.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_Legato.lua">https://github.com/vlat456/reaperstuff/raw/7a5670d06e71c0c5804bd453031a8aedb267ee41/MIDI_Tools/Legato_Tool_Quick_Legato.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="Legato_Tool_Quick_NonLegato.lua">https://github.com/vlat456/reaperstuff/raw/7a5670d06e71c0c5804bd453031a8aedb267ee41/MIDI_Tools/Legato_Tool_Quick_NonLegato.lua</source>
       </version>
     </reapack>
   </category>
