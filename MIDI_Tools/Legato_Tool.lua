@@ -604,6 +604,50 @@ function heal_overlays()
     return resolved_count
 end
 
+-- Function to guarantee all overlaps are eliminated using iterative healing
+function heal_all_overlaps_guaranteed()
+    local current_take, midi_editor = get_midi_context()
+
+    if not current_take then return 0 end
+
+    -- Get the media item associated with the take
+    local item = reaper.GetMediaItemTake_Item(current_take)
+
+    local iterations = 0
+    local max_iterations = 100  -- Safety limit
+    local total_resolved = 0
+
+    repeat
+        invalidate_cached_sorted_notes()  -- Important: invalidate cache after modifications
+
+        local initial_overlay_count = detect_overlays_count(current_take)
+
+        if initial_overlay_count == 0 then
+            break  -- No overlaps remain
+        end
+
+        local resolved_count = heal_overlays()  -- Apply healing pass
+        total_resolved = total_resolved + resolved_count
+
+        iterations = iterations + 1
+
+        if iterations >= max_iterations then
+            reaper.MB("Maximum iterations reached in guaranteed overlap healing (" .. iterations .. "). " ..
+                     detect_overlays_count(current_take) .. " overlaps may remain.", "Warning", 0)
+            break
+        end
+
+    until detect_overlays_count(current_take) == 0
+
+    -- Final sort and update to ensure everything is properly ordered
+    reaper.MIDI_Sort(current_take)
+    reaper.UpdateItemInProject(item)
+    reaper.Undo_OnStateChange_Item(0, "Heal all note overlays (guaranteed)", item)
+    reaper.UpdateArrange()
+
+    return total_resolved
+end
+
 -- Function to count note overlays (selected notes with the same pitch that have overlapping time ranges) without changing selection
 function detect_overlays_count(current_take)
     if not current_take then return 0 end
@@ -1142,6 +1186,12 @@ function loop()
                         overlay_count = detect_overlays_count(current_take)  -- Update overlay count after healing
                         invalidate_cached_sorted_notes() -- Invalidate cache after changes
                     end
+                    imgui.SameLine(ctx)  -- Put the guaranteed heal button next to Heal overlays
+                    if imgui.Button(ctx, "Heal all (guaranteed)") then
+                        local resolved_count = heal_all_overlaps_guaranteed()  -- Call the guaranteed heal function
+                        overlay_count = detect_overlays_count(current_take)  -- Update overlay count after healing
+                        invalidate_cached_sorted_notes() -- Invalidate cache after changes
+                    end
                 else
                     imgui.BeginDisabled(ctx)
                     imgui.Button(ctx, "Fill gaps")
@@ -1151,6 +1201,8 @@ function loop()
                     imgui.Button(ctx, "Detect overlays")
                     imgui.SameLine(ctx)  -- Put the disabled Heal overlays button next to Detect overlays
                     imgui.Button(ctx, "Heal overlays")
+                    imgui.SameLine(ctx)  -- Put the disabled guaranteed heal button next to Heal overlays
+                    imgui.Button(ctx, "Heal all (guaranteed)")
                     imgui.EndDisabled(ctx)
                 end
 
