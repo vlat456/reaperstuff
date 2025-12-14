@@ -9,7 +9,6 @@
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool_Quick_Legato.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool_Quick_NonLegato.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool_CC_Tool.lua
-
 -- @about
 --      This package contains scripts for applying legato effects to MIDI notes.
 --      In midi Action List search for:
