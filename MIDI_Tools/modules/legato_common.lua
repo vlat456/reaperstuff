@@ -415,9 +415,8 @@ function M.heal_overlays(register_undo)
     reaper.MIDI_Sort(current_take)
 
     if register_undo then
-        -- Update the item and register the change in undo system
-        reaper.UpdateItemInProject(item)
-        reaper.Undo_OnStateChange_Item(0, "Heal note overlays", item)
+        local SCRIPT_INIT = require "script_init"
+        SCRIPT_INIT.register_undo(item, "Heal note overlays")
     end
     reaper.UpdateArrange()
 
@@ -461,9 +460,8 @@ function M.heal_all_overlaps_guaranteed()
 
     -- Final sort and update to ensure everything is properly ordered
     reaper.MIDI_Sort(current_take)
-    reaper.UpdateItemInProject(item)
-    reaper.Undo_OnStateChange_Item(0, "Heal all note overlays (guaranteed)", item)
-    reaper.UpdateArrange()
+    local SCRIPT_INIT = require "script_init"
+    SCRIPT_INIT.register_undo(item, "Heal all note overlays (guaranteed)")
 
     return total_resolved
 end
@@ -538,8 +536,8 @@ function M.select_all_notes()
     reaper.UpdateArrange()
 
     -- Update the item and register the change in undo system
-    reaper.UpdateItemInProject(item)
-    reaper.Undo_OnStateChange_Item(0, "Select all notes in take", item)
+    local SCRIPT_INIT = require "script_init"
+    SCRIPT_INIT.register_undo(item, "Select all notes in take")
 
     return changes
 end
@@ -573,12 +571,9 @@ function M.non_legato()
                 local new_end_ppq = next_note.startppqpos - gap_ppq
 
                 -- Make sure the new end position is not before the start position
-                if new_end_ppq > note.startppqpos then
-                    local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
-                    if not result then
-                        reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
-                        return  -- Stop processing this note
-                    end
+                local LEGATO_OPERATIONS = require "legato_operations"
+                if not LEGATO_OPERATIONS.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq) then
+                    return  -- Stop processing this note if error occurs
                 end
             end
         end
@@ -587,9 +582,8 @@ function M.non_legato()
     -- Sort MIDI events to ensure correct ordering after changes
     reaper.MIDI_Sort(current_take)
     -- Update the item and register the change in undo system
-    reaper.UpdateItemInProject(item)
-    reaper.Undo_OnStateChange_Item(0, "Apply non-legato (de-legato) to notes", item)
-    reaper.UpdateArrange()
+    local SCRIPT_INIT = require "script_init"
+    SCRIPT_INIT.register_undo(item, "Apply non-legato (de-legato) to notes")
 end
 
 -- Function to fill gaps between selected notes
@@ -622,30 +616,18 @@ function M.fill_gaps()
         if next_note_start and next_note_start > note.endppqpos then
             -- Check for same pitch overlap prevention
             local new_end_ppq = next_note_start
+            local LEGATO_OPERATIONS = require "legato_operations"
 
             -- Same pitch overlap prevention
-            for _, potential_next_note in ipairs(selected_notes) do
-                if note.pitch == potential_next_note.pitch and
-                   potential_next_note.startppqpos > note.startppqpos and
-                   potential_next_note.startppqpos < new_end_ppq then
-                    new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
-                end
-            end
+            new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
 
             -- Keep within item boundaries if checkbox is enabled
             local keep_within_boundaries = false -- Default to false for this function
-            if keep_within_boundaries then
-                local item_start_ppq, item_end_ppq = M.get_item_boundaries_in_ppq(current_take)
-                new_end_ppq = math.min(new_end_ppq, item_end_ppq)
-            end
+            new_end_ppq = LEGATO_OPERATIONS.apply_boundary_constraints(note, new_end_ppq, current_take, keep_within_boundaries)
 
             -- Make sure the new end position is not before the start position
-            if new_end_ppq > note.startppqpos then
-                local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
-                if not result then
-                    reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
-                    return  -- Stop processing this note
-                end
+            if not LEGATO_OPERATIONS.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq) then
+                return  -- Stop processing this note if error occurs
             end
         end
     end
@@ -653,9 +635,8 @@ function M.fill_gaps()
     -- Sort MIDI events to ensure correct ordering after changes
     reaper.MIDI_Sort(current_take)
     -- Update the item and register the change in undo system
-    reaper.UpdateItemInProject(item)
-    reaper.Undo_OnStateChange_Item(0, "Fill gaps between notes", item)
-    reaper.UpdateArrange()
+    local SCRIPT_INIT = require "script_init"
+    SCRIPT_INIT.register_undo(item, "Fill gaps between notes")
 end
 
 -- Function to apply only humanization to selected notes (without legato changes)
@@ -698,38 +679,20 @@ function M.apply_humanization(humanize_strength, keep_within_boundaries, registe
             end
         end
 
-        -- Apply constraints to make sure the new end position is valid
+        -- Apply constraints using shared functions
         if new_end_ppq > note.startppqpos then
-            -- Apply same-pitch overlap prevention
-            for _, potential_next_note in ipairs(selected_notes) do
-                if note.pitch == potential_next_note.pitch and
-                   potential_next_note.startppqpos > note.startppqpos and  -- Only look at notes that start after current note start
-                   potential_next_note.startppqpos < new_end_ppq then      -- And that start before the current note would end (with humanization)
-                    new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
-                end
-            end
-
+            local LEGATO_OPERATIONS = require "legato_operations"
+            
+            -- 1. Apply same-pitch overlap prevention
+            new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
+            
             -- 2. Keep within item boundaries if checkbox is enabled
             keep_within_boundaries = keep_within_boundaries or false -- Default to false if not provided
-            if keep_within_boundaries then
-                local item_start_ppq, item_end_ppq = M.get_item_boundaries_in_ppq(current_take)
-                -- Constrain to item end boundary
-                new_end_ppq = math.max(math.min(new_end_ppq, item_end_ppq), item_start_ppq)
-                -- Constrain to item start boundary - note end should not be before item start
-                -- But only if the note is within the item boundaries
-                if note.startppqpos >= item_start_ppq and note.startppqpos < item_end_ppq then
-                    -- If note starts within the item, make sure end doesn't go before item start
-                    new_end_ppq = math.max(new_end_ppq, item_start_ppq)
-                end
-            end
-
-            -- Final check - make sure end is after start
-            if new_end_ppq > note.startppqpos then
-                local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
-                if not result then
-                    reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
-                    return  -- Stop processing this note
-                end
+            new_end_ppq = LEGATO_OPERATIONS.apply_boundary_constraints(note, new_end_ppq, current_take, keep_within_boundaries)
+            
+            -- 3. Set the note end position safely
+            if not LEGATO_OPERATIONS.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq) then
+                return  -- Stop processing this note if error occurs
             end
         end
     end
@@ -739,8 +702,8 @@ function M.apply_humanization(humanize_strength, keep_within_boundaries, registe
     -- Update the item and register the change in undo system if requested
     register_undo = register_undo ~= false -- Default to true if not specified
     if register_undo then
-        reaper.UpdateItemInProject(item)
-        reaper.Undo_OnStateChange_Item(0, "Apply humanization", item)
+        local SCRIPT_INIT = require "script_init"
+        SCRIPT_INIT.register_undo(item, "Apply humanization")
     end
     reaper.UpdateArrange()
 end
@@ -823,9 +786,8 @@ function M.restore_original_notes(cache)
     reaper.MIDI_Sort(current_take)
     if current_take then
         local item = reaper.GetMediaItemTake_Item(current_take)
-        -- Update the item and register the change in undo system
-        reaper.UpdateItemInProject(item)
-        reaper.Undo_OnStateChange_Item(0, "Restore original notes", item)
+        local SCRIPT_INIT = require "script_init"
+        SCRIPT_INIT.register_undo(item, "Restore original notes")
     end
     reaper.UpdateArrange()
 end
@@ -871,37 +833,18 @@ function M.apply_legato(cache, legato_amount, humanize_strength, keep_within_bou
             end
         end
 
-        -- Apply constraints:
-        -- 1. Same pitch notes must not overlap - search all notes for potential overlap
-        -- Check all selected notes for same pitch that start after this note ends
-        for _, potential_next_note in ipairs(selected_notes) do
-            if note.pitch == potential_next_note.pitch and
-               potential_next_note.startppqpos > note.startppqpos and  -- Only look at notes that start after current note start
-               potential_next_note.startppqpos < new_end_ppq then      -- And that start before the current note would end (with legato)
-                new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
-            end
-        end
-
+        -- Apply constraints using shared functions
+        local LEGATO_OPERATIONS = require "legato_operations"
+        
+        -- 1. Same pitch notes must not overlap
+        new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
+        
         -- 2. Keep within item boundaries if checkbox is enabled
-        if keep_within_boundaries then
-            local item_start_ppq, item_end_ppq = M.get_item_boundaries_in_ppq(current_take)
-            -- Constrain to item end boundary
-            new_end_ppq = math.min(new_end_ppq, item_end_ppq)
-            -- Constrain to item start boundary - note end should not be before item start
-            -- But only if the note is within the item boundaries
-            if note.startppqpos >= item_start_ppq and note.startppqpos < item_end_ppq then
-                -- If note starts within the item, make sure end doesn't go before item start
-                new_end_ppq = math.max(new_end_ppq, item_start_ppq)
-            end
-        end
-
-        -- Make sure the new end position is not before the start position
-        if new_end_ppq > note.startppqpos then
-            local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
-            if not result then
-                reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
-                return  -- Stop processing this note
-            end
+        new_end_ppq = LEGATO_OPERATIONS.apply_boundary_constraints(note, new_end_ppq, current_take, keep_within_boundaries)
+        
+        -- 3. Set the note end position safely
+        if not LEGATO_OPERATIONS.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq) then
+            return  -- Stop processing this note if error occurs
         end
     end
 
@@ -912,9 +855,8 @@ function M.apply_legato(cache, legato_amount, humanize_strength, keep_within_bou
     -- Handle undo
     if current_take then
         local item = reaper.GetMediaItemTake_Item(current_take)
-        -- Update the item and register the change in undo system
-        reaper.UpdateItemInProject(item)
-        reaper.Undo_OnStateChange_Item(0, "Apply legato changes", item)
+        local SCRIPT_INIT = require "script_init"
+        SCRIPT_INIT.register_undo(item, "Apply legato changes")
     end
 end
 

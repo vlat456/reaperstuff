@@ -8,6 +8,9 @@ local info = debug.getinfo(1, 'S')
 local script_path = info.source:match('^@?(.*[/\\])')  -- Works on Win/Mac/Linux
 package.path = package.path .. ';' .. script_path .. 'modules/?.lua'
 
+-- Now we can require the shared modules
+local SCRIPT_INIT = require "script_init"
+
 local LEGATO_COMMON = require "legato_common"
 
 -- Create local aliases for common functions to maintain existing function calls
@@ -101,38 +104,18 @@ function apply_legato(cache, handle_undo)
         -- Apply the delta to the baseline state
         local new_end_ppq = baseline_end_pos + delta_ppq
 
-        -- Apply constraints:
-        -- 1. Same pitch notes must not overlap - search all notes for potential overlap
-        -- Check all selected notes for same pitch that start after this note ends
-        for _, potential_next_note in ipairs(selected_notes) do
-            if note.pitch == potential_next_note.pitch and
-               potential_next_note.startppqpos > note.startppqpos and  -- Only look at notes that start after current note start
-               potential_next_note.startppqpos < new_end_ppq then      -- And that start before the current note would end (with legato)
-                new_end_ppq = math.min(new_end_ppq, potential_next_note.startppqpos)
-            end
-        end
-
-
+        -- Apply constraints using shared functions
+        local LEGATO_OPERATIONS = require "legato_operations"
+        
+        -- 1. Same pitch notes must not overlap
+        new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
+        
         -- 2. Keep within item boundaries if checkbox is enabled
-        if keep_within_boundaries then
-            local item_start_ppq, item_end_ppq = get_item_boundaries_in_ppq(current_take)
-            -- Constrain to item end boundary
-            new_end_ppq = math.min(new_end_ppq, item_end_ppq)
-            -- Constrain to item start boundary - note end should not be before item start
-            -- But only if the note is within the item boundaries
-            if note.startppqpos >= item_start_ppq and note.startppqpos < item_end_ppq then
-                -- If note starts within the item, make sure end doesn't go before item start
-                new_end_ppq = math.max(new_end_ppq, item_start_ppq)
-            end
-        end
-
-        -- Make sure the new end position is not before the start position
-        if new_end_ppq > note.startppqpos then
-            local result = reaper.MIDI_SetNote(current_take, note.index, nil, nil, note.startppqpos, new_end_ppq, nil, nil, nil, true)
-            if not result then
-                reaper.MB("Error setting MIDI note at index " .. note.index, "Legato Tool Error", 0)
-                return  -- Stop processing this note
-            end
+        new_end_ppq = LEGATO_OPERATIONS.apply_boundary_constraints(note, new_end_ppq, current_take, keep_within_boundaries)
+        
+        -- 3. Set the note end position safely
+        if not LEGATO_OPERATIONS.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq) then
+            return  -- Stop processing this note if error occurs
         end
     end
 
@@ -142,10 +125,9 @@ function apply_legato(cache, handle_undo)
 
     -- Only handle undo if explicitly requested (for standalone calls, not during dragging)
     if handle_undo then
+        local LEGATO_OPERATIONS = require "legato_operations"
         local item = reaper.GetMediaItemTake_Item(current_take)
-        -- Update the item and register the change in undo system
-        reaper.UpdateItemInProject(item)
-        reaper.Undo_OnStateChange_Item(0, "Apply legato changes", item)
+        SCRIPT_INIT.register_undo(item, "Apply legato changes")
     end
 end
 

@@ -8,20 +8,14 @@ local info = debug.getinfo(1, 'S')
 local script_path = info.source:match('^@?(.*[/\\])')  -- Works on Win/Mac/Linux
 package.path = package.path .. ';' .. script_path .. 'modules/?.lua'
 
+-- Now we can require the shared modules
+local SCRIPT_INIT = require "script_init"
 local LEGATO_COMMON = require "legato_common"
 
--- Main script logic
-local current_take, midi_editor = LEGATO_COMMON.get_midi_context()
-
+-- Initialize script with validation
+local current_take, selected_notes = SCRIPT_INIT.quick_script_init(2)
 if not current_take then
-    reaper.MB("No active MIDI take found. Please open a MIDI editor with selected notes.", "Error", 0)
-    return
-end
-
-local selected_notes = LEGATO_COMMON.get_selected_notes_optimized()
-if #selected_notes < 2 then
-    -- Not enough notes to heal, exit silently
-    return
+    return  -- Error already shown by init function
 end
 
 -- Heal ALL overlays using the guaranteed function (iterative healing)
