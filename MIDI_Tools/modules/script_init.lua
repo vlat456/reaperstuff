@@ -14,10 +14,10 @@ function M.setup_module_path()
 end
 
 -- Function to validate MIDI context and show error if needed
-function M.validate_midi_context(show_errors)
+function M.validate_midi_context(show_errors, legato_common_module)
     show_errors = show_errors ~= false  -- Default to true
     
-    local LEGATO_COMMON = require "legato_common"
+    local LEGATO_COMMON = legato_common_module or require "legato_common"
     local current_take, midi_editor = LEGATO_COMMON.get_midi_context()
     
     if not current_take then
@@ -31,11 +31,11 @@ function M.validate_midi_context(show_errors)
 end
 
 -- Function to validate minimum selected notes
-function M.validate_min_selected_notes(min_notes, show_errors)
+function M.validate_min_selected_notes(min_notes, show_errors, legato_common_module)
     min_notes = min_notes or 2
     show_errors = show_errors ~= false  -- Default to true
     
-    local LEGATO_COMMON = require "legato_common"
+    local LEGATO_COMMON = legato_common_module or require "legato_common"
     local selected_notes = LEGATO_COMMON.get_selected_notes_optimized()
     
     if #selected_notes < min_notes then

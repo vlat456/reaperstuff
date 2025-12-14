@@ -25,7 +25,6 @@ function M.apply_boundary_constraints(note, new_end_ppq, current_take, keep_with
         return new_end_ppq
     end
     
-    local LEGATO_COMMON = require "legato_common"
     local item_start_ppq, item_end_ppq = LEGATO_COMMON.get_item_boundaries_in_ppq(current_take)
     
     -- Constrain to item end boundary
@@ -58,7 +57,6 @@ end
 -- Function to apply legato with gap filling and extension
 function M.apply_legato_with_extension(current_take, selected_notes, extension_percentage)
     extension_percentage = extension_percentage or 0.1  -- Default to 10%
-    local LEGATO_COMMON = require "legato_common"
     
     for i, note in ipairs(selected_notes) do
         -- Find the next note that starts after this note

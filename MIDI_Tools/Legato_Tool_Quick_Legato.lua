@@ -8,7 +8,7 @@ local info = debug.getinfo(1, 'S')
 local script_path = info.source:match('^@?(.*[/\\])')  -- Works on Win/Mac/Linux
 package.path = package.path .. ';' .. script_path .. 'modules/?.lua'
 
--- Now we can require the shared modules
+-- Centralized require statements at the top of the file
 local SCRIPT_INIT = require "script_init"
 local LEGATO_OPERATIONS = require "legato_operations"
 

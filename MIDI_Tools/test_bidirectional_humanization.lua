@@ -1,8 +1,8 @@
 -- @noindex
 -- Test script for bidirectional humanization functionality
 
--- Load the legato_common module
-local LEGATO_COMMON = require "modules.legato_common"
+-- Centralized require statement at the top of the file
+local LEGATO_COMMON = require "legato_common"
 
 -- Function to test bidirectional humanization
 function test_bidirectional_humanization()

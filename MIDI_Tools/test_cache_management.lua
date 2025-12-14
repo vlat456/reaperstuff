@@ -6,7 +6,7 @@ local info = debug.getinfo(1, 'S')
 local script_path = info.source:match('^@?(.*[/\\])')  -- Works on Win/Mac/Linux
 package.path = package.path .. ';' .. script_path .. 'modules/?.lua'
 
--- Import the module we want to test
+-- Centralized require statement at the top of the file
 local LEGATO_COMMON = require "legato_common"
 
 -- Test function to verify cache management

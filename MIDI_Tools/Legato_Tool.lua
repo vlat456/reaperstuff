@@ -8,11 +8,12 @@ local info = debug.getinfo(1, 'S')
 local script_path = info.source:match('^@?(.*[/\\])')  -- Works on Win/Mac/Linux
 package.path = package.path .. ';' .. script_path .. 'modules/?.lua'
 
--- Now we can require the shared modules
+-- Centralized require statements at the top of the file
 local SCRIPT_INIT = require "script_init"
 local LEGATO_COMMON = require "legato_common"
 local CLEANUP_MANAGER = require "cleanup_manager"
 local UNDO_MANAGER = require "undo_manager"
+local LEGATO_OPERATIONS = require "legato_operations"
 
 -- Create local aliases for common functions to maintain existing function calls
 local get_midi_context = LEGATO_COMMON.get_midi_context
@@ -186,7 +187,6 @@ function apply_legato(cache, handle_undo)
             baseline_end_pos = note.original_endppqpos  -- This is the baseline when cache was made
         else
             -- Fallback to current state if no cache
-            local LEGATO_COMMON = require "legato_common"
             local current_notes = LEGATO_COMMON.get_cached_sorted_selected_notes()
             for _, current_note in ipairs(current_notes) do
                 if current_note.index == note.index then
@@ -205,7 +205,6 @@ function apply_legato(cache, handle_undo)
         local new_end_ppq = baseline_end_pos + delta_ppq
 
         -- Apply constraints using shared functions
-        local LEGATO_OPERATIONS = require "legato_operations"
         
         -- 1. Same pitch notes must not overlap
         new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
@@ -225,7 +224,6 @@ function apply_legato(cache, handle_undo)
 
     -- Only handle undo if explicitly requested (for standalone calls, not during dragging)
     if handle_undo then
-        local LEGATO_OPERATIONS = require "legato_operations"
         local item = reaper.GetMediaItemTake_Item(gui_state.take)
         UNDO_MANAGER.register_undo(item, "Apply legato changes", "Legato operation")
     end

@@ -3,7 +3,11 @@
 local reaper = reaper
 
 local M = {} -- Module table
+
+-- Centralized require statements at the top of the file
 local UNDO_MANAGER = require "undo_manager"
+local SCRIPT_INIT = require "script_init"
+local LEGATO_OPERATIONS = require "legato_operations"
 
 -- Function to get current MIDI context consistently
 function M.get_midi_context()
@@ -438,7 +442,6 @@ function M.heal_overlays(register_undo)
     reaper.MIDI_Sort(current_take)
 
     if register_undo then
-        local SCRIPT_INIT = require "script_init"
         SCRIPT_INIT.register_undo(item, "Heal note overlays")
     end
     reaper.UpdateArrange()
@@ -483,7 +486,6 @@ function M.heal_all_overlaps_guaranteed()
 
     -- Final sort and update to ensure everything is properly ordered
     reaper.MIDI_Sort(current_take)
-    local SCRIPT_INIT = require "script_init"
     SCRIPT_INIT.register_undo(item, "Heal all note overlays (guaranteed)")
 
     return total_resolved
@@ -559,7 +561,6 @@ function M.select_all_notes()
     reaper.UpdateArrange()
 
     -- Update the item and register the change in undo system
-    local SCRIPT_INIT = require "script_init"
     SCRIPT_INIT.register_undo(item, "Select all notes in take")
 
     return changes
@@ -594,7 +595,6 @@ function M.non_legato()
                 local new_end_ppq = next_note.startppqpos - gap_ppq
 
                 -- Make sure the new end position is not before the start position
-                local LEGATO_OPERATIONS = require "legato_operations"
                 if not LEGATO_OPERATIONS.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq) then
                     return  -- Stop processing this note if error occurs
                 end
@@ -605,7 +605,6 @@ function M.non_legato()
     -- Sort MIDI events to ensure correct ordering after changes
     reaper.MIDI_Sort(current_take)
     -- Update the item and register the change in undo system
-    local SCRIPT_INIT = require "script_init"
     SCRIPT_INIT.register_undo(item, "Apply non-legato (de-legato) to notes")
 end
 
@@ -639,7 +638,6 @@ function M.fill_gaps()
         if next_note_start and next_note_start > note.endppqpos then
             -- Check for same pitch overlap prevention
             local new_end_ppq = next_note_start
-            local LEGATO_OPERATIONS = require "legato_operations"
 
             -- Same pitch overlap prevention
             new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
@@ -658,7 +656,6 @@ function M.fill_gaps()
     -- Sort MIDI events to ensure correct ordering after changes
     reaper.MIDI_Sort(current_take)
     -- Update the item and register the change in undo system
-    local SCRIPT_INIT = require "script_init"
     SCRIPT_INIT.register_undo(item, "Fill gaps between notes")
 end
 
@@ -728,8 +725,6 @@ function M.apply_humanization(humanize_strength, keep_within_boundaries, registe
 
         -- Apply constraints using shared functions
         if new_end_ppq > note.startppqpos then
-            local LEGATO_OPERATIONS = require "legato_operations"
-            
             -- 1. Apply same-pitch overlap prevention
             new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
             
@@ -749,7 +744,6 @@ function M.apply_humanization(humanize_strength, keep_within_boundaries, registe
     -- Update the item and register the change in undo system if requested
     register_undo = register_undo ~= false -- Default to true if not specified
     if register_undo then
-        local SCRIPT_INIT = require "script_init"
         SCRIPT_INIT.register_undo(item, "Apply humanization")
     end
     reaper.UpdateArrange()
@@ -833,7 +827,6 @@ function M.restore_original_notes(cache)
     reaper.MIDI_Sort(current_take)
     if current_take then
         local item = reaper.GetMediaItemTake_Item(current_take)
-        local SCRIPT_INIT = require "script_init"
         SCRIPT_INIT.register_undo(item, "Restore original notes")
     end
     reaper.UpdateArrange()
@@ -879,9 +872,7 @@ function M.apply_legato(cache, legato_amount, humanize_strength, keep_within_bou
                 new_end_ppq = new_end_ppq + humanize_ppq
             end
         end
-
-        -- Apply constraints using shared functions
-        local LEGATO_OPERATIONS = require "legato_operations"
+-- Apply constraints using shared functions
         
         -- 1. Same pitch notes must not overlap
         new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
@@ -902,7 +893,6 @@ function M.apply_legato(cache, legato_amount, humanize_strength, keep_within_bou
     -- Handle undo
     if current_take then
         local item = reaper.GetMediaItemTake_Item(current_take)
-        local SCRIPT_INIT = require "script_init"
         SCRIPT_INIT.register_undo(item, "Apply legato changes")
     end
 end

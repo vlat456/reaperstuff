@@ -17,7 +17,7 @@ end
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
--- Load cleanup manager for robust resource management
+-- Centralized require statements at the top of the file
 local CLEANUP_MANAGER = require "cleanup_manager"
 local UNDO_MANAGER = require "undo_manager"
 
