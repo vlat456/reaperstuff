@@ -2,14 +2,14 @@
 -- @author drvlat
 -- @version 0.2.1
 -- @provides 
---      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Quick_Heal.lua 
---      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Quick_Legato.lua
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool_Quick_Heal.lua 
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool_Quick_Legato.lua
 -- @about 
 --      This package contains scripts for applying legato effects to MIDI notes.
 --      In midi Action List search for: 
 --          Legato_Tool - Advanced legato editing tool with UI
---          Quick_Heal - Heal overlapping notes with default settings (no UI)
---          Quick_Legato - Fill gaps between selected notes and add 10% legato (no UI)
+--          Legato_Tool_Quick_Heal - Heal overlapping notes with default settings (no UI)
+--          Legato_Tool_Quick_Legato - Fill gaps between selected notes and add 10% legato (no UI)
 -- @changelog
 --      0.2.1 - Documentation updates
 --      0.2.0 - extracted common functionality to shared library, added quick scripts
