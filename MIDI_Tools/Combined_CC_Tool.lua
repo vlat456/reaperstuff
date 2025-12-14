@@ -14,6 +14,11 @@
 
 local reaper = reaper
 
+-- Get the path of the current script and add modules directory to the search path
+local info = debug.getinfo(1, 'S')
+local script_path = info.source:match('^@?(.*[/\\])')  -- Works on Win/Mac/Linux
+package.path = package.path .. ';' .. script_path .. 'modules/?.lua'
+
 -- Check for reaimgui
 if not reaper.ImGui_GetBuiltinPath then
   reaper.ShowMessageBox('ReaImGui is not installed or the version is too old. Please install/update it via ReaPack.', 'Error', 0)
@@ -23,6 +28,10 @@ end
 -- Load the ReaImGui library
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
+
+-- Load cleanup manager for robust resource management
+local CLEANUP_MANAGER = require "cleanup_manager"
+local UNDO_MANAGER = require "undo_manager"
 
 -- Script variables
 local script_name = "Combined CC Tool"
@@ -39,6 +48,29 @@ local cc_list_cache = {}
 local selected_in_lane_count = 0
 local selected_ccs_cache_valid = false
 local last_selected_ccs_signature = "" -- Track selection changes to detect when to invalidate cache
+
+-- Robust cleanup function
+local function cleanup_resources()
+    -- Clear all caches
+    cc_list_cache = {}
+    selected_ccs_cache_valid = false
+    redundant_event_count = 0
+    total_event_count = 0
+    selected_in_lane_count = 0
+    last_selected_ccs_signature = ""
+    
+    -- Reset all state variables
+    take = nil
+    last_clicked_cc_lane = -1
+    lane_name = ""
+    smooth_amount = 0
+    cc_redundancy_threshold = 0
+    drag_start_threshold = 0
+    threshold_drag_active = false
+end
+
+-- Register cleanup function with robust protection
+CLEANUP_MANAGER.setup_atexit_handler("Combined_CC_Tool", cleanup_resources)
 
 -- Variables for threshold slider with undo/redo functionality
 local drag_start_threshold = 0 -- Threshold value at the start of dragging
@@ -184,12 +216,9 @@ function remove_redundant_ccs()
         changes = changes + 1
     end
 
-    -- Get the media item associated with the take
+    -- Use standardized undo management
     local item = reaper.GetMediaItemTake_Item(current_take)
-
-    -- Update the item and register the change in undo system
-    reaper.UpdateItemInProject(item)
-    reaper.Undo_OnStateChange_Item(0, "Remove " .. changes .. " redundant CC events", item)
+    UNDO_MANAGER.register_undo(item, "Remove " .. changes .. " redundant CC events", "CC removal operation")
     reaper.MIDI_Sort(current_take) -- Ensure MIDI events are properly sorted after modifications
     calculate_redundant_ccs() -- Recalculate after removal
     cc_redundancy_threshold = 0 -- Reset threshold to 0
@@ -216,12 +245,9 @@ function select_all_ccs_in_lane()
         end
     end
 
-    -- Get the media item associated with the take
+    -- Use standardized undo management
     local item = reaper.GetMediaItemTake_Item(current_take)
-
-    -- Update the item and register the change in undo system
-    reaper.UpdateItemInProject(item)
-    reaper.Undo_OnStateChange_Item(0, "Select all CCs in lane", item)
+    UNDO_MANAGER.register_undo(item, "Select all CCs in lane", "CC selection operation")
     reaper.MIDI_Sort(current_take) -- Ensure MIDI events are properly sorted after modifications
     -- Invalidate all caches since selection changed
     selected_ccs_cache_valid = false
@@ -330,6 +356,8 @@ function loop()
     
     if imgui.IsKeyPressed(ctx, imgui.Key_Escape, false) then
         script_running = false
+        -- Use robust cleanup manager instead of manual cleanup
+        CLEANUP_MANAGER.execute_cleanup("Combined_CC_Tool")
     end
 
     local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse
@@ -337,6 +365,8 @@ function loop()
     
     if not open then
         script_running = false
+        -- Use robust cleanup manager when window is closed
+        CLEANUP_MANAGER.execute_cleanup("Combined_CC_Tool")
     end
     
     if visible and script_running then
@@ -446,7 +476,7 @@ function loop()
 
             -- Handle smoothing logic
             if imgui.IsItemActivated(ctx) then
-                reaper.Undo_BeginBlock2(0)
+                UNDO_MANAGER.begin_undo_block("CC smoothing operation")
                 cc_list_cache = build_cc_cache()  -- Cache once
             end
 
@@ -459,12 +489,10 @@ function loop()
             if imgui.IsItemDeactivatedAfterEdit(ctx) then
                 smooth_ccs()  -- Apply once with final smooth_amount
                 if take then
-                    -- Get the media item associated with the take
+                    -- Use standardized undo management
                     local item = reaper.GetMediaItemTake_Item(take)
                     reaper.MIDI_Sort(take) -- Ensure MIDI events are properly sorted after modifications
-                    -- Update the item and register the change in undo system
-                    reaper.UpdateItemInProject(item)
-                    reaper.Undo_OnStateChange_Item(0, "Smooth CC events", item)
+                    UNDO_MANAGER.register_undo(item, "Smooth CC events", "CC smoothing operation")
                 end
                 cc_list_cache = {}
                 -- Also invalidate selected CCs cache since values have changed
@@ -559,18 +587,8 @@ function loop()
 
     -- Clean up caches when the script is terminated to prevent memory leaks
     if not script_running then
-        -- Clear all caches to ensure clean state on next run
-        if #cc_list_cache > 0 then
-            cc_list_cache = {}
-        end
-        selected_ccs_cache_valid = false
-        redundant_event_count = 0
-        total_event_count = 0
-        selected_in_lane_count = 0
-        last_selected_ccs_signature = ""
-        take = nil
-        last_clicked_cc_lane = -1
-        lane_name = ""
+        -- Use robust cleanup manager instead of manual cleanup
+        CLEANUP_MANAGER.execute_cleanup("Combined_CC_Tool")
     end
 
     if script_running then

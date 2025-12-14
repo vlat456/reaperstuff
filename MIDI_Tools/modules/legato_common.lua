@@ -3,6 +3,7 @@
 local reaper = reaper
 
 local M = {} -- Module table
+local UNDO_MANAGER = require "undo_manager"
 
 -- Function to get current MIDI context consistently
 function M.get_midi_context()

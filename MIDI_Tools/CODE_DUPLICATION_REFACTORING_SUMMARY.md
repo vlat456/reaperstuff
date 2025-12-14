@@ -32,6 +32,15 @@ This document summarizes the refactoring performed to address code duplication i
   - `apply_legato_with_extension()`: Gap filling with legato extension
   - `finalize_changes()`: Consistent change finalization (sort, update, undo)
 
+#### cleanup_manager.lua
+
+- **Purpose**: Robust cleanup management to prevent memory leaks
+- **Functions**:
+  - `register_cleanup()`: Register cleanup functions for scripts
+  - `execute_all_cleanup()`: Execute all registered cleanup with pcall protection
+  - `execute_cleanup()`: Execute specific script cleanup with pcall protection
+  - `setup_atexit_handler()`: Set up automatic cleanup on script exit
+
 ### 2. Refactored Files
 
 #### Quick Scripts (All 3 files)
@@ -44,6 +53,7 @@ This document summarizes the refactoring performed to address code duplication i
   - Selected notes validation duplication
   - Undo handling duplication
 - **Note**: Required manual module path setup before requiring shared modules to avoid circular dependency
+- **Fixed**: Combined_CC_Tool.lua now also includes proper module path setup
 
 #### Legato_Tool.lua (GUI)
 
@@ -87,6 +97,21 @@ This document summarizes the refactoring performed to address code duplication i
 - **Intelligent caching**: Added caching for overlay count calculation in GUI loop
 - **Reduced CPU usage**: Overlay count now only recalculated when needed (take/selection changes)
 - **Eliminated redundant calculations**: Previously called `detect_overlays_count()` every GUI frame
+
+### 5. Memory Leak Prevention
+
+- **Robust cleanup manager**: Created [`cleanup_manager.lua`](MIDI_Tools/modules/cleanup_manager.lua) for centralized resource cleanup
+- **pcall protection**: All cleanup functions wrapped in pcall to handle errors gracefully
+- **Automatic cleanup**: Atexit handlers ensure cleanup happens even on script crashes
+- **Applied to both GUI tools**: [`Legato_Tool.lua`](MIDI_Tools/Legato_Tool.lua) and [`Combined_CC_Tool.lua`](MIDI_Tools/Combined_CC_Tool.lua)
+- **Memory safety**: Prevents memory consumption growth over time
+
+### 6. Undo System Standardization
+
+- **Created undo_manager.lua**: New module for consistent undo handling across all operations
+- **Standardized patterns**: All undo operations now use consistent error handling and registration
+- **Applied to all scripts**: Both GUI tools now use the same undo management system
+- **Consistent behavior**: Users can now expect predictable undo/redo behavior across all operations
 - **Easier testing**: Shared functions can be tested once and reused
 
 ## File Structure After Refactoring

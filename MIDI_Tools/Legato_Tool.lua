@@ -10,8 +10,9 @@ package.path = package.path .. ';' .. script_path .. 'modules/?.lua'
 
 -- Now we can require the shared modules
 local SCRIPT_INIT = require "script_init"
-
 local LEGATO_COMMON = require "legato_common"
+local CLEANUP_MANAGER = require "cleanup_manager"
+local UNDO_MANAGER = require "undo_manager"
 
 -- Create local aliases for common functions to maintain existing function calls
 local get_midi_context = LEGATO_COMMON.get_midi_context
@@ -68,6 +69,27 @@ local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
 local cached_overlay_count = -1  -- Cache for overlay count (-1 = not calculated yet)
 local last_overlay_calculation_take = nil  -- Track which take was used for overlay calculation
+
+-- Robust cleanup function
+local function cleanup_resources()
+    -- Clear all caches
+    notes_cache = {}
+    drag_start_note_states = {}
+    invalidate_cached_sorted_notes()
+    cached_overlay_count = -1
+    last_overlay_calculation_take = nil
+    
+    -- Reset all state variables
+    legato_amount = 0
+    humanize_strength = 0
+    keep_within_boundaries = false
+    selected_note_count = 0
+    overlay_count = 0
+    take = nil
+end
+
+-- Register cleanup function with robust protection
+CLEANUP_MANAGER.setup_atexit_handler("Legato_Tool", cleanup_resources)
 
 -- GUI-specific function for applying legato with delta calculations during dragging
 -- This is different from the common apply_legato function and needs to stay here
@@ -129,7 +151,7 @@ function apply_legato(cache, handle_undo)
     if handle_undo then
         local LEGATO_OPERATIONS = require "legato_operations"
         local item = reaper.GetMediaItemTake_Item(current_take)
-        SCRIPT_INIT.register_undo(item, "Apply legato changes")
+        UNDO_MANAGER.register_undo(item, "Apply legato changes", "Legato operation")
     end
 end
 
@@ -137,14 +159,8 @@ end
 -- Main GUI loop
 function loop()
     if not script_running then
-
-        -- Clean up caches when the script is terminated to prevent memory leaks
-        notes_cache = {}
-        drag_start_note_states = {}
-        invalidate_cached_sorted_notes() -- Also invalidate sorted notes cache
-        -- Reset all state variables when script terminates
-        legato_amount = 0
-        humanize_strength = 0
+        -- Use robust cleanup manager instead of manual cleanup
+        CLEANUP_MANAGER.execute_cleanup("Legato_Tool")
         return
     end
 
@@ -411,9 +427,8 @@ function loop()
                     if take then
                         reaper.MIDI_Sort(take)
                         local item = reaper.GetMediaItemTake_Item(take)
-                        -- Update the item and register the change in undo system
-                        reaper.UpdateItemInProject(item)
-                        reaper.Undo_OnStateChange_Item(0, "Apply legato changes", item)
+                        -- Use standardized undo management
+                        UNDO_MANAGER.register_undo(item, "Apply legato changes", "Legato slider operation")
                     end
 
                     -- Update the drag start reference to current state for future delta calculations
@@ -467,9 +482,8 @@ function loop()
                     if take then
                         reaper.MIDI_Sort(take)
                         local item = reaper.GetMediaItemTake_Item(take)
-                        -- Update the item and register the change in undo system
-                        reaper.UpdateItemInProject(item)
-                        reaper.Undo_OnStateChange_Item(0, "Apply humanization", item)
+                        -- Use standardized undo management
+                        UNDO_MANAGER.register_undo(item, "Apply humanization", "Humanization operation")
                     end
 
                     -- Reset the humanize slider to 0 after applying
