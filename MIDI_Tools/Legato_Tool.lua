@@ -456,8 +456,8 @@ function loop()
                         if take and #drag_start_note_states > 0 then
                             -- Restore to original state
                             restore_original_notes(drag_start_note_states)
-                            -- Apply humanization with current strength
-                            LEGATO_COMMON.apply_humanization(humanize_strength, keep_within_boundaries)
+                            -- Apply humanization with current strength (no undo during dragging)
+                            LEGATO_COMMON.apply_humanization(humanize_strength, keep_within_boundaries, false)
                         end
                     end
                 end

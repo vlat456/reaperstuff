@@ -665,7 +665,7 @@ function M.fill_gaps()
 end
 
 -- Function to apply only humanization to selected notes (without legato changes)
-function M.apply_humanization(humanize_strength, keep_within_boundaries)
+function M.apply_humanization(humanize_strength, keep_within_boundaries, register_undo)
     local current_take, midi_editor = M.get_midi_context()
 
     if not current_take then return end
@@ -742,9 +742,12 @@ function M.apply_humanization(humanize_strength, keep_within_boundaries)
 
     -- Sort MIDI events to ensure correct ordering after changes
     reaper.MIDI_Sort(current_take)
-    -- Update the item and register the change in undo system
-    reaper.UpdateItemInProject(item)
-    reaper.Undo_OnStateChange_Item(0, "Apply humanization", item)
+    -- Update the item and register the change in undo system if requested
+    register_undo = register_undo ~= false -- Default to true if not specified
+    if register_undo then
+        reaper.UpdateItemInProject(item)
+        reaper.Undo_OnStateChange_Item(0, "Apply humanization", item)
+    end
     reaper.UpdateArrange()
 end
 
