@@ -5,6 +5,79 @@ local reaper = reaper
 
 local M = {}
 
+-- Function to get media item boundaries in PPQ for the given take
+local function get_item_boundaries_in_ppq(take)
+    if not take then return 0, math.huge end  -- Return a reasonable range if no take
+
+    -- Get the media item that contains the take
+    local item = reaper.GetMediaItemTake_Item(take)
+    if not item then return 0, math.huge end
+
+    -- Get item position and length in project time
+    local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+    local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+    if item_pos == nil or item_pos == -1 or item_len == nil or item_len == -1 then
+        -- Error getting item info
+        reaper.MB("Error getting media item info", "Legato Tool Error", 0)
+        return 0, math.huge
+    end
+
+    local item_end = item_pos + item_len
+
+    -- Convert to PPQ relative to the take - check for valid conversion
+    local start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, item_pos)
+    if start_ppq == nil or start_ppq == -1 then
+        reaper.MB("Error converting start time to PPQ", "Legato Tool Error", 0)
+        return 0, math.huge
+    end
+
+    local end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, item_end)
+    if end_ppq == nil or end_ppq == -1 then
+        reaper.MB("Error converting end time to PPQ", "Legato Tool Error", 0)
+        return 0, math.huge
+    end
+
+    return start_ppq, end_ppq
+end
+
+-- Corrected version of the ms_to_ppq function that properly handles tempo changes
+-- This function converts milliseconds to PPQ (pulses per quarter note) changes for a specific note position
+local function ms_to_ppq_corrected(ms, take, note_ppq_pos)
+    if not ms or ms < 0 then
+        return 0
+    end
+
+    if not take or not note_ppq_pos then
+        -- Fallback to original estimation if no take/position provided
+        local tempo = reaper.Master_GetTempo()
+        return (ms * tempo * 480) / (60 * 1000)
+    end
+
+    -- Convert the note's PPQ position to project time
+    local note_time = reaper.MIDI_GetProjTimeFromPPQPos(take, note_ppq_pos)
+    if not note_time or note_time < 0 then
+        -- Fallback if conversion fails
+        local tempo = reaper.Master_GetTempo()
+        return (ms * tempo * 480) / (60 * 1000)
+    end
+
+    -- Calculate the target time after adding the milliseconds (convert ms to seconds)
+    local target_time = note_time + (ms / 1000.0)
+
+    -- Convert both times to PPQ and calculate the difference
+    local target_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, target_time)
+    local current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, note_time)
+
+    if not target_ppq or not current_ppq then
+        -- Fallback if conversion fails
+        local tempo = reaper.Master_GetTempo()
+        return (ms * tempo * 480) / (60 * 1000)
+    end
+
+    -- Return the difference in PPQ, which represents the distance for the specified milliseconds
+    return target_ppq - current_ppq
+end
+
 -- Function to apply overlap prevention constraints
 function M.apply_overlap_constraints(note, selected_notes, new_end_ppq)
     -- Same pitch overlap prevention - check against all selected notes
@@ -25,7 +98,7 @@ function M.apply_boundary_constraints(note, new_end_ppq, current_take, keep_with
         return new_end_ppq
     end
     
-    local item_start_ppq, item_end_ppq = LEGATO_COMMON.get_item_boundaries_in_ppq(current_take)
+    local item_start_ppq, item_end_ppq = get_item_boundaries_in_ppq(current_take)
     
     -- Constrain to item end boundary
     new_end_ppq = math.min(new_end_ppq, item_end_ppq)
@@ -82,7 +155,7 @@ function M.apply_legato_with_extension(current_take, selected_notes, extension_p
                 -- Calculate percentage of the next note's length
                 local extension_ms = math.max(next_note_length_ms * extension_percentage, 1)  -- At least 1ms extension
 
-                local extension_ppq = LEGATO_COMMON.ms_to_ppq_corrected(extension_ms, current_take, note.startppqpos)
+                local extension_ppq = ms_to_ppq_corrected(extension_ms, current_take, note.startppqpos)
                 new_end_ppq = new_end_ppq + extension_ppq
             end
 
