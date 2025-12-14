@@ -1,7 +1,7 @@
 -- @metapackage
 -- @description Legato Tool - Creating legato effects and stuff.
 -- @author drvlat
--- @version 0.3.5
+-- @version 0.3.6
 -- @provides
 --      [nomain] modules/*.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] Legato_Tool.lua
@@ -17,7 +17,7 @@
 --          Legato_Tool_Quick_Legato - Fill gaps between selected notes and add 10% legato (no UI)
 --          Legato_Tool_Quick_NonLegato - Remove legato effect and add small gaps between notes (no UI)
 -- @changelog
---      0.3.5 - Minor cleanup
+--      0.3.6 - Further optimizations and minor bug fixes.
 --      0.3.4 - Integrated CC Tool into Legato package.
 --      0.2.4 - Removed MessageBox warnings
 --      0.2.3 - Added Quick_NonLegato script
