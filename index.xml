@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="a058db7182fbc36ad5e98d620e5c17aa6234b844">
+<index version="1" name="Walter Scripts" commit="d716529cddce8d64ca74eed81de0177d81d8a9c8">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
@@ -53,6 +53,12 @@
         <changelog><![CDATA[0.1.4 - non-deterministic humanization
 0.1.3 - added Non-legato function and legato humanization.]]></changelog>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/9c293c05edd42b2b416f471e24bdf6537a2d95f3/MIDI_Tools/Legato_Tool.lua</source>
+      </version>
+      <version name="0.1.5" author="drvlat" time="2025-12-14T07:05:28Z">
+        <changelog><![CDATA[0.1.5 - some minor optimization, proper undo handling
+0.1.4 - non-deterministic humanization
+0.1.3 - added Non-legato function and legato humanization.]]></changelog>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/d716529cddce8d64ca74eed81de0177d81d8a9c8/MIDI_Tools/Legato_Tool.lua</source>
       </version>
     </reapack>
   </category>
