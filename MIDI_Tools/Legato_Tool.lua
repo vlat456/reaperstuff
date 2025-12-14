@@ -10,6 +10,7 @@
 --   The tool provides a user interface for adjusting settings and applying legato effects
 --   to selected MIDI notes in the MIDI editor.
 -- @changelog 
+--      0.1.5 - some minor optimization, proper undo handling
 --      0.1.4 - non-deterministic humanization
 --      0.1.3 - added Non-legato function and legato humanization.
 
@@ -38,7 +39,7 @@ local legato_amount = 0 -- Current legato amount in milliseconds (0-400ms)
 local drag_start_legato_amount = 0 -- Legato amount at the start of dragging
 local drag_start_note_states = {} -- Store the note states at drag start for delta calculations
 local keep_within_boundaries = false -- Flag to keep notes within media item boundaries
-local humanize_strength = 50 -- Strength of humanization effect (0-100)
+local humanize_strength = 0 -- Strength of humanization effect (0-100)
 local notes_cache_valid = false
 local notes_cache = {}  -- Cache for selected notes
 local last_selected_note_indices = {} -- Store indices of selected notes to detect changes
