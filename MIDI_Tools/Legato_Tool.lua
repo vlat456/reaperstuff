@@ -1235,14 +1235,23 @@ function loop()
                 local is_humanize_active = imgui.IsItemActive(ctx)        -- While user is dragging
                 local is_humanize_deactivated = imgui.IsItemDeactivatedAfterEdit(ctx)  -- When user releases
 
+                -- Store original state when humanization starts for proper undo behavior
+                if is_humanize_activated then
+                    drag_start_note_states = build_notes_cache()  -- Store original note states when dragging starts
+                end
+
                 if humanize_value_changed then
                     -- Update humanize_strength first
                     humanize_strength = new_humanize_strength
 
                     -- Apply humanization for real-time feedback while dragging
+                    -- First restore original state, then apply using current strength to avoid accumulation
                     if selected_note_count >= 1 and is_humanize_active then
-                        if take then
-                            apply_humanization()  -- Apply humanization in real-time while dragging
+                        if take and #drag_start_note_states > 0 then
+                            -- Restore to original state
+                            restore_original_notes(drag_start_note_states)
+                            -- Apply humanization with current strength
+                            apply_humanization()
                         end
                     end
                 end
@@ -1259,6 +1268,8 @@ function loop()
 
                     -- Reset the humanize slider to 0 after applying
                     humanize_strength = 0
+                    -- Reset the drag start state for future operations
+                    drag_start_note_states = {}
                     reaper.UpdateArrange() -- Update display after reset
                 end
 
