@@ -1,0 +1,31 @@
+-- @metapackage
+-- @description MIDI Toolbox - as the name says.
+-- @author drvlat
+-- @version 0.3.7
+-- @provides
+--      [nomain] modules/*.lua
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Advanced_Legato.lua
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Quick_Heal_Overlays.lua
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Quick_Legato.lua
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Quick_NonLegato.lua
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_CC_Optimizer.lua
+-- @about
+--      This package contains scripts for applying legato effects to MIDI notes.
+--      In midi Action List search for:
+--          MIDI_Toolbox_Advanced_Legato
+--          MIDI_Toolbox_Quick_Heal_Overlays
+--          MIDI_Toolbox_Quick_Legato
+--          MIDI_Toolbox_Quick_NonLegato
+--          MIDI_Toolbox_CC_Optimizer
+-- @changelog
+--      0.3.7 - Project renamed to MIDI Toolbox.
+--      0.3.6 - Further optimizations and minor bug fixes.
+--      0.3.4 - Integrated CC Tool into Legato package.
+--      0.2.4 - Removed MessageBox warnings
+--      0.2.3 - Added Quick_NonLegato script
+--      0.2.2 - Documentation updates
+--      0.2.0 - extracted common functionality to shared library, added quick scripts
+--      0.1.6 - resolve all overlays (guaranteed) at once
+--      0.1.5 - some minor optimization, proper undo handling
+--      0.1.4 - non-deterministic humanization
+--      0.1.3 - added Non-legato function and legato humanization.
