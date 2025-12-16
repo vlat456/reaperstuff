@@ -512,10 +512,16 @@ function convert_to_bezier()
         
         local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(gui_state.take, i, false, false, 0, 0, 0, 0, 0)
         if cc == lane then
-            -- Set the shape to Bezier (shape flag 5 for Bezier)
-            -- Using a default bezier tension of 0.5 for smooth curves
-            reaper.MIDI_SetCCShape(gui_state.take, i, 5, 0.5, true)
-            changes = changes + 1
+            -- Check current shape before converting
+            local _, current_shape, _ = reaper.MIDI_GetCCShape(gui_state.take, i, 0, 0)
+            
+            -- Only convert if not already a Bezier curve (shape 5)
+            if current_shape ~= 5 then
+                -- Set the shape to Bezier (shape flag 5 for Bezier)
+                -- Using a default bezier tension of 0.1 for smoother curves
+                reaper.MIDI_SetCCShape(gui_state.take, i, 5, 0.1, true)
+                changes = changes + 1
+            end
         end
     end
     
