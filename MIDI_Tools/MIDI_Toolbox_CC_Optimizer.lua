@@ -43,6 +43,10 @@ local gui_state = {
     smooth_amount = 0, -- 0-100%
     cc_redundancy_threshold = 0,
     
+    -- Noise filtering controls
+    noise_filter_threshold = 5, -- 0-20, threshold for detecting noise spikes
+    noise_filter_enabled = false,
+    
     -- Cache management
     cc_list_cache = {},
     selected_ccs_cache_valid = false,
@@ -90,6 +94,8 @@ local function cleanup_resources()
     gui_state.lane_name = ""
     gui_state.smooth_amount = 0
     gui_state.cc_redundancy_threshold = 0
+    gui_state.noise_filter_threshold = 5
+    gui_state.noise_filter_enabled = false
     gui_state.redundant_event_count = 0
     gui_state.total_event_count = 0
     gui_state.selected_in_lane_count = 0
@@ -416,6 +422,77 @@ function smooth_ccs()
     apply_smoothed_values(smoothed_values)
 end
 
+-- Noise filtering functions
+-- Calculate noise filtered values using high-pass filter approach
+function calculate_noise_filtered_values(filter_threshold)
+    if #gui_state.cc_list_cache < 3 then return {} end
+
+    local filtered_values = {}
+    local threshold = filter_threshold
+    
+    -- Copy original values
+    for i = 1, #gui_state.cc_list_cache do
+        filtered_values[i] = gui_state.cc_list_cache[i].val
+    end
+    
+    -- Apply noise detection and filtering
+    -- We'll use a combination of slope detection and local averaging to identify noise
+    for i = 2, #gui_state.cc_list_cache - 1 do
+        local prev_val = gui_state.cc_list_cache[i-1].val
+        local curr_val = gui_state.cc_list_cache[i].val
+        local next_val = gui_state.cc_list_cache[i+1].val
+        
+        -- Calculate the expected value based on linear interpolation between neighbors
+        local expected_val = (prev_val + next_val) / 2
+        local deviation = math.abs(curr_val - expected_val)
+        
+        -- If deviation exceeds threshold, consider it noise and replace with interpolated value
+        if deviation > threshold then
+            -- Use weighted average of neighbors for smoother result
+            filtered_values[i] = math.floor((prev_val * 0.3 + expected_val * 0.4 + next_val * 0.3) + 0.5)
+            -- Ensure value stays within valid CC range
+            filtered_values[i] = math.max(0, math.min(127, filtered_values[i]))
+        end
+    end
+    
+    return filtered_values
+end
+
+-- Apply noise filtered values to MIDI
+function apply_noise_filtered_values(filtered_values)
+    if not gui_state.take or #filtered_values == 0 then return end
+
+    -- Begin undo block for batch operation
+    UNDO_MANAGER.begin_undo_block("CC noise filtering operation")
+    
+    -- Apply all changes in batch
+    local changes = 0
+    for i = 1, #gui_state.cc_list_cache do
+        local cc_event = gui_state.cc_list_cache[i]
+        if filtered_values[i] and filtered_values[i] ~= cc_event.original_val then
+            reaper.MIDI_SetCC(gui_state.take, cc_event.idx, true, false, nil, nil, nil, nil, filtered_values[i], false)
+            changes = changes + 1
+        end
+    end
+    
+    -- Sort once at the end
+    reaper.MIDI_Sort(gui_state.take)
+    
+    -- Register undo
+    MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Filter noise from " .. changes .. " CC events", UNDO_MANAGER)
+    
+    -- Update arrange once at the end
+    reaper.UpdateArrange()
+end
+
+-- Main noise filtering function
+function filter_cc_noise()
+    if not gui_state.take or #gui_state.cc_list_cache < 3 then return end
+
+    local filtered_values = calculate_noise_filtered_values(gui_state.noise_filter_threshold)
+    apply_noise_filtered_values(filtered_values)
+end
+
 -- GUI
 function loop()
     if not script_running then return end
@@ -601,6 +678,64 @@ function loop()
                 end
             end
 
+            imgui.Separator(ctx)
+
+            -- Noise Filter Section
+            imgui.Text(ctx, "Filter Noise from Selected CCs")
+            if gui_state.selected_in_lane_count < 3 then
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
+                imgui.Text(ctx, "Select at least 3 CC events to use noise filter.")
+                reaper.ImGui_PopStyleColor(ctx)
+            else
+                imgui.Text(ctx, "Threshold: Detects and removes sudden spikes")
+                local _, new_noise_threshold = imgui.SliderInt(ctx, "Sensitivity", gui_state.noise_filter_threshold, 1, 20, "%d")
+                
+                if new_noise_threshold ~= gui_state.noise_filter_threshold then
+                    gui_state.noise_filter_threshold = new_noise_threshold
+                end
+                
+                imgui.Spacing(ctx)
+                
+                -- Add Filter Noise button
+                if imgui.Button(ctx, "Filter Noise") then
+                    -- Build cache before filtering
+                    gui_state.cc_list_cache = build_cc_cache()
+                    filter_cc_noise()
+                    -- Update caches and statistics after filtering
+                    invalidate_all_caches()
+                    calculate_redundant_ccs()
+                end
+                
+                imgui.Spacing(ctx)
+                imgui.Text(ctx, "Quick Presets:")
+                
+                -- Create a row of preset buttons for noise filtering
+                local preset_width = 80
+                if imgui.Button(ctx, "Gentle", preset_width, 0) then
+                    gui_state.noise_filter_threshold = 3
+                    gui_state.cc_list_cache = build_cc_cache()
+                    filter_cc_noise()
+                    invalidate_all_caches()
+                    calculate_redundant_ccs()
+                end
+                imgui.SameLine(ctx)
+                if imgui.Button(ctx, "Normal", preset_width, 0) then
+                    gui_state.noise_filter_threshold = 5
+                    gui_state.cc_list_cache = build_cc_cache()
+                    filter_cc_noise()
+                    invalidate_all_caches()
+                    calculate_redundant_ccs()
+                end
+                imgui.SameLine(ctx)
+                if imgui.Button(ctx, "Aggressive", preset_width, 0) then
+                    gui_state.noise_filter_threshold = 8
+                    gui_state.cc_list_cache = build_cc_cache()
+                    filter_cc_noise()
+                    invalidate_all_caches()
+                    calculate_redundant_ccs()
+                end
+            end
+            
             imgui.Separator(ctx)
 
             -- Remove Redundant Section
