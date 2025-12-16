@@ -50,7 +50,15 @@ local gui_state = {
     
     -- Drag state
     drag_start_threshold = 0,
-    threshold_drag_active = false
+    threshold_drag_active = false,
+    
+    -- Performance optimization state
+    smooth_preview_values = {},  -- Store preview values during drag
+    smooth_timer = 0,            -- Timer for throttling operations
+    smooth_update_interval = 50,  -- Update every 50ms during drag
+    smooth_drag_active = false,   -- Track if smoothing drag is active
+    large_dataset_mode = false,   -- Enable optimizations for large datasets
+    last_smooth_amount = 0       -- Track last processed smooth amount
 }
 
 -- Centralized state management functions
@@ -87,6 +95,13 @@ local function cleanup_resources()
     gui_state.selected_in_lane_count = 0
     gui_state.drag_start_threshold = 0
     gui_state.threshold_drag_active = false
+    
+    -- Reset performance optimization state
+    gui_state.smooth_preview_values = {}
+    gui_state.smooth_timer = 0
+    gui_state.smooth_drag_active = false
+    gui_state.large_dataset_mode = false
+    gui_state.last_smooth_amount = 0
 end
 
 -- Register cleanup function with robust protection
@@ -293,7 +308,7 @@ function select_all_ccs_in_lane()
 end
 
 
--- Logic from "Smooth CCs"
+-- Logic from "Smooth CCs" - Optimized version
 function build_cc_cache()
     local current_take, midi_editor, lane = get_midi_context()
 
@@ -308,30 +323,97 @@ function build_cc_cache()
 
         local _, _, _, _, _, _, cc, val = reaper.MIDI_GetCC(gui_state.take, i, false, false, 0, 0, 0, 0, 0)
         if cc == lane then
-            table.insert(list, {idx = i, val = val})
+            table.insert(list, {idx = i, val = val, original_val = val})
         end
     end
+    
+    -- Enable large dataset mode for performance optimization
+    gui_state.large_dataset_mode = #list > 500
+    
     return list
 end
 
-function smooth_ccs()
-    if not gui_state.take or #gui_state.cc_list_cache < 3 then return end
+-- Optimized smoothing calculation without MIDI modification
+function calculate_smooth_values(smooth_amount)
+    if #gui_state.cc_list_cache < 3 then return {} end
 
-    local c = gui_state.smooth_amount / 100
-
+    local c = smooth_amount / 100
+    local smoothed_values = {}
+    
+    -- Pre-calculate for better performance
+    for i = 1, #gui_state.cc_list_cache do
+        smoothed_values[i] = gui_state.cc_list_cache[i].val
+    end
+    
+    -- Apply smoothing algorithm
     for i = 2, #gui_state.cc_list_cache - 1 do
-        local prev_val = gui_state.cc_list_cache[i-1].val
-        local curr_val = gui_state.cc_list_cache[i].val
-        local next_val = gui_state.cc_list_cache[i+1].val
+        local prev_val = smoothed_values[i-1]
+        local curr_val = smoothed_values[i]
+        local next_val = smoothed_values[i+1]
 
         local avg = (prev_val + curr_val + next_val) / 3
         local new_val = curr_val - c * (curr_val - avg)
-        new_val = math.floor(math.max(0, math.min(127, new_val + 0.5)))
-
-        local cc_event = gui_state.cc_list_cache[i]
-        reaper.MIDI_SetCC(gui_state.take, cc_event.idx, true, false, nil, nil, nil, nil, new_val, false)
+        smoothed_values[i] = math.floor(math.max(0, math.min(127, new_val + 0.5)))
     end
+    
+    return smoothed_values
+end
+
+-- Batch apply smoothed values to MIDI
+function apply_smoothed_values(smoothed_values)
+    if not gui_state.take or #smoothed_values == 0 then return end
+
+    -- Begin undo block for batch operation
+    UNDO_MANAGER.begin_undo_block("CC smoothing operation")
+    
+    -- Apply all changes in batch
+    for i = 2, #gui_state.cc_list_cache - 1 do
+        local cc_event = gui_state.cc_list_cache[i]
+        if smoothed_values[i] then
+            reaper.MIDI_SetCC(gui_state.take, cc_event.idx, true, false, nil, nil, nil, nil, smoothed_values[i], false)
+        end
+    end
+    
+    -- Sort once at the end
+    reaper.MIDI_Sort(gui_state.take)
+    
+    -- Register undo
+    MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Smooth CC events", UNDO_MANAGER)
+    
+    -- Update arrange once at the end
     reaper.UpdateArrange()
+end
+
+-- Throttled smoothing function for real-time preview
+function smooth_ccs_throttled()
+    if not gui_state.take or #gui_state.cc_list_cache < 3 then return end
+    
+    local current_time = reaper.time_precise()
+    
+    -- Throttle updates based on dataset size
+    local throttle_interval = gui_state.large_dataset_mode and 100 or 50
+    
+    if current_time - gui_state.smooth_timer < throttle_interval then
+        return  -- Skip this update to maintain performance
+    end
+    
+    gui_state.smooth_timer = current_time
+    
+    -- Calculate smoothed values without applying them
+    gui_state.smooth_preview_values = calculate_smooth_values(gui_state.smooth_amount)
+    
+    -- For large datasets, only update arrange periodically
+    if not gui_state.large_dataset_mode or math.floor(current_time * 10) % 5 == 0 then
+        reaper.UpdateArrange()
+    end
+end
+
+-- Legacy function for backward compatibility
+function smooth_ccs()
+    if not gui_state.take or #gui_state.cc_list_cache < 3 then return end
+
+    local smoothed_values = calculate_smooth_values(gui_state.smooth_amount)
+    apply_smoothed_values(smoothed_values)
 end
 
 -- GUI
@@ -466,37 +548,57 @@ function loop()
                 if imgui.Button(ctx, "Select all events in lane") then
                     select_all_ccs_in_lane()
                 end
+            else
+                -- Show performance mode indicator for large datasets
+                if gui_state.large_dataset_mode then
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.8, 0.2, 1.0)) -- Green
+                    imgui.Text(ctx, "Performance mode active (" .. gui_state.selected_in_lane_count .. " points)")
+                    reaper.ImGui_PopStyleColor(ctx)
+                end
             end
             local _, new_smooth_amount = imgui.SliderInt(ctx, "Amount", gui_state.smooth_amount, 0, 100, "%d%%")
             gui_state.smooth_amount = new_smooth_amount
 
-            -- Handle smoothing logic
+            -- Handle smoothing logic with performance optimizations
             if imgui.IsItemActivated(ctx) then
-                UNDO_MANAGER.begin_undo_block("CC smoothing operation")
-                gui_state.cc_list_cache = build_cc_cache()  -- Cache once
+                -- Build cache once when slider is activated
+                gui_state.cc_list_cache = build_cc_cache()
+                gui_state.smooth_drag_active = true
+                gui_state.smooth_timer = reaper.time_precise()
+                gui_state.last_smooth_amount = gui_state.smooth_amount
             end
 
-            -- Real-time smoothing while dragging the slider
+            -- Optimized real-time smoothing while dragging the slider
             if imgui.IsItemActive(ctx) and #gui_state.cc_list_cache > 0 then
-                smooth_ccs()  -- Apply smoothing in real-time while dragging
-                reaper.UpdateArrange() -- Update the view to show real-time changes
+                -- Only process if smooth amount actually changed
+                if gui_state.smooth_amount ~= gui_state.last_smooth_amount then
+                    smooth_ccs_throttled()  -- Use throttled version for performance
+                    gui_state.last_smooth_amount = gui_state.smooth_amount
+                end
             end
 
             if imgui.IsItemDeactivatedAfterEdit(ctx) then
-                smooth_ccs()  -- Apply once with final smooth_amount
-                if gui_state.take then
-                    -- Use standardized undo management
-                    reaper.MIDI_Sort(gui_state.take) -- Ensure MIDI events are properly sorted after modifications
-                    MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Smooth CC events", UNDO_MANAGER)
+                -- Apply final smoothing with batch operation
+                if #gui_state.cc_list_cache > 0 and gui_state.smooth_amount > 0 then
+                    local smoothed_values = calculate_smooth_values(gui_state.smooth_amount)
+                    apply_smoothed_values(smoothed_values)
                 end
+                
+                -- Reset performance state
+                gui_state.smooth_drag_active = false
+                gui_state.smooth_preview_values = {}
+                
+                -- Update caches and statistics
                 invalidate_all_caches()
                 calculate_redundant_ccs() -- Recalculate redundant count after smoothing ends
             end
 
             -- Clear the cache when the slider is not active to prevent memory buildup
-            -- But only when not actively dragging (to preserve the cache during dragging)
             if not imgui.IsItemActive(ctx) and not imgui.IsItemActivated(ctx) and #gui_state.cc_list_cache > 0 then
-                invalidate_all_caches()
+                -- Only clear cache if we're not in large dataset mode (to preserve performance)
+                if not gui_state.large_dataset_mode then
+                    invalidate_all_caches()
+                end
             end
 
             imgui.Separator(ctx)
