@@ -493,6 +493,45 @@ function filter_cc_noise()
     apply_noise_filtered_values(filtered_values)
 end
 
+-- Function to convert selected CC points to Bezier curves
+function convert_to_bezier()
+    local current_take, midi_editor, lane = get_midi_context()
+    
+    if not gui_state.take or lane < 0 or lane > 127 then return end
+    
+    -- Begin undo block for batch operation
+    UNDO_MANAGER.begin_undo_block("Convert CC events to Bezier")
+    
+    local changes = 0
+    local i = -1
+    
+    -- Iterate through all selected CC events
+    while true do
+        i = reaper.MIDI_EnumSelCC(gui_state.take, i)
+        if i == -1 then break end
+        
+        local _, _, _, _, _, _, cc, _ = reaper.MIDI_GetCC(gui_state.take, i, false, false, 0, 0, 0, 0, 0)
+        if cc == lane then
+            -- Set the shape to Bezier (shape flag 5 for Bezier)
+            -- Using a default bezier tension of 0.5 for smooth curves
+            reaper.MIDI_SetCCShape(gui_state.take, i, 5, 0.5, true)
+            changes = changes + 1
+        end
+    end
+    
+    -- Sort once at the end
+    reaper.MIDI_Sort(gui_state.take)
+    
+    -- Register undo
+    MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Convert " .. changes .. " CC events to Bezier", UNDO_MANAGER)
+    
+    -- Update arrange once at the end
+    reaper.UpdateArrange()
+    
+    -- Invalidate caches since CC shapes were modified
+    invalidate_all_caches()
+end
+
 -- GUI
 function loop()
     if not script_running then return end
@@ -676,6 +715,12 @@ function loop()
                 if not gui_state.large_dataset_mode then
                     invalidate_all_caches()
                 end
+            end
+            
+            -- Add Convert to Bezier button under the slider
+            imgui.Spacing(ctx)
+            if imgui.Button(ctx, "Convert to Bezier") then
+                convert_to_bezier()
             end
 
             imgui.Separator(ctx)
