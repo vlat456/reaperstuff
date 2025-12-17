@@ -62,7 +62,9 @@ local gui_state = {
     smooth_update_interval = 50,  -- Update every 50ms during drag
     smooth_drag_active = false,   -- Track if smoothing drag is active
     large_dataset_mode = false,   -- Enable optimizations for large datasets
-    last_smooth_amount = 0       -- Track last processed smooth amount
+    last_smooth_amount = 0,      -- Track last processed smooth amount
+    last_cache_clear = 0,        -- Track last cache clear time for periodic clearing
+    last_cc_count = 0            -- Track last CC count to detect changes in events
 }
 
 -- Centralized state management functions
@@ -108,6 +110,8 @@ local function cleanup_resources()
     gui_state.smooth_drag_active = false
     gui_state.large_dataset_mode = false
     gui_state.last_smooth_amount = 0
+    gui_state.last_cache_clear = 0
+    gui_state.last_cc_count = 0
 end
 
 -- Register cleanup function with robust protection
@@ -383,6 +387,9 @@ function apply_smoothed_values(smoothed_values)
     -- Sort once at the end
     reaper.MIDI_Sort(gui_state.take)
     
+    -- End undo block
+    UNDO_MANAGER.end_undo_block("CC smoothing operation")
+    
     -- Register undo
     MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Smooth CC events", UNDO_MANAGER)
     
@@ -478,6 +485,9 @@ function apply_noise_filtered_values(filtered_values)
     -- Sort once at the end
     reaper.MIDI_Sort(gui_state.take)
     
+    -- End undo block
+    UNDO_MANAGER.end_undo_block("CC noise filtering operation")
+    
     -- Register undo
     MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Filter noise from " .. changes .. " CC events", UNDO_MANAGER)
     
@@ -527,6 +537,9 @@ function convert_to_bezier()
     
     -- Sort once at the end
     reaper.MIDI_Sort(gui_state.take)
+    
+    -- End undo block
+    UNDO_MANAGER.end_undo_block("Convert CC events to Bezier")
     
     -- Register undo
     MIDI_UTILS.register_undo(reaper.GetMediaItemTake_Item(gui_state.take), "Convert " .. changes .. " CC events to Bezier", UNDO_MANAGER)
@@ -589,9 +602,13 @@ function loop()
             invalidate_all_caches()
             imgui.Text(ctx, "Please open a MIDI editor.")
         else
-            -- Clear cache if take or lane changes
-            if gui_state.take ~= current_take or gui_state.last_clicked_cc_lane ~= current_lane then
+            -- Clear cache if take, lane, or CC events change
+            local _, _, current_cc_count, _ = reaper.MIDI_CountEvts(current_take, 0, 0, 0)
+            if gui_state.take ~= current_take or
+               gui_state.last_clicked_cc_lane ~= current_lane or
+               gui_state.last_cc_count ~= current_cc_count then
                 invalidate_all_caches()
+                gui_state.last_cc_count = current_cc_count
             end
 
             if not current_take then
@@ -717,9 +734,15 @@ function loop()
 
             -- Clear the cache when the slider is not active to prevent memory buildup
             if not imgui.IsItemActive(ctx) and not imgui.IsItemActivated(ctx) and #gui_state.cc_list_cache > 0 then
-                -- Only clear cache if we're not in large dataset mode (to preserve performance)
                 if not gui_state.large_dataset_mode then
                     invalidate_all_caches()
+                else
+                    -- For large datasets, clear cache periodically (e.g., every 30 seconds)
+                    local current_time = reaper.time_precise()
+                    if not gui_state.last_cache_clear or current_time - gui_state.last_cache_clear > 30 then
+                        invalidate_all_caches()
+                        gui_state.last_cache_clear = current_time
+                    end
                 end
             end
             

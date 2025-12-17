@@ -1,7 +1,7 @@
 -- @metapackage
 -- @description MIDI Toolbox - as the name says.
 -- @author drvlat
--- @version 0.3.9
+-- @version 0.3.10
 -- @provides
 --      [nomain] modules/*.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Advanced_Legato.lua
@@ -18,6 +18,7 @@
 --          MIDI_Toolbox_Quick_NonLegato
 --          MIDI_Toolbox_CC_Optimizer
 -- @changelog
+--      0.3.10 - Several bug fixes
 --      0.3.9 - Speed optimization, filtering, Bezier conversion.
 --      0.3.8 - Project renamed to MIDI Toolbox.
 --      0.3.6 - Further optimizations and minor bug fixes.
