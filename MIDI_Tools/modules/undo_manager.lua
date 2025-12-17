@@ -33,7 +33,7 @@ end
 -- Function to end undo block
 function M.end_undo_block(undo_message)
     undo_message = undo_message or "Complex operation"
-    reaper.Undo_EndBlock2(0, undo_message)
+    reaper.Undo_EndBlock2(0, undo_message, -1)
     return true
 end
 

@@ -244,8 +244,6 @@ function remove_redundant_ccs()
                 last_event_value = val
                 first_event_in_lane = false  -- We've seen the first event now
             end
-            -- Mark that we've seen at least one event in this lane
-            first_event_in_lane = false
         end
         -- CCs in other lanes are ignored for the redundancy calculation
     end
