@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="4121421230df2feaace4dd5fced6e0868235f60f">
+<index version="1" name="Walter Scripts" commit="0e27cb8c69ea44edfcd4df8b3066be74aac6b656">
   <category name="FX">
-    <reapack name="Kontakt_Tune_Humanizer.lua" type="script" desc="Humanize Kontakt Tune Parameter">
+    <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
@@ -11,9 +11,9 @@
 }
 ]]></description>
       </metadata>
-      <version name="0.0.2" author="drvlat" time="2025-12-19T13:49:50Z">
+      <version name="0.0.2" author="drvlat" time="2025-12-19T13:55:57Z">
         <changelog><![CDATA[0.0.2 - Initial release]]></changelog>
-        <source main="main">https://github.com/vlat456/reaperstuff/raw/4121421230df2feaace4dd5fced6e0868235f60f/FX/Kontakt_Tune_Humanizer.lua</source>
+        <source main="main" file="Kontakt_Tune_Humanizer.lua">https://github.com/vlat456/reaperstuff/raw/0e27cb8c69ea44edfcd4df8b3066be74aac6b656/FX/Kontakt_Tune_Humanizer.lua</source>
       </version>
     </reapack>
   </category>
