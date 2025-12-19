@@ -1,10 +1,10 @@
 -- @description Humanize Kontakt Tune Parameter
 -- @author drvlat
--- @version 0.0.1
+-- @version 0.0.2
 -- @about
 --      This package Huamnizes Kontakt #0016 Host parameter (should be assigned to Tune)
 -- @changelog
---      0.0.1 - Initial release
+--      0.0.2 - Initial release
 
 
 local reaper = reaper
