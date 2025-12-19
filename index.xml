@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="a7f407b61d4402b1faf17eff18a58872ca3f6019">
+<index version="1" name="Walter Scripts" commit="5ceda56e22c9a8a563fb550c4aace3566877a284">
+  <category name="Kontakt_Tune_Humanizer">
+    <reapack name="Kontakt_Tune_Humanizer.lua" type="script" desc="Humanize Kontakt Tune Parameter">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 This package Huamnizes Kontakt #0016 Host parameter (should be assigned to Tune)\par}
+}
+]]></description>
+      </metadata>
+      <version name="0.0.1" author="drvlat" time="2025-12-19T13:46:42Z">
+        <changelog><![CDATA[0.0.1 - Initial release]]></changelog>
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/5ceda56e22c9a8a563fb550c4aace3566877a284/Kontakt_Tune_Humanizer/Kontakt_Tune_Humanizer.lua</source>
+      </version>
+    </reapack>
+  </category>
   <category name="MIDI_Tools">
     <reapack name="MIDI_toolbox_package.lua" type="script" desc="MIDI Toolbox - as the name says.">
       <metadata>
