@@ -4,6 +4,9 @@
 
 local reaper = reaper
 
+-- Store the previous value to ensure we don't repeat it
+local previous_value = nil
+
 -- Function to check if an FX name contains "kontakt" (case insensitive)
 local function is_kontakt_instance(track, fx_index)
     local retval, fx_name = reaper.TrackFX_GetFXName(track, fx_index)
@@ -51,7 +54,18 @@ for i = 0, selected_track_count - 1 do
             -- Map desired range to normalized range
             local norm_min = (desired_min - kontakt_min) / (kontakt_max - kontakt_min)  -- ≈ 0.4979
             local norm_max = (desired_max - kontakt_min) / (kontakt_max - kontakt_min)  -- ≈ 0.5021
-            local random_value = norm_min + (math.random() * (norm_max - norm_min))
+
+            -- Generate a random value ensuring it's different from the previous value
+            local random_value
+            local attempts = 0
+            repeat
+                random_value = norm_min + (math.random() * (norm_max - norm_min))
+                attempts = attempts + 1
+                -- Limit attempts to avoid infinite loop
+            until (previous_value == nil or math.abs(random_value - previous_value) > 0.001) or attempts > 100
+
+            -- Update the previous value
+            previous_value = random_value
 
             -- Set host automation parameter 0016 on the Kontakt FX
             -- Send to parameter 16 directly without adding 0x1000000
