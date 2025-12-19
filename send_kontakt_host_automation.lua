@@ -4,6 +4,9 @@
 
 local reaper = reaper
 
+-- Seed the random number generator with current time to make it non-deterministic
+math.randomseed(os.time())
+
 -- Store the previous value to ensure we don't repeat it
 local previous_value = nil
 
@@ -31,7 +34,6 @@ end
 local selected_track_count = reaper.CountSelectedTracks(0)
 
 if selected_track_count == 0 then
-    reaper.ShowConsoleMsg("No selected tracks found.\n")
     return
 end
 
@@ -71,29 +73,8 @@ for i = 0, selected_track_count - 1 do
             -- Send to parameter 16 directly without adding 0x1000000
             local host_param_idx = 16  -- Host parameter 0016
 
-            -- Get current value of the parameter first to verify it exists
-            local current_val, min_val, max_val = reaper.TrackFX_GetParam(track, kontakt_fx_index, host_param_idx)
-            reaper.ShowConsoleMsg("Host parameter 0016 - Current value: " .. tostring(current_val)
-                                 .. ", Min: " .. tostring(min_val) .. ", Max: " .. tostring(max_val) .. "\n")
-
             -- Send the value to the host automation parameter on the Kontakt instance
-            local success = reaper.TrackFX_SetParam(track, kontakt_fx_index, host_param_idx, random_value)
-
-            if success then
-                -- Get the new value to confirm it was set
-                local new_val = reaper.TrackFX_GetParam(track, kontakt_fx_index, host_param_idx)
-                reaper.ShowConsoleMsg("Successfully sent value " .. string.format("%.3f", random_value)
-                                     .. ", now parameter shows value: " .. string.format("%.3f", new_val)
-                                     .. " for Kontakt FX index " .. kontakt_fx_index
-                                     .. " on track " .. (i+1) .. "\n")
-            else
-                reaper.ShowConsoleMsg("Failed to send automation to Kontakt on track " .. (i+1)
-                                     .. " - FX index: " .. kontakt_fx_index .. ", Host param: " .. host_param_idx .. "\n")
-            end
-        else
-            reaper.ShowConsoleMsg("No Kontakt instance found on track " .. (i+1) .. "\n")
+            reaper.TrackFX_SetParam(track, kontakt_fx_index, host_param_idx, random_value)
         end
     end
 end
-
-reaper.ShowConsoleMsg("Script completed.\n")
