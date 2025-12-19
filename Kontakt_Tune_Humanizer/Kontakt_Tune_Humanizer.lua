@@ -1,7 +1,6 @@
 -- @description Humanize Kontakt Tune Parameter
 -- @author drvlat
 -- @version 0.0.1
--- @provides
 -- @about
 --      This package Huamnizes Kontakt #0016 Host parameter (should be assigned to Tune)
 -- @changelog
