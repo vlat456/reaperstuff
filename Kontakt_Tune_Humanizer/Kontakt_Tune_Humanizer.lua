@@ -1,6 +1,12 @@
--- @noindex
--- @description Send random value to host automation parameter 0016 for Kontakt instances on selected tracks
--- Quick script without UI
+-- @description Humanize Kontakt Tune Parameter
+-- @author drvlat
+-- @version 0.0.1
+-- @provides
+-- @about
+--      This package Huamnizes Kontakt #0016 Host parameter (should be assigned to Tune)
+-- @changelog
+--      0.0.1 - Initial release
+
 
 local reaper = reaper
 
