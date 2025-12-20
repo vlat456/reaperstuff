@@ -48,7 +48,7 @@ local gui_state = {
     detect_fifths = true,
     detect_octaves = false,
     detect_fourths = false,
-    use_selected_notes = true,
+    -- use_selected_notes is always true now (removed radio buttons)
     
     -- Cache management
     notes_cache = {},
@@ -142,7 +142,7 @@ local function cleanup_resources()
     gui_state.detect_fifths = true
     gui_state.detect_octaves = false
     gui_state.detect_fourths = false
-    gui_state.use_selected_notes = true
+    -- gui_state.use_selected_notes is always true now (removed radio buttons)
 end
 
 -- Register cleanup function with robust protection
@@ -152,14 +152,20 @@ CLEANUP_MANAGER.setup_atexit_handler("Parallel_Intervals_Detector", cleanup_reso
 local function detect_parallel_intervals()
     if not gui_state.take then return end
     
-    -- Get notes based on selection preference
-    local notes
-    if gui_state.use_selected_notes then
-        -- Use the centralized function from legato_common module
-        notes = LEGATO_COMMON.get_selected_notes()
-    else
-        -- Get all notes
-        notes = PARALLEL_DETECTOR.get_all_notes_from_take(gui_state.take)
+    -- Always use selected notes (removed radio button option)
+    local selected_notes = LEGATO_COMMON.get_selected_notes()
+    -- Convert field names from legato_common format to parallel_detector format
+    local notes = {}
+    for _, note in ipairs(selected_notes) do
+        table.insert(notes, {
+            pitch = note.pitch,
+            start = note.startppqpos,  -- Convert startppqpos to start
+            endppq = note.endppqpos,
+            chan = note.chan,
+            vel = note.vel,
+            selected = note.selected,
+            id = note.index
+        })
     end
     
     if #notes < UI_CONSTANTS.MIN_NOTES_FOR_DETECTION then
@@ -188,17 +194,17 @@ local function detect_parallel_intervals()
     gui_state.parallel_fourths_count = 0
     
     if gui_state.detect_fifths then
-        local errors_found = PARALLEL_DETECTOR.detect_parallel_fifths(gui_state.take, notes, true)  -- Use selection mode
+        local errors_found = PARALLEL_DETECTOR.detect_parallel_fifths(gui_state.take, notes)  -- Fixed: removed third parameter
         gui_state.parallel_fifths_count = #errors_found
     end
     
     if gui_state.detect_octaves then
-        local errors_found = PARALLEL_DETECTOR.detect_parallel_octaves(gui_state.take, notes, true)  -- Use selection mode
+        local errors_found = PARALLEL_DETECTOR.detect_parallel_octaves(gui_state.take, notes)  -- Fixed: removed third parameter
         gui_state.parallel_octaves_count = #errors_found
     end
     
     if gui_state.detect_fourths then
-        local errors_found = PARALLEL_DETECTOR.detect_parallel_fourths(gui_state.take, notes, true)  -- Use selection mode
+        local errors_found = PARALLEL_DETECTOR.detect_parallel_fourths(gui_state.take, notes)  -- Fixed: removed third parameter
         gui_state.parallel_fourths_count = #errors_found
     end
     
@@ -242,11 +248,10 @@ end
 
 -- Render UI controls for MIDI context
 function render_ui_controls()
-    -- Display note counts
-    local notes_to_analyze = gui_state.use_selected_notes and gui_state.selected_note_count or gui_state.total_note_count
-    imgui.Text(ctx, "Notes to analyze: " .. notes_to_analyze)
+    -- Display note counts (always selected notes now)
+    imgui.Text(ctx, "Notes to analyze: " .. gui_state.selected_note_count)
     
-    if notes_to_analyze < UI_CONSTANTS.MIN_NOTES_FOR_DETECTION then
+    if gui_state.selected_note_count < UI_CONSTANTS.MIN_NOTES_FOR_DETECTION then
         reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(1.0, 0.2, 0.2, 1.0)) -- Red
         imgui.Text(ctx, "Select at least " .. UI_CONSTANTS.MIN_NOTES_FOR_DETECTION .. " notes for meaningful detection.")
         reaper.ImGui_PopStyleColor(ctx)
@@ -293,28 +298,15 @@ function render_detection_options()
     
     imgui.Spacing(ctx)
     
-    -- Note selection radio buttons
-    imgui.Text(ctx, "Analyze:")
-    local new_use_selected = imgui.RadioButton(ctx, "Selected notes only", gui_state.use_selected_notes)
-    if new_use_selected ~= gui_state.use_selected_notes then
-        gui_state.use_selected_notes = new_use_selected
-        gui_state.needs_detection_update = true
-    end
-    
-    imgui.SameLine(ctx)
-    local new_use_all = imgui.RadioButton(ctx, "All notes", not gui_state.use_selected_notes)
-    if new_use_all == gui_state.use_selected_notes then
-        gui_state.use_selected_notes = not new_use_all
-        gui_state.needs_detection_update = true
-    end
+    -- Note selection info (always use selected notes)
+    imgui.Text(ctx, "Analyzing: Selected notes only")
 end
 
 -- Render action buttons
 function render_action_buttons()
-    -- Detect button
-    local can_detect = (gui_state.detect_fifths or gui_state.detect_octaves or gui_state.detect_fourths) and 
-                     (gui_state.use_selected_notes and gui_state.selected_note_count >= UI_CONSTANTS.MIN_NOTES_FOR_DETECTION or 
-                      not gui_state.use_selected_notes and gui_state.total_note_count >= UI_CONSTANTS.MIN_NOTES_FOR_DETECTION)
+    -- Detect button (always use selected notes now)
+    local can_detect = (gui_state.detect_fifths or gui_state.detect_octaves or gui_state.detect_fourths) and
+                     gui_state.selected_note_count >= UI_CONSTANTS.MIN_NOTES_FOR_DETECTION
     
     if not can_detect then
         imgui.BeginDisabled(ctx)

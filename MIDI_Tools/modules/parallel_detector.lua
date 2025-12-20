@@ -87,22 +87,27 @@ function M.group_notes_into_chords(notes, ppq_threshold)
     local current_start_ppq = -1
     
     for i, note in ipairs(notes) do
-        if #current_chord == 0 then
-            table.insert(current_chord, note)
-            current_start_ppq = note.start
+        -- Skip nil notes or notes without start time
+        if not note or not note.start then
+            -- Skip this note
         else
-            -- Check time difference
-            local ppq_diff = note.start - current_start_ppq
-            if ppq_diff < ppq_threshold then
-                -- Same chord
+            if #current_chord == 0 then
                 table.insert(current_chord, note)
-            else
-                -- Save previous chord and start new one
-                table.sort(current_chord, function(a, b) return a.pitch < b.pitch end)
-                table.insert(chords, current_chord)
-                
-                current_chord = {note}
                 current_start_ppq = note.start
+            else
+                -- Check time difference
+                local ppq_diff = note.start - current_start_ppq
+                if ppq_diff < ppq_threshold then
+                    -- Same chord
+                    table.insert(current_chord, note)
+                else
+                    -- Save previous chord and start new one
+                    table.sort(current_chord, function(a, b) return a.pitch < b.pitch end)
+                    table.insert(chords, current_chord)
+                    
+                    current_chord = {note}
+                    current_start_ppq = note.start
+                end
             end
         end
     end
@@ -400,7 +405,8 @@ function M.get_all_notes_from_take(take)
     
     for i = 0, notecnt - 1 do
         local _, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
-        if not muted then  -- Skip muted notes
+        -- Skip muted notes or notes with nil essential values
+        if not muted and pitch ~= nil and startppq ~= nil then
             table.insert(notes, {
                 pitch = pitch,
                 start = startppq,
