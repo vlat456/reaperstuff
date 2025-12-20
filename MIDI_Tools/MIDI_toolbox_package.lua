@@ -1,7 +1,7 @@
 -- @metapackage
 -- @description MIDI Toolbox - as the name says.
 -- @author drvlat
--- @version 0.3.11
+-- @version 0.3.12
 -- @provides
 --      [nomain] modules/*.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Advanced_Legato.lua
@@ -9,6 +9,7 @@
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Quick_Legato.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Quick_NonLegato.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_CC_Optimizer.lua
+--      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Find_Parallels.lua
 -- @about
 --      This package contains scripts for applying legato effects to MIDI notes.
 --      In midi Action List search for:
@@ -17,7 +18,9 @@
 --          MIDI_Toolbox_Quick_Legato
 --          MIDI_Toolbox_Quick_NonLegato
 --          MIDI_Toolbox_CC_Optimizer
+--          MIDI_Toolbox_Find_Parallels
 -- @changelog
+--      0.3.12 - Window topmost behavior added to main scripts. Added parallel interval detection script (alpha).
 --      0.3.11 - Regression fix
 --      0.3.10 - Several bug fixes
 --      0.3.9 - Speed optimization, filtering, Bezier conversion.
