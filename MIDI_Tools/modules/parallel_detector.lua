@@ -69,6 +69,10 @@ end
 
 -- Function to group notes into chords based on start time proximity
 function M.group_notes_into_chords(notes, ppq_threshold)
+    if not notes then
+        return {}
+    end
+    
     ppq_threshold = ppq_threshold or M.CONSTANTS.DEFAULT_PPQ_THRESHOLD
     
     -- Sort notes by start time

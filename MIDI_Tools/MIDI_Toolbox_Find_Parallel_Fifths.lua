@@ -3,8 +3,10 @@
 
 local reaper = reaper
 
--- Set up module path consistently
-SCRIPT_INIT.setup_module_path()
+-- Get the path of the current script and add modules directory to the search path
+local info = debug.getinfo(1, 'S')
+local script_path = info.source:match('^@?(.*[/\\])')  -- Works on Win/Mac/Linux
+package.path = package.path .. ';' .. script_path .. 'modules/?.lua'
 
 -- Centralized require statements at the top of the file
 local SCRIPT_INIT = require "script_init"
