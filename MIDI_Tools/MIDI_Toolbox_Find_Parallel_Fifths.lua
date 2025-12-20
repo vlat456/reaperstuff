@@ -403,7 +403,7 @@ function loop()
     handle_keyboard_shortcuts()
 
     -- Handle escape key and window management
-    local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse
+    local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse | imgui.WindowFlags_TopMost
     local visible, open = imgui.Begin(ctx, script_name, true, flags)
     
     if not open then
@@ -412,15 +412,6 @@ function loop()
         CLEANUP_MANAGER.execute_cleanup("Parallel_Intervals_Detector")
     end
 
-    -- Check for clicks outside of window to close it
-    local is_window_hovered = imgui.IsWindowHovered(ctx, imgui.HoveredFlags_RootAndChildWindows)
-    local is_window_focused = imgui.IsWindowFocused(ctx, imgui.FocusedFlags_RootAndChildWindows)
-    local is_mouse_clicked = imgui.IsMouseClicked(ctx, imgui.MouseButton_Left)
-
-    -- Close when clicking outside the window area
-    if visible and is_window_hovered == false and is_mouse_clicked then
-        script_running = false
-    end
 
     -- Clean up caches when the script is terminated to prevent memory leaks
     if not script_running then

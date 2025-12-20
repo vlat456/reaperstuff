@@ -583,13 +583,22 @@ function loop()
         CLEANUP_MANAGER.execute_cleanup("Combined_CC_Tool")
     end
 
-    local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse
+    local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize | imgui.WindowFlags_NoCollapse | imgui.WindowFlags_TopMost
     local visible, open = imgui.Begin(ctx, script_name, true, flags)
     
     if not open then
         script_running = false
         -- Use robust cleanup manager when window is closed
         CLEANUP_MANAGER.execute_cleanup("Combined_CC_Tool")
+    end
+    
+    -- Force window to stay on top by bringing it to front if it loses focus
+    if visible and script_running then
+        local is_window_focused = imgui.IsWindowFocused(ctx, imgui.FocusedFlags_RootAndChildWindows)
+        if not is_window_focused then
+            -- Bring window to front to maintain topmost behavior
+            imgui.SetWindowFocus(ctx)
+        end
     end
     
     if visible and script_running then
