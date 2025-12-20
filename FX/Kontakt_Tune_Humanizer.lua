@@ -2,11 +2,94 @@
 
 local reaper = reaper
 
--- Seed the random number generator with current time to make it non-deterministic
-math.randomseed(os.time())
+-- Seed the random number generator with a more precise value to ensure different results
+-- even when script runs multiple times in quick succession
+local function better_seed()
+    -- Combine current time with clock ticks for more entropy
+    local time_seed = os.time()
+    local clock_seed = math.floor(os.clock() * 1000) % 1000
+    -- Use a simple hash function to combine the seeds
+    local combined_seed = time_seed * 1000 + clock_seed
+    
+    -- Add some additional entropy based on memory address (if available)
+    local mem_addr_str = tostring({}):match("0x(%x+)")
+    if mem_addr_str then
+        combined_seed = combined_seed + tonumber(mem_addr_str, 16) % 1000
+    else
+        -- Fallback entropy if memory address extraction fails
+        combined_seed = combined_seed + math.random(1, 999)
+    end
+    
+    return combined_seed
+end
+
+math.randomseed(better_seed())
 
 -- Store the previous value to ensure we don't repeat it
 local previous_value = nil
+
+-- Function to generate Gaussian distributed random numbers using Box-Muller transform
+-- This creates a more natural, bell-curve distribution centered around 0
+local function gaussian_random(mean, stddev)
+    -- Generate two uniform random numbers with additional entropy
+    local u1 = 0.0
+    local u2 = 0.0
+    
+    -- Add some additional entropy by generating a few random numbers first
+    for i = 1, 3 do
+        math.random()
+    end
+    
+    -- Ensure we don't get 0 (which would cause log(0) issues)
+    repeat
+        u1 = math.random()
+    until u1 > 0.0001
+    
+    repeat
+        u2 = math.random()
+    until u2 > 0.0001
+    
+    -- Add some time-based micro-variations
+    local micro_time = (os.clock() % 1.0) * 0.0001
+    u1 = (u1 + micro_time) % 1.0
+    if u1 <= 0.0001 then u1 = 0.0001 end
+    
+    -- Box-Muller transform to convert uniform to Gaussian distribution
+    local z0 = math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
+    
+    -- Return the value with the specified mean and standard deviation
+    return mean + z0 * stddev
+end
+
+-- Function to generate a random value with better distribution
+-- Uses Gaussian distribution centered in the middle of our range
+local function generate_balanced_random(min_val, max_val)
+    local center = (min_val + max_val) / 2
+    local range = max_val - min_val
+    
+    -- Use a smaller standard deviation to keep most values within our desired range
+    -- About 95% of values will fall within ±2*stddev of the center
+    local stddev = range / 4
+    
+    local value
+    local attempts = 0
+    
+    repeat
+        value = gaussian_random(center, stddev)
+        attempts = attempts + 1
+        
+        -- Clamp to our desired range to ensure we don't exceed limits
+        if value < min_val then
+            value = min_val
+        elseif value > max_val then
+            value = max_val
+        end
+        
+        -- Limit attempts to avoid infinite loop
+    until (previous_value == nil or math.abs(value - previous_value) > 0.001) or attempts > 100
+    
+    return value
+end
 
 -- Function to check if an FX name contains "kontakt" (case insensitive)
 local function is_kontakt_instance(track, fx_index)
@@ -55,14 +138,9 @@ for i = 0, selected_track_count - 1 do
             local norm_min = (desired_min - kontakt_min) / (kontakt_max - kontakt_min)  -- ≈ 0.4979
             local norm_max = (desired_max - kontakt_min) / (kontakt_max - kontakt_min)  -- ≈ 0.5021
 
-            -- Generate a random value ensuring it's different from the previous value
-            local random_value
-            local attempts = 0
-            repeat
-                random_value = norm_min + (math.random() * (norm_max - norm_min))
-                attempts = attempts + 1
-                -- Limit attempts to avoid infinite loop
-            until (previous_value == nil or math.abs(random_value - previous_value) > 0.001) or attempts > 100
+            -- Generate a random value using Gaussian distribution for more natural variation
+            -- This will center values around the middle of our range with most values close to center
+            local random_value = generate_balanced_random(norm_min, norm_max)
 
             -- Update the previous value
             previous_value = random_value
