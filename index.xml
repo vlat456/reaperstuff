@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="0e27cb8c69ea44edfcd4df8b3066be74aac6b656">
+<index version="1" name="Walter Scripts" commit="e88c0b9975e8eee7e223f6cad64d116f5b5fa08c">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -14,6 +14,11 @@
       <version name="0.0.2" author="drvlat" time="2025-12-19T13:55:57Z">
         <changelog><![CDATA[0.0.2 - Initial release]]></changelog>
         <source main="main" file="Kontakt_Tune_Humanizer.lua">https://github.com/vlat456/reaperstuff/raw/0e27cb8c69ea44edfcd4df8b3066be74aac6b656/FX/Kontakt_Tune_Humanizer.lua</source>
+      </version>
+      <version name="0.0.3" author="drvlat" time="2025-12-20T09:44:53Z">
+        <changelog><![CDATA[0.0.3 - A lot better randomness (Gaussian distribution)
+0.0.2 - Initial release]]></changelog>
+        <source main="main" file="Kontakt_Tune_Humanizer.lua">https://github.com/vlat456/reaperstuff/raw/e88c0b9975e8eee7e223f6cad64d116f5b5fa08c/FX/Kontakt_Tune_Humanizer.lua</source>
       </version>
     </reapack>
   </category>
