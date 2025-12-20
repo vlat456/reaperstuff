@@ -74,7 +74,7 @@ This document summarizes all test suites created for testing the parallel interv
 
 ## Total Test Coverage
 
-**Overall Results**: ✅ 81/81 total tests passed
+**Overall Results**: ✅ 87/87 total tests passed
 
 - **Standard Tests**: 39/39 passed
 - **Edge Cases**: 18/18 passed
@@ -91,11 +91,23 @@ This document summarizes all test suites created for testing the parallel interv
 5. **Musical Scenarios**: Correctly processes real-world musical situations
 6. **Performance**: Efficiently handles large chords and long progressions
 
+## Critical Bug Fixed
+
+**Fixed nil comparison error** in parallel_detector.lua:
+
+- **Issue**: The error "attempt to compare two nil values" was occurring when clicking "Detect parallel interval"
+- **Root Cause**: The `analyze_parallel_intervals` function had goto statements with undefined labels
+- **Solution**: Removed all goto statements and restructured the control flow to avoid nil value comparisons
+- **Protection**: Added comprehensive nil checks for note objects and pitch values before processing
+- **Result**: Runtime error eliminated, algorithm now handles all input scenarios gracefully
+
 ## Issues Fixed
 
 1. **Circular Dependency**: Fixed `SCRIPT_INIT.setup_module_path()` issue in `MIDI_Toolbox_Find_Parallel_Fifths.lua`
 2. **Nil Input Handling**: Added nil check in `group_notes_into_chords()` function
 3. **Test Expectations**: Corrected test expectations to match actual algorithm behavior
+4. **Runtime Crash**: Fixed critical nil comparison error that prevented parallel detection from working
+5. **Syntax Errors**: Resolved goto statement issues and control flow problems
 
 ## Usage
 

@@ -137,44 +137,46 @@ function M.analyze_parallel_intervals(chords, interval_check_func, take)
                 local note_B_next = chord_next[vB]
                 
                 if not note_A_curr or not note_B_curr or not note_A_next or not note_B_next then
-                    -- Skip this voice pair if any note is nil
-                else
-                    local pitch_A_curr = note_A_curr.pitch
-                    local pitch_B_curr = note_B_curr.pitch
-                    local pitch_A_next = note_A_next.pitch
-                    local pitch_B_next = note_B_next.pitch
+                    goto continue_voice_pair
+                end
+                
+                local pitch_A_curr = note_A_curr.pitch
+                local pitch_B_curr = note_B_curr.pitch
+                local pitch_A_next = note_A_next.pitch
+                local pitch_B_next = note_B_next.pitch
+                
+                if not pitch_A_curr or not pitch_B_curr or not pitch_A_next or not pitch_B_next then
+                    goto continue_voice_pair
+                end
+                
+                -- Calculate intervals
+                local int_curr = math.abs(pitch_B_curr - pitch_A_curr)
+                local int_next = math.abs(pitch_B_next - pitch_A_next)
+                
+                -- Check if both intervals match the target interval type
+                if interval_check_func(pitch_A_curr, pitch_B_curr) and 
+                   interval_check_func(pitch_A_next, pitch_B_next) then
                     
-                    if not pitch_A_curr or not pitch_B_curr or not pitch_A_next or not pitch_B_next then
-                        -- Skip this voice pair if any pitch is nil
-                    else
-                        -- Calculate intervals
-                        local int_curr = math.abs(pitch_B_curr - pitch_A_curr)
-                        local int_next = math.abs(pitch_B_next - pitch_A_next)
+                    -- Check for parallel motion
+                    if M.is_parallel_motion(pitch_A_curr, pitch_B_curr, pitch_A_next, pitch_B_next) then
+                        -- Parallel interval detected
+                        local error_info = {
+                            chord_index = i,
+                            voice_A = vA,
+                            voice_B = vB,
+                            pitch_A_curr = pitch_A_curr,
+                            pitch_B_curr = pitch_B_curr,
+                            pitch_A_next = pitch_A_next,
+                            pitch_B_next = pitch_B_next,
+                            interval_curr = int_curr,
+                            interval_next = int_next,
+                            position_ppq = chord_curr[vA].start
+                        }
                         
-                        -- Check if both intervals match the target interval type
-                        if interval_check_func(pitch_A_curr, pitch_B_curr) and
-                           interval_check_func(pitch_A_next, pitch_B_next) then
-                            
-                            -- Check for parallel motion
-                            if M.is_parallel_motion(pitch_A_curr, pitch_B_curr, pitch_A_next, pitch_B_next) then
-                                -- Parallel interval detected
-                                local error_info = {
-                                    chord_index = i,
-                                    voice_A = vA,
-                                    voice_B = vB,
-                                    pitch_A_curr = pitch_A_curr,
-                                    pitch_B_curr = pitch_B_curr,
-                                    pitch_A_next = pitch_A_next,
-                                    pitch_B_next = pitch_B_next,
-                                    interval_curr = int_curr,
-                                    interval_next = int_next,
-                                    position_ppq = chord_curr[vA].start
-                                }
-                                
-                                table.insert(errors_found, error_info)
-                            end
-                        end
+                        table.insert(errors_found, error_info)
                     end
+                    
+                    ::continue_voice_pair::
                 end
             end
         end

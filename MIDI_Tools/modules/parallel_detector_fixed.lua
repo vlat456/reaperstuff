@@ -76,10 +76,10 @@ function M.group_notes_into_chords(notes, ppq_threshold)
     ppq_threshold = ppq_threshold or M.CONSTANTS.DEFAULT_PPQ_THRESHOLD
     
     -- Sort notes by start time (with nil checks)
-    table.sort(notes, function(a, b)
+    table.sort(notes, function(a, b) 
         if not a or not a.start then return false end
         if not b or not b.start then return true end
-        return a.start < b.start
+        return a.start < b.start 
     end)
     
     local chords = {}
@@ -136,23 +136,23 @@ function M.analyze_parallel_intervals(chords, interval_check_func, take)
                 local note_A_next = chord_next[vA]
                 local note_B_next = chord_next[vB]
                 
+                -- Skip if any note is nil
                 if not note_A_curr or not note_B_curr or not note_A_next or not note_B_next then
-                    -- Skip this voice pair if any note is nil
+                    -- continue to next voice pair
                 else
                     local pitch_A_curr = note_A_curr.pitch
                     local pitch_B_curr = note_B_curr.pitch
                     local pitch_A_next = note_A_next.pitch
                     local pitch_B_next = note_B_next.pitch
                     
-                    if not pitch_A_curr or not pitch_B_curr or not pitch_A_next or not pitch_B_next then
-                        -- Skip this voice pair if any pitch is nil
-                    else
+                    -- Skip if any pitch is nil
+                    if pitch_A_curr and pitch_B_curr and pitch_A_next and pitch_B_next then
                         -- Calculate intervals
                         local int_curr = math.abs(pitch_B_curr - pitch_A_curr)
                         local int_next = math.abs(pitch_B_next - pitch_A_next)
                         
                         -- Check if both intervals match the target interval type
-                        if interval_check_func(pitch_A_curr, pitch_B_curr) and
+                        if interval_check_func(pitch_A_curr, pitch_B_curr) and 
                            interval_check_func(pitch_A_next, pitch_B_next) then
                             
                             -- Check for parallel motion
@@ -186,7 +186,7 @@ end
 -- Function to select notes involved in parallel intervals
 function M.select_notes_for_errors(errors_found, take, interval_type_name)
     if not take or #errors_found == 0 then
-        return 0
+        return0
     end
     
     -- Collect all note indices involved in parallel intervals
@@ -195,7 +195,7 @@ function M.select_notes_for_errors(errors_found, take, interval_type_name)
     -- Get all notes from the take to find the actual indices
     local retval, notecnt, _, _ = reaper.MIDI_CountEvts(take)
     if not retval or notecnt == 0 then
-        return 0
+        return0
     end
     
     -- Create a map of notes by pitch and position for easier lookup
@@ -243,12 +243,12 @@ function M.select_notes_for_errors(errors_found, take, interval_type_name)
     
     -- Deselect all notes first
     for note_idx = 0, notecnt - 1 do
-        reaper.MIDI_SetNote(take, note_idx, false, nil, nil, nil, nil, nil, nil, true)
+        reaper.MIDI_SetNote(take, note_idx, false, nil, nil, nil, nil, nil, true)
     end
     
     -- Select the identified notes
     for _, note_idx in ipairs(note_indices_to_select) do
-        reaper.MIDI_SetNote(take, note_idx, true, nil, nil, nil, nil, nil, nil, true)
+        reaper.MIDI_SetNote(take, note_idx, true, nil, nil, nil, nil, nil, true)
     end
     
     return #note_indices_to_select
