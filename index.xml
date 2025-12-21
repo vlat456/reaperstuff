@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="3d11d0381312995b4ccbb69a37974e479a1118a1">
+<index version="1" name="Walter Scripts" commit="6cfb89e848104097860765ea6545f409c92bccca">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -29,7 +29,7 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 This package contains scripts for applying legato effects to MIDI notes. In midi Action List search for: MIDI_Toolbox_Advanced_Legato MIDI_Toolbox_Quick_Heal_Overlays MIDI_Toolbox_Quick_Legato MIDI_Toolbox_Quick_NonLegato MIDI_Toolbox_CC_Optimizer MIDI_Toolbox_Find_Parallels\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 This package contains scripts for applying legato effects to MIDI notes. In midi Action List search for: MIDI_Toolbox_Advanced_Legato MIDI_Toolbox_Quick_Heal_Overlays MIDI_Toolbox_Quick_Legato MIDI_Toolbox_Quick_NonLegato MIDI_Toolbox_CC_Optimizer MIDI_Toolbox_Find_Parallels MIDI_Toolbox_Note_Mover\par}
 }
 ]]></description>
       </metadata>
@@ -164,6 +164,38 @@
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_Quick_NonLegato.lua">https://github.com/vlat456/reaperstuff/raw/3d11d0381312995b4ccbb69a37974e479a1118a1/MIDI_Tools/MIDI_Toolbox_Quick_NonLegato.lua</source>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_CC_Optimizer.lua">https://github.com/vlat456/reaperstuff/raw/3d11d0381312995b4ccbb69a37974e479a1118a1/MIDI_Tools/MIDI_Toolbox_CC_Optimizer.lua</source>
         <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_Find_Parallels.lua">https://github.com/vlat456/reaperstuff/raw/3d11d0381312995b4ccbb69a37974e479a1118a1/MIDI_Tools/MIDI_Toolbox_Find_Parallels.lua</source>
+      </version>
+      <version name="0.3.13" author="drvlat" time="2025-12-21T08:56:52Z">
+        <changelog><![CDATA[0.3.13 - Added note mover/copier script for transposing or copying notes by a fixed interval.
+0.3.12 - Window topmost behavior added to main scripts. Added parallel interval detection script (alpha).
+0.3.11 - Regression fix
+0.3.10 - Several bug fixes
+0.3.9 - Speed optimization, filtering, Bezier conversion.
+0.3.8 - Project renamed to MIDI Toolbox.
+0.3.6 - Further optimizations and minor bug fixes.
+0.3.4 - Integrated CC Tool into Legato package.
+0.2.4 - Removed MessageBox warnings
+0.2.3 - Added Quick_NonLegato script
+0.2.2 - Documentation updates
+0.2.0 - extracted common functionality to shared library, added quick scripts
+0.1.6 - resolve all overlays (guaranteed) at once
+0.1.5 - some minor optimization, proper undo handling
+0.1.4 - non-deterministic humanization
+0.1.3 - added Non-legato function and legato humanization.]]></changelog>
+        <source file="modules/cleanup_manager.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/modules/cleanup_manager.lua</source>
+        <source file="modules/legato_common.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/modules/legato_common.lua</source>
+        <source file="modules/legato_operations.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/modules/legato_operations.lua</source>
+        <source file="modules/midi_utils.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/modules/midi_utils.lua</source>
+        <source file="modules/parallel_detector.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/modules/parallel_detector.lua</source>
+        <source file="modules/script_init.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/modules/script_init.lua</source>
+        <source file="modules/undo_manager.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/modules/undo_manager.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_Advanced_Legato.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/MIDI_Toolbox_Advanced_Legato.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_Quick_Heal_Overlays.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/MIDI_Toolbox_Quick_Heal_Overlays.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_Quick_Legato.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/MIDI_Toolbox_Quick_Legato.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_Quick_NonLegato.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/MIDI_Toolbox_Quick_NonLegato.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_CC_Optimizer.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/MIDI_Toolbox_CC_Optimizer.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_Find_Parallels.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/MIDI_Toolbox_Find_Parallels.lua</source>
+        <source main="midi_eventlisteditor midi_inlineeditor midi_editor" file="MIDI_Toolbox_Note_Mover.lua">https://github.com/vlat456/reaperstuff/raw/6cfb89e848104097860765ea6545f409c92bccca/MIDI_Tools/MIDI_Toolbox_Note_Mover.lua</source>
       </version>
     </reapack>
   </category>
