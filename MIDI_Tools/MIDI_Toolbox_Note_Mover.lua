@@ -101,6 +101,46 @@ local function update_note_count()
     return gui_state.selected_note_count
 end
 
+-- Function to check if MIDI selection has changed
+local last_selected_note_indices = {} -- Store indices of selected notes to detect changes
+local function midi_selection_changed()
+    local current_take, _ = MIDI_UTILS.get_midi_context()
+    if not current_take then return false end
+
+    local current_selection = {}
+    local note_index = -1
+    local safety_counter = 0
+    local max_notes = MIDI_UTILS.CONSTANTS.MAX_NOTES_LIMIT
+
+    while safety_counter < max_notes do
+        note_index = reaper.MIDI_EnumSelNotes(current_take, note_index)
+        if note_index == -1 then
+            break
+        end
+        table.insert(current_selection, note_index)
+        safety_counter = safety_counter + 1
+    end
+
+    local last_selection = last_selected_note_indices
+
+    -- Compare lengths first
+    if #current_selection ~= #last_selection then
+        last_selected_note_indices = current_selection
+        return true
+    end
+
+    -- Compare individual indices
+    for i = 1, #current_selection do
+        if current_selection[i] ~= last_selection[i] then
+            last_selected_note_indices = current_selection
+            return true
+        end
+    end
+
+    -- No change detected
+    return false
+end
+
 local function handle_take_change(new_take)
     if gui_state.take ~= new_take then
         gui_state.take = new_take
@@ -450,8 +490,7 @@ function loop()
                 imgui.Text(ctx, "Could not get MIDI take.")
             else
                 -- Check if MIDI selection has changed
-                local current_note_count = update_note_count()
-                if gui_state.selected_note_count ~= current_note_count then
+                if midi_selection_changed() then
                     handle_selection_change()
                 end
 
