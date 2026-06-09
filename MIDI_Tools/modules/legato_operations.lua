@@ -59,10 +59,23 @@ function M.safe_set_note_end(current_take, note_index, start_ppq, new_end_ppq)
 end
 
 -- Function to apply legato with gap filling and extension
-function M.apply_legato_with_extension(current_take, selected_notes, extension_percentage)
+function M.apply_legato_with_extension(current_take, selected_notes, extension_percentage, merge_same_pitches)
     extension_percentage = extension_percentage or MIDI_UTILS.CONSTANTS.EXTENSION_PERCENTAGE_DEFAULT
+    merge_same_pitches = merge_same_pitches or false
+    
+    local notes_to_delete = {}
     
     for i, note in ipairs(selected_notes) do
+        -- Skip notes already marked for deletion by an earlier merge
+        local skip_note = false
+        for _, idx in ipairs(notes_to_delete) do
+            if idx == note.index then
+                skip_note = true
+                break
+            end
+        end
+        if skip_note then goto continue_note end
+        
         -- Find the next note that starts after this note
         local next_note = nil
         for j = i + 1, #selected_notes do
@@ -90,14 +103,52 @@ function M.apply_legato_with_extension(current_take, selected_notes, extension_p
                 new_end_ppq = new_end_ppq + extension_ppq
             end
 
-            -- Apply overlap prevention
-            new_end_ppq = M.apply_overlap_constraints(note, selected_notes, new_end_ppq)
+            -- Handle same pitch notes
+            if merge_same_pitches then
+                -- Merge same-pitch notes: extend past them and mark for deletion
+                local merged = true
+                while merged do
+                    merged = false
+                    for _, other_note in ipairs(selected_notes) do
+                        if note.pitch == other_note.pitch and
+                           other_note.startppqpos > note.startppqpos and
+                           other_note.startppqpos <= new_end_ppq and
+                           other_note.index ~= note.index then
+                            local already_marked = false
+                            for _, idx in ipairs(notes_to_delete) do
+                                if idx == other_note.index then
+                                    already_marked = true
+                                    break
+                                end
+                            end
+                            if not already_marked then
+                                new_end_ppq = math.max(new_end_ppq, other_note.endppqpos)
+                                table.insert(notes_to_delete, other_note.index)
+                                merged = true
+                            end
+                        end
+                    end
+                end
+            else
+                -- Apply overlap prevention
+                new_end_ppq = M.apply_overlap_constraints(note, selected_notes, new_end_ppq)
+            end
             
             -- Apply boundary constraints (default to false for quick scripts)
             new_end_ppq = M.apply_boundary_constraints(note, new_end_ppq, current_take, false)
 
             -- Set the note end position
             M.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq)
+        end
+        
+        ::continue_note::
+    end
+    
+    -- Delete notes that were merged
+    if merge_same_pitches and #notes_to_delete > 0 then
+        table.sort(notes_to_delete)
+        for i = #notes_to_delete, 1, -1 do
+            reaper.MIDI_DeleteNote(current_take, notes_to_delete[i])
         end
     end
 end

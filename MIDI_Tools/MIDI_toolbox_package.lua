@@ -1,7 +1,7 @@
 -- @metapackage
 -- @description MIDI Toolbox - as the name says.
 -- @author drvlat
--- @version 0.3.14
+-- @version 0.3.15
 -- @provides
 --      [nomain] modules/*.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Advanced_Legato.lua
@@ -22,6 +22,7 @@
 --          MIDI_Toolbox_Find_Parallels
 --          MIDI_Toolbox_Note_Mover
 -- @changelog
+--      0.3.15 - Added "Merge same-pitch notes" option to Advanced Legato (legato slider, Fill gaps, Quick Legato). When enabled, extending a note past same-pitch notes merges them instead of stopping.
 --      0.3.14 - Added note mover/copier script for transposing or copying notes by a fixed interval.
 --      0.3.12 - Window topmost behavior added to main scripts. Added parallel interval detection script (alpha).
 --      0.3.11 - Regression fix
