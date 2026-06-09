@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="a162435c36ef308bb1bfbd4575164d106c252bdb">
-  <metadata>
-    <link rel="website">https://github.com/vlat456/reaperstuff</link>
-  </metadata>
+<index version="1" name="Walter Scripts" commit="d3e8f88f79c906ee387315063770030535d7471d">
   <category name="MIDI_Tools">
     <reapack name="Combined_CC_Tool.lua" type="script" desc="Combined CC Tool - Removing redundant CCs and smoothing selected CCs">
       <metadata>
@@ -17,6 +14,13 @@
       </metadata>
       <version name="0.1" author="drvlat" time="2025-11-30T19:53:14Z">
         <source main="main">https://github.com/vlat456/reaperstuff/raw/a162435c36ef308bb1bfbd4575164d106c252bdb/MIDI_Tools/Combined_CC_Tool.lua</source>
+      </version>
+      <version name="0.2" author="drvlat" time="2026-06-09T07:41:36Z">
+        <changelog><![CDATA[Fixed race condition in context updates — centralized get_midi_context() function
+Fixed incorrect redundant event calculation (first event no longer falsely flagged)
+Fixed potential infinite loop in CC removal — now uses two-pass reverse deletion
+Optimized CC selection counting with caching and invalidation flags]]></changelog>
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/d3e8f88f79c906ee387315063770030535d7471d/MIDI_Tools/Combined_CC_Tool.lua</source>
       </version>
     </reapack>
     <reapack name="Legato_Tool.lua" type="script" desc="Legato Tool - Creating legato effects and stuff">
@@ -33,6 +37,17 @@
       <version name="0.1" author="drvlat" time="2025-11-30T19:53:14Z">
         <source main="main">https://github.com/vlat456/reaperstuff/raw/a162435c36ef308bb1bfbd4575164d106c252bdb/MIDI_Tools/Legato_Tool.lua</source>
       </version>
+      <version name="0.2" author="drvlat" time="2026-06-09T07:41:36Z">
+        <changelog><![CDATA[Added is_notes_cache_valid() to prevent drag operations from using stale cached data
+Added boundary constraint support to heal_overlays when keep_within_boundaries is enabled
+Added MIDI_Sort calls in restore_original_notes, fill_gaps, and apply_legato for correct event ordering
+Improved cache cleanup on undo/redo, context changes, and apply — resets last_selected_note_indices
+Drag now falls back to fresh cache build when cached notes are invalid]]></changelog>
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/d3e8f88f79c906ee387315063770030535d7471d/MIDI_Tools/Legato_Tool.lua</source>
+      </version>
     </reapack>
   </category>
+  <metadata>
+    <link rel="website">https://github.com/vlat456/reaperstuff</link>
+  </metadata>
 </index>
