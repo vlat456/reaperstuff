@@ -1,7 +1,7 @@
 -- @metapackage
 -- @description MIDI Toolbox - as the name says.
 -- @author drvlat
--- @version 0.3.17
+-- @version 0.3.18
 -- @provides
 --      [nomain] modules/*.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Advanced_Legato.lua
@@ -22,6 +22,7 @@
 --          MIDI_Toolbox_Find_Parallels
 --          MIDI_Toolbox_Note_Mover
 -- @changelog
+--      0.3.18 - Removed "Merge same pitches in legato" checkbox. The standalone "Merge same pitches" button remains as the supported way to merge same-pitch notes.
 --      0.3.17 - Fixed "Merge same pitches" button to group all same-pitch notes regardless of distance. Fixed legato merge mode to respect cross-pitch boundaries so different pitches operate independently.
 --      0.3.16 - Added "Merge same pitches" button to Advanced Legato (standalone merge for selected notes). Renamed "Merge same-pitch notes" checkbox to "Merge same pitches in legato".
 --      0.3.15 - Added "Merge same-pitch notes" option to Advanced Legato (legato slider, Fill gaps, Quick Legato). When enabled, extending a note past same-pitch notes merges them instead of stopping.

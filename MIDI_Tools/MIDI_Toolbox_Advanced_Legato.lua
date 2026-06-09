@@ -48,7 +48,6 @@ local gui_state = {
     
     -- Options
     keep_within_boundaries = false,
-    merge_same_pitches = false,
     
     -- Cache management
     notes_cache = {},
@@ -132,7 +131,6 @@ local function cleanup_resources()
     gui_state.legato_amount = 0
     gui_state.humanize_strength = 0
     gui_state.keep_within_boundaries = false
-    gui_state.merge_same_pitches = false
     gui_state.selected_note_count = 0
     gui_state.overlay_count = 0
     gui_state.take = nil
@@ -158,20 +156,8 @@ function apply_legato(cache, handle_undo)
     local delta_ms = gui_state.legato_amount - gui_state.drag_start_legato_amount
     local delta_ppq = MIDI_UTILS.ms_to_ppq_corrected(delta_ms, current_take, selected_notes[1] and selected_notes[1].startppqpos or 0)
     
-    local notes_to_delete = {}
-    
     -- Apply the delta to the baseline state from when dragging started
     for i, note in ipairs(selected_notes) do
-        -- Skip notes already marked for deletion by an earlier merge
-        local skip_note = false
-        for _, idx in ipairs(notes_to_delete) do
-            if idx == note.index then
-                skip_note = true
-                break
-            end
-        end
-        if skip_note then goto continue_note end
-        
         local next_note = nil
         if i < #selected_notes then
             next_note = selected_notes[i + 1]
@@ -200,55 +186,15 @@ function apply_legato(cache, handle_undo)
         -- Apply the delta to the baseline state
         local new_end_ppq = baseline_end_pos + delta_ppq
         
-        -- Apply constraints using shared functions
+        -- Apply same pitch overlap prevention
+        new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
         
-        -- 1. Same pitch notes handling
-        if gui_state.merge_same_pitches then
-            -- Merge same-pitch notes: extend past them and mark for deletion
-            local merged = true
-            while merged do
-                merged = false
-                for _, other_note in ipairs(selected_notes) do
-                    if note.pitch == other_note.pitch and
-                       other_note.startppqpos > note.startppqpos and
-                       other_note.startppqpos <= new_end_ppq and
-                       other_note.index ~= note.index then
-                        local already_marked = false
-                        for _, idx in ipairs(notes_to_delete) do
-                            if idx == other_note.index then
-                                already_marked = true
-                                break
-                            end
-                        end
-                        if not already_marked then
-                            new_end_ppq = math.max(new_end_ppq, other_note.endppqpos)
-                            table.insert(notes_to_delete, other_note.index)
-                            merged = true
-                        end
-                    end
-                end
-            end
-            new_end_ppq = LEGATO_OPERATIONS.apply_cross_pitch_constraint(note, selected_notes, new_end_ppq)
-        else
-            new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
-        end
-        
-        -- 2. Keep within item boundaries if checkbox is enabled
+        -- Keep within item boundaries if checkbox is enabled
         new_end_ppq = LEGATO_OPERATIONS.apply_boundary_constraints(note, new_end_ppq, current_take, gui_state.keep_within_boundaries)
         
-        -- 3. Set the note end position safely
+        -- Set the note end position safely
         if not LEGATO_OPERATIONS.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq) then
-            goto continue_note  -- Stop processing this note if error occurs
-        end
-        
-        ::continue_note::
-    end
-    
-    -- Delete notes that were merged
-    if gui_state.merge_same_pitches and #notes_to_delete > 0 then
-        table.sort(notes_to_delete)
-        for i = #notes_to_delete, 1, -1 do
-            reaper.MIDI_DeleteNote(current_take, notes_to_delete[i])
+            return
         end
     end
     
@@ -339,7 +285,7 @@ end
 function render_action_buttons()
     if gui_state.selected_note_count >= UI_CONSTANTS.MIN_NOTES_FOR_LEGATO then
         if imgui.Button(ctx, "Fill gaps") then
-            LEGATO_COMMON.fill_gaps(gui_state.merge_same_pitches)
+            LEGATO_COMMON.fill_gaps()
             gui_state.legato_amount = 0  -- Reset legato slider to 0
             invalidate_all_caches()
         end
@@ -520,9 +466,6 @@ function render_options_section()
     -- Keep within item boundaries checkbox
     local _, new_keep_within_boundaries = imgui.Checkbox(ctx, "Keep within item boundaries", gui_state.keep_within_boundaries)
     gui_state.keep_within_boundaries = new_keep_within_boundaries  -- Update the variable
-
-    local _, new_merge_same_pitches = imgui.Checkbox(ctx, "Merge same pitches in legato", gui_state.merge_same_pitches)
-    gui_state.merge_same_pitches = new_merge_same_pitches
 end
 
 -- Main GUI loop

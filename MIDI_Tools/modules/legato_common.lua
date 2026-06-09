@@ -540,38 +540,19 @@ function M.non_legato()
 end
 
 -- Function to fill gaps between selected notes
-function M.fill_gaps(merge_same_pitches)
-    merge_same_pitches = merge_same_pitches or false
-
+function M.fill_gaps()
     local current_take, midi_editor = M.get_midi_context()
 
     if not current_take then return end
 
-    -- Get the media item associated with the take
     local item = reaper.GetMediaItemTake_Item(current_take)
-
-    -- Get cached sorted selected notes
     local selected_notes = M.get_cached_sorted_selected_notes()
 
     if #selected_notes < 2 then
-        return  -- Need at least 2 notes to fill gaps
+        return
     end
 
-    local notes_to_delete = {}
-
-    -- Process each note to extend to the next note's start (no need to sort again)
     for i, note in ipairs(selected_notes) do
-        -- Skip notes already marked for deletion by an earlier merge
-        local skip_note = false
-        for _, idx in ipairs(notes_to_delete) do
-            if idx == note.index then
-                skip_note = true
-                break
-            end
-        end
-        if skip_note then goto continue_fill end
-
-        -- Find the next note that starts after this note
         local next_note_start = nil
         for j = i + 1, #selected_notes do
             if selected_notes[j].startppqpos > note.startppqpos then
@@ -581,64 +562,17 @@ function M.fill_gaps(merge_same_pitches)
         end
 
         if next_note_start and next_note_start > note.endppqpos then
-            -- Check for same pitch overlap prevention
             local new_end_ppq = next_note_start
+            new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
+            new_end_ppq = LEGATO_OPERATIONS.apply_boundary_constraints(note, new_end_ppq, current_take, false)
 
-            if merge_same_pitches then
-                -- Merge same-pitch notes: extend past them and mark for deletion
-                local merged = true
-                while merged do
-                    merged = false
-                    for _, other_note in ipairs(selected_notes) do
-                        if note.pitch == other_note.pitch and
-                           other_note.startppqpos > note.startppqpos and
-                           other_note.startppqpos <= new_end_ppq and
-                           other_note.index ~= note.index then
-                            local already_marked = false
-                            for _, idx in ipairs(notes_to_delete) do
-                                if idx == other_note.index then
-                                    already_marked = true
-                                    break
-                                end
-                            end
-                            if not already_marked then
-                                new_end_ppq = math.max(new_end_ppq, other_note.endppqpos)
-                                table.insert(notes_to_delete, other_note.index)
-                                merged = true
-                            end
-                        end
-                    end
-                end
-                new_end_ppq = LEGATO_OPERATIONS.apply_cross_pitch_constraint(note, selected_notes, new_end_ppq)
-            else
-                -- Same pitch overlap prevention
-                new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
-            end
-
-            -- Keep within item boundaries if checkbox is enabled
-            local keep_within_boundaries = false -- Default to false for this function
-            new_end_ppq = LEGATO_OPERATIONS.apply_boundary_constraints(note, new_end_ppq, current_take, keep_within_boundaries)
-
-            -- Make sure the new end position is not before the start position
             if not LEGATO_OPERATIONS.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq) then
-                goto continue_fill  -- Stop processing this note if error occurs
+                return
             end
         end
-
-        ::continue_fill::
     end
 
-    -- Delete notes that were merged
-    if merge_same_pitches and #notes_to_delete > 0 then
-        table.sort(notes_to_delete)
-        for i = #notes_to_delete, 1, -1 do
-            reaper.MIDI_DeleteNote(current_take, notes_to_delete[i])
-        end
-    end
-
-    -- Sort MIDI events to ensure correct ordering after changes
     reaper.MIDI_Sort(current_take)
-    -- Update the item and register the change in undo system
     SCRIPT_INIT.register_undo(item, "Fill gaps between notes")
 end
 
