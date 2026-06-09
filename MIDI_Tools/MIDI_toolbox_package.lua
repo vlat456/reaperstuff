@@ -1,7 +1,7 @@
 -- @metapackage
 -- @description MIDI Toolbox - as the name says.
 -- @author drvlat
--- @version 0.3.18
+-- @version 0.3.19
 -- @provides
 --      [nomain] modules/*.lua
 --      [main=midi_editor,midi_inlineeditor,midi_eventlisteditor] MIDI_Toolbox_Advanced_Legato.lua
@@ -22,6 +22,7 @@
 --          MIDI_Toolbox_Find_Parallels
 --          MIDI_Toolbox_Note_Mover
 -- @changelog
+--      0.3.19 - Fix: legato slider no longer extends the last note(s) in the selection. Notes without a following note to extend toward are now left unchanged.
 --      0.3.18 - Removed "Merge same pitches in legato" checkbox. The standalone "Merge same pitches" button remains as the supported way to merge same-pitch notes.
 --      0.3.17 - Fixed "Merge same pitches" button to group all same-pitch notes regardless of distance. Fixed legato merge mode to respect cross-pitch boundaries so different pitches operate independently.
 --      0.3.16 - Added "Merge same pitches" button to Advanced Legato (standalone merge for selected notes). Renamed "Merge same-pitch notes" checkbox to "Merge same pitches in legato".

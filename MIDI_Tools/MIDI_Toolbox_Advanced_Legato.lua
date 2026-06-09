@@ -163,6 +163,9 @@ function apply_legato(cache, handle_undo)
             next_note = selected_notes[i + 1]
         end
         
+        -- Skip the last note in the selection — no following note to extend toward
+        if not next_note then goto continue end
+        
         -- Get the baseline end position from the cache (state when dragging started)
         local baseline_end_pos
         if cache and note.original_endppqpos then
@@ -196,6 +199,8 @@ function apply_legato(cache, handle_undo)
         if not LEGATO_OPERATIONS.safe_set_note_end(current_take, note.index, note.startppqpos, new_end_ppq) then
             return
         end
+        
+        ::continue::
     end
     
     -- Sort MIDI events to ensure correct ordering after changes
