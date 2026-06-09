@@ -228,6 +228,7 @@ function apply_legato(cache, handle_undo)
                     end
                 end
             end
+            new_end_ppq = LEGATO_OPERATIONS.apply_cross_pitch_constraint(note, selected_notes, new_end_ppq)
         else
             new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
         end

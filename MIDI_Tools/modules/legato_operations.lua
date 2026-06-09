@@ -23,6 +23,17 @@ function M.apply_overlap_constraints(note, selected_notes, new_end_ppq)
     return new_end_ppq
 end
 
+function M.apply_cross_pitch_constraint(note, selected_notes, new_end_ppq)
+    for _, other_note in ipairs(selected_notes) do
+        if note.pitch ~= other_note.pitch and
+           other_note.startppqpos > note.startppqpos and
+           other_note.startppqpos < new_end_ppq then
+            new_end_ppq = math.min(new_end_ppq, other_note.startppqpos)
+        end
+    end
+    return new_end_ppq
+end
+
 -- Function to apply item boundary constraints
 function M.apply_boundary_constraints(note, new_end_ppq, current_take, keep_within_boundaries)
     if not keep_within_boundaries then
@@ -129,6 +140,7 @@ function M.apply_legato_with_extension(current_take, selected_notes, extension_p
                         end
                     end
                 end
+                new_end_ppq = M.apply_cross_pitch_constraint(note, selected_notes, new_end_ppq)
             else
                 -- Apply overlap prevention
                 new_end_ppq = M.apply_overlap_constraints(note, selected_notes, new_end_ppq)

@@ -609,6 +609,7 @@ function M.fill_gaps(merge_same_pitches)
                         end
                     end
                 end
+                new_end_ppq = LEGATO_OPERATIONS.apply_cross_pitch_constraint(note, selected_notes, new_end_ppq)
             else
                 -- Same pitch overlap prevention
                 new_end_ppq = LEGATO_OPERATIONS.apply_overlap_constraints(note, selected_notes, new_end_ppq)
@@ -955,48 +956,46 @@ function M.merge_same_pitches()
         return
     end
 
+    -- Group notes by pitch
+    local pitch_groups = {}
+    for _, note in ipairs(selected_notes) do
+        local pitch = note.pitch
+        if not pitch_groups[pitch] then
+            pitch_groups[pitch] = {}
+        end
+        table.insert(pitch_groups[pitch], note)
+    end
+
     local notes_to_delete = {}
 
-    for i, note in ipairs(selected_notes) do
-        local skip_note = false
-        for _, idx in ipairs(notes_to_delete) do
-            if idx == note.index then
-                skip_note = true
-                break
-            end
-        end
-        if skip_note then goto continue_merge end
+    for pitch, notes in pairs(pitch_groups) do
+        if #notes >= 2 then
+            local first_note = notes[1]
+            local furthest_end = first_note.endppqpos
 
-        local furthest_end = note.endppqpos
-        local merged = true
-        while merged do
-            merged = false
-            for _, other_note in ipairs(selected_notes) do
-                if note.pitch == other_note.pitch and
-                   other_note.startppqpos > note.startppqpos and
-                   other_note.startppqpos <= furthest_end and
-                   other_note.index ~= note.index then
-                    local already_marked = false
-                    for _, idx in ipairs(notes_to_delete) do
-                        if idx == other_note.index then
-                            already_marked = true
-                            break
-                        end
+            for _, n in ipairs(notes) do
+                if n.endppqpos > furthest_end then
+                    furthest_end = n.endppqpos
+                end
+            end
+
+            if furthest_end > first_note.endppqpos then
+                LEGATO_OPERATIONS.safe_set_note_end(current_take, first_note.index, first_note.startppqpos, furthest_end)
+            end
+
+            for i = 2, #notes do
+                local already_marked = false
+                for _, idx in ipairs(notes_to_delete) do
+                    if idx == notes[i].index then
+                        already_marked = true
+                        break
                     end
-                    if not already_marked then
-                        furthest_end = math.max(furthest_end, other_note.endppqpos)
-                        table.insert(notes_to_delete, other_note.index)
-                        merged = true
-                    end
+                end
+                if not already_marked then
+                    table.insert(notes_to_delete, notes[i].index)
                 end
             end
         end
-
-        if furthest_end > note.endppqpos then
-            M.safe_set_note_end(current_take, note.index, note.startppqpos, furthest_end)
-        end
-
-        ::continue_merge::
     end
 
     if #notes_to_delete > 0 then
