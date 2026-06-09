@@ -943,4 +943,71 @@ function M.detect_overlays()
     return #overlay_indices
 end
 
+function M.merge_same_pitches()
+    local current_take, midi_editor = M.get_midi_context()
+
+    if not current_take then return end
+
+    local item = reaper.GetMediaItemTake_Item(current_take)
+    local selected_notes = M.get_cached_sorted_selected_notes()
+
+    if #selected_notes < 2 then
+        return
+    end
+
+    local notes_to_delete = {}
+
+    for i, note in ipairs(selected_notes) do
+        local skip_note = false
+        for _, idx in ipairs(notes_to_delete) do
+            if idx == note.index then
+                skip_note = true
+                break
+            end
+        end
+        if skip_note then goto continue_merge end
+
+        local furthest_end = note.endppqpos
+        local merged = true
+        while merged do
+            merged = false
+            for _, other_note in ipairs(selected_notes) do
+                if note.pitch == other_note.pitch and
+                   other_note.startppqpos > note.startppqpos and
+                   other_note.startppqpos <= furthest_end and
+                   other_note.index ~= note.index then
+                    local already_marked = false
+                    for _, idx in ipairs(notes_to_delete) do
+                        if idx == other_note.index then
+                            already_marked = true
+                            break
+                        end
+                    end
+                    if not already_marked then
+                        furthest_end = math.max(furthest_end, other_note.endppqpos)
+                        table.insert(notes_to_delete, other_note.index)
+                        merged = true
+                    end
+                end
+            end
+        end
+
+        if furthest_end > note.endppqpos then
+            M.safe_set_note_end(current_take, note.index, note.startppqpos, furthest_end)
+        end
+
+        ::continue_merge::
+    end
+
+    if #notes_to_delete > 0 then
+        table.sort(notes_to_delete)
+        for i = #notes_to_delete, 1, -1 do
+            reaper.MIDI_DeleteNote(current_take, notes_to_delete[i])
+        end
+    end
+
+    reaper.MIDI_Sort(current_take)
+    SCRIPT_INIT.register_undo(item, "Merge same pitches")
+end
+
 return M

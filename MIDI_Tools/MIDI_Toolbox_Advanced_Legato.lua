@@ -359,6 +359,11 @@ function render_action_buttons()
             gui_state.overlay_count = LEGATO_COMMON.detect_overlays_count(gui_state.take)  -- Update overlay count after healing
             invalidate_all_caches()
         end
+        imgui.SameLine(ctx)
+        if imgui.Button(ctx, "Merge same pitches") then
+            LEGATO_COMMON.merge_same_pitches()
+            invalidate_all_caches()
+        end
     else
         imgui.BeginDisabled(ctx)
         imgui.Button(ctx, "Fill gaps")
@@ -368,6 +373,8 @@ function render_action_buttons()
         imgui.Button(ctx, "Detect overlays")
         imgui.SameLine(ctx)  -- Put the disabled heal overlays button next to Detect overlays
         imgui.Button(ctx, "Heal overlays")
+        imgui.SameLine(ctx)
+        imgui.Button(ctx, "Merge same pitches")
         imgui.EndDisabled(ctx)
     end
 
@@ -513,7 +520,7 @@ function render_options_section()
     local _, new_keep_within_boundaries = imgui.Checkbox(ctx, "Keep within item boundaries", gui_state.keep_within_boundaries)
     gui_state.keep_within_boundaries = new_keep_within_boundaries  -- Update the variable
 
-    local _, new_merge_same_pitches = imgui.Checkbox(ctx, "Merge same-pitch notes", gui_state.merge_same_pitches)
+    local _, new_merge_same_pitches = imgui.Checkbox(ctx, "Merge same pitches in legato", gui_state.merge_same_pitches)
     gui_state.merge_same_pitches = new_merge_same_pitches
 end
 
