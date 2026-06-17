@@ -1,6 +1,6 @@
 -- @description Track FX Bypass Manager
 -- @author drvlat
--- @version 1.0.1
+-- @version 1.0.2
 -- @about
 --   An ImGui-based utility for managing track FX (insert plugins).
 --   Allows selecting multiple FX via checkboxes and toggling their bypass state simultaneously.
@@ -27,6 +27,7 @@ local checked_fx = {} -- Key: GUID string, Value: boolean
 local managed_bypass_active = false
 local bypassed_guids = {}
 local current_track_guid = nil
+local filter_text = ""
 
 -- Push Theme Custom Colors & Styles
 local function push_theme()
@@ -91,6 +92,13 @@ local function draw_gui()
     return
   end
 
+  -- Search filter box
+  reaper.ImGui_SetNextItemWidth(ctx, -1)
+  local changed, new_filter = reaper.ImGui_InputTextWithHint(ctx, "##filter", "Filter FX by name...", filter_text)
+  if changed then
+    filter_text = new_filter
+  end
+
   -- Auto-reset managed_bypass_active if no managed FX are bypassed anymore
   if managed_bypass_active then
     local any_managed_bypassed = false
@@ -115,10 +123,15 @@ local function draw_gui()
   end
 
   if reaper.ImGui_Button(ctx, "Check All") then
+    local filter_lower = filter_text:lower()
     for i = 0, num_fx - 1 do
       local guid = reaper.TrackFX_GetFXGUID(track, i)
       if guid then
-        checked_fx[guid] = true
+        local _, fx_name = reaper.TrackFX_GetFXName(track, i)
+        fx_name = fx_name or "Initializing..."
+        if filter_lower == "" or fx_name:lower():find(filter_lower, 1, true) then
+          checked_fx[guid] = true
+        end
       end
     end
   end
@@ -126,10 +139,15 @@ local function draw_gui()
   reaper.ImGui_SameLine(ctx)
   
   if reaper.ImGui_Button(ctx, "Clear All") then
+    local filter_lower = filter_text:lower()
     for i = 0, num_fx - 1 do
       local guid = reaper.TrackFX_GetFXGUID(track, i)
       if guid then
-        checked_fx[guid] = false
+        local _, fx_name = reaper.TrackFX_GetFXName(track, i)
+        fx_name = fx_name or "Initializing..."
+        if filter_lower == "" or fx_name:lower():find(filter_lower, 1, true) then
+          checked_fx[guid] = false
+        end
       end
     end
   end
@@ -141,59 +159,63 @@ local function draw_gui()
   -- Checklist child window
   reaper.ImGui_BeginChild(ctx, "fx_list_child", 0, -45, reaper.ImGui_ChildFlags_Borders())
   
+  local filter_lower = filter_text:lower()
   for i = 0, num_fx - 1 do
     local guid = reaper.TrackFX_GetFXGUID(track, i)
     if guid then
       local _, fx_name = reaper.TrackFX_GetFXName(track, i)
       fx_name = fx_name or "Initializing..."
-      local is_enabled = reaper.TrackFX_GetEnabled(track, i)
       
-      if checked_fx[guid] == nil then
-        checked_fx[guid] = false
-      end
-      
-      -- Checkbox (disabled during bypass session)
-      if managed_bypass_active then
-        reaper.ImGui_BeginDisabled(ctx)
-      end
-      local chg, new_val = reaper.ImGui_Checkbox(ctx, "##chk_" .. guid, checked_fx[guid])
-      if chg then
-        checked_fx[guid] = new_val
-      end
-      if managed_bypass_active then
-        reaper.ImGui_EndDisabled(ctx)
-      end
-      
-      reaper.ImGui_SameLine(ctx)
-      
-      -- Build display name
-      local is_open = reaper.TrackFX_GetOpen(track, i)
-      local disp_name = string.format("%d: %s", i + 1, fx_name)
-      if is_open then
-        disp_name = disp_name .. " [Float]"
-      end
-      
-      -- Push muted style color if bypassed
-      local color_pushed = false
-      if not is_enabled then
-        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.5, 0.5, 1.0))
-        color_pushed = true
-      end
-      
-      -- Allow double clicks on selectable
-      local flags = reaper.ImGui_SelectableFlags_AllowDoubleClick()
-      reaper.ImGui_Selectable(ctx, disp_name, false, flags)
-      
-      if color_pushed then
-        reaper.ImGui_PopStyleColor(ctx)
-      end
-      
-      -- Open/Close float window on double click (still enabled during bypass session)
-      if reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
+      if filter_lower == "" or fx_name:lower():find(filter_lower, 1, true) then
+        local is_enabled = reaper.TrackFX_GetEnabled(track, i)
+        
+        if checked_fx[guid] == nil then
+          checked_fx[guid] = false
+        end
+        
+        -- Checkbox (disabled during bypass session)
+        if managed_bypass_active then
+          reaper.ImGui_BeginDisabled(ctx)
+        end
+        local chg, new_val = reaper.ImGui_Checkbox(ctx, "##chk_" .. guid, checked_fx[guid])
+        if chg then
+          checked_fx[guid] = new_val
+        end
+        if managed_bypass_active then
+          reaper.ImGui_EndDisabled(ctx)
+        end
+        
+        reaper.ImGui_SameLine(ctx)
+        
+        -- Build display name
+        local is_open = reaper.TrackFX_GetOpen(track, i)
+        local disp_name = string.format("%d: %s", i + 1, fx_name)
         if is_open then
-          reaper.TrackFX_Show(track, i, 2) -- Hide float window
-        else
-          reaper.TrackFX_Show(track, i, 3) -- Show float window
+          disp_name = disp_name .. " [Float]"
+        end
+        
+        -- Push muted style color if bypassed
+        local color_pushed = false
+        if not is_enabled then
+          reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.5, 0.5, 1.0))
+          color_pushed = true
+        end
+        
+        -- Allow double clicks on selectable
+        local flags = reaper.ImGui_SelectableFlags_AllowDoubleClick()
+        reaper.ImGui_Selectable(ctx, disp_name, false, flags)
+        
+        if color_pushed then
+          reaper.ImGui_PopStyleColor(ctx)
+        end
+        
+        -- Open/Close float window on double click (still enabled during bypass session)
+        if reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
+          if is_open then
+            reaper.TrackFX_Show(track, i, 2) -- Hide float window
+          else
+            reaper.TrackFX_Show(track, i, 3) -- Show float window
+          end
         end
       end
     end
@@ -223,7 +245,12 @@ local function draw_gui()
     button_label = "Unbypass Checked FX"
   end
 
-  if reaper.ImGui_Button(ctx, button_label, -1, 0) then
+  local btn_clicked = reaper.ImGui_Button(ctx, button_label, -1, 0)
+  if reaper.ImGui_IsItemHovered(ctx) then
+    reaper.ImGui_SetTooltip(ctx, "Toggles bypass for all checked plugins on this track.")
+  end
+
+  if btn_clicked then
     reaper.Undo_BeginBlock()
     if not managed_bypass_active then
       -- Perform Bypass
