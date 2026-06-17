@@ -1,10 +1,10 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.0.3
+-- @version 1.0.4
 -- @about
 --   An ImGui-based utility for adjusting the track Media Playback Offset (positive and negative) of selected tracks.
 --   Works inside the MIDI Editor for the current MIDI item's track, or falls back to selected tracks in the Arrange view.
---   Features an absolute slider fixed at ±500ms that always displays the current offset value, fine-tuning buttons, absolute offset reset, and a real-time list of track offsets.
+--   Features an absolute slider fixed at ±500ms that always displays the current offset value, fine-tuning buttons, absolute offset reset, and two simple status labels.
 -- @provides
 --   [main=main,midi_editor,midi_inlineeditor,midi_eventlisteditor] Media_Offset_Tool.lua
 
@@ -32,7 +32,6 @@ local FIXED_RANGE = 500.0
 local gui_state = {
     selected_tracks = {},
     slider_value = 0.0,
-    custom_delta = 5.0,
     last_selection_state = "",
 }
 
@@ -215,15 +214,6 @@ local function render_ui()
         return
     end
 
-    -- Visual feedback on selection size
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.8, 1.0, 1.0))
-    reaper.ImGui_Text(ctx, string.format("Selected tracks: %d", num_tracks))
-    reaper.ImGui_PopStyleColor(ctx)
-
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Separator(ctx)
-    reaper.ImGui_Spacing(ctx)
-
     -- Double-click / Drag slider for absolute offset (displaying current value)
     local slider_changed, new_slider_val = reaper.ImGui_SliderDouble(ctx, "Offset (ms)", gui_state.slider_value, -FIXED_RANGE, FIXED_RANGE, "%.1f ms")
     local is_slider_active = reaper.ImGui_IsItemActive(ctx)
@@ -318,54 +308,19 @@ local function render_ui()
     end
 
     reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Spacing(ctx)
-
-    -- Custom input row
-    local input_changed, new_custom_val = reaper.ImGui_InputDouble(ctx, "Custom Step (ms)", gui_state.custom_delta, 1.0, 10.0, "%.1f")
-    if input_changed then
-        gui_state.custom_delta = new_custom_val
-    end
-    
-    reaper.ImGui_SameLine(ctx)
-    if reaper.ImGui_Button(ctx, "Apply Custom", -1, 24) then
-        adjust_offset_by_delta(gui_state.custom_delta)
-    end
-
-    reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
 
-    -- Display selected tracks details table
-    reaper.ImGui_Text(ctx, "Selected Tracks Details:")
-    reaper.ImGui_Spacing(ctx)
-
-    local table_flags = imgui.TableFlags_Borders | imgui.TableFlags_RowBg | imgui.TableFlags_Resizable | imgui.TableFlags_ScrollY
-    local display_height = 120 -- Constrain table height with scrolling
-    if reaper.ImGui_BeginTable(ctx, "OffsetsTable", 3, table_flags, 0, display_height) then
-        reaper.ImGui_TableSetupColumn(ctx, "Track Name")
-        reaper.ImGui_TableSetupColumn(ctx, "Original Playback Offset")
-        reaper.ImGui_TableSetupColumn(ctx, "Current Playback Offset")
-        reaper.ImGui_TableHeadersRow(ctx)
-
-        for _, info in ipairs(gui_state.selected_tracks) do
-            if reaper.ValidatePtr(info.track, "MediaTrack*") then
-                reaper.ImGui_TableNextRow(ctx)
-                
-                -- Col 1: Track Name
-                reaper.ImGui_TableNextColumn(ctx)
-                reaper.ImGui_Text(ctx, info.name)
-                
-                -- Col 2: Original Playback Offset
-                reaper.ImGui_TableNextColumn(ctx)
-                reaper.ImGui_Text(ctx, string.format("%.1f ms (%.4fs)", info.baseline_offset * 1000.0, info.baseline_offset))
-                
-                -- Col 3: Current Playback Offset
-                reaper.ImGui_TableNextColumn(ctx)
-                local cur_offset = reaper.GetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET")
-                reaper.ImGui_Text(ctx, string.format("%.1f ms (%.4fs)", cur_offset * 1000.0, cur_offset))
-            end
+    -- Display selected tracks details simply as labels
+    local first_info = gui_state.selected_tracks[1]
+    if first_info and reaper.ValidatePtr(first_info.track, "MediaTrack*") then
+        local cur_offset_sec = reaper.GetMediaTrackInfo_Value(first_info.track, "D_PLAY_OFFSET")
+        local track_display_name = first_info.name
+        if num_tracks > 1 then
+            track_display_name = string.format("%s (+ %d others)", first_info.name, num_tracks - 1)
         end
-        reaper.ImGui_EndTable(ctx)
+        reaper.ImGui_Text(ctx, "Track: " .. track_display_name)
+        reaper.ImGui_Text(ctx, string.format("Current Playback Offset: %.1f ms", cur_offset_sec * 1000.0))
     end
 end
 
@@ -404,7 +359,7 @@ local function loop()
     update_tracks_list()
 
     -- Set size constraints
-    reaper.ImGui_SetNextWindowSizeConstraints(ctx, 480, 320, 800, 600)
+    reaper.ImGui_SetNextWindowSizeConstraints(ctx, 400, 160, 600, 250)
 
     -- Set window style/colors
     push_theme()
