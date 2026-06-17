@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.0.5
+-- @version 1.0.6
 -- @about
 --   An ImGui-based utility for adjusting the track Media Playback Offset (positive and negative) of selected tracks.
 --   Works inside the MIDI Editor for the current MIDI item's track, or falls back to selected tracks in the Arrange view.
@@ -21,7 +21,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.0.5"
+local script_name = "Media Offset Tool v1.0.6"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
