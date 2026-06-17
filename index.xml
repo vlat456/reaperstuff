@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="ddc83b7a709674710a4ded41553d5138fef14e7c">
+<index version="1" name="Walter Scripts" commit="b6738a94196b00de335ab1af11ad5c61af21b8fb">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -19,6 +19,20 @@
         <changelog><![CDATA[0.0.3 - A lot better randomness (Gaussian distribution)
 0.0.2 - Initial release]]></changelog>
         <source main="main" file="Kontakt_Tune_Humanizer.lua">https://github.com/vlat456/reaperstuff/raw/e88c0b9975e8eee7e223f6cad64d116f5b5fa08c/FX/Kontakt_Tune_Humanizer.lua</source>
+      </version>
+    </reapack>
+    <reapack name="Track_FX_Bypass_Manager.lua" type="script" desc="Track FX Bypass Manager">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 An ImGui-based utility for managing track FX (insert plugins). Allows selecting multiple FX via checkboxes and toggling their bypass state simultaneously. Preserves checked selections by FX GUID across tracks. Double-click an FX row to float/unfloat its interface.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0.0" author="drvlat" time="2026-06-17T18:25:21Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/b6738a94196b00de335ab1af11ad5c61af21b8fb/FX/Track_FX_Bypass_Manager.lua</source>
       </version>
     </reapack>
   </category>
