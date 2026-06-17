@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.1.0
+-- @version 1.1.1
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.1.0"
+local script_name = "Media Offset Tool v1.1.1"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -87,6 +87,15 @@ gui_state = {
     adjust_mode = MODE_TRACK_OFFSET, -- Default to Mode B (Track Playback Offset)
     last_selection_state = "",
 }
+
+-- Load persisted mode from project metadata
+local _, saved_mode_str = reaper.GetProjExtState(0, "Walter_MediaOffsetTool", "selected_mode")
+if saved_mode_str and saved_mode_str ~= "" then
+    local saved_mode = tonumber(saved_mode_str)
+    if saved_mode == MODE_TAKE_OFFSET or saved_mode == MODE_TRACK_OFFSET or saved_mode == MODE_ITEM_POSITION then
+        gui_state.adjust_mode = saved_mode
+    end
+end
 
 -- Check selection signature to detect change
 local function get_selection_signature()
@@ -527,6 +536,46 @@ local function pop_theme()
     reaper.ImGui_PopStyleVar(ctx, 4)
 end
 
+-- Helper to get track and take from current context, independent of mode
+local function get_current_context_track_and_take()
+    local track, take
+    
+    -- 1. Check selected items in Arrange view
+    local num_items = reaper.CountSelectedMediaItems(0)
+    if num_items > 0 then
+        local item = reaper.GetSelectedMediaItem(0, 0)
+        if item then
+            take = reaper.GetActiveTake(item)
+            track = reaper.GetMediaItem_Track(item)
+        end
+    end
+    
+    -- 2. Fallback to active MIDI editor
+    local midi_editor = reaper.MIDIEditor_GetActive()
+    if midi_editor then
+        local active_take = reaper.MIDIEditor_GetTake(midi_editor)
+        if active_take then
+            if not take then take = active_take end
+            if not track then
+                local item = reaper.GetMediaItemTake_Item(active_take)
+                if item then
+                    track = reaper.GetMediaItem_Track(item)
+                end
+            end
+        end
+    end
+    
+    -- 3. Fallback to first selected track if no track was found yet
+    if not track then
+        local num_tracks = reaper.CountSelectedTracks(0)
+        if num_tracks > 0 then
+            track = reaper.GetSelectedTrack(0, 0)
+        end
+    end
+    
+    return track, take
+end
+
 -- Render the main controls
 local function render_ui()
     local num_targets = #gui_state.selected_targets
@@ -574,6 +623,9 @@ local function render_ui()
     reaper.ImGui_EndDisabled(ctx)
     
     if mode_changed then
+        -- Persist the selected mode in project metadata
+        reaper.SetProjExtState(0, "Walter_MediaOffsetTool", "selected_mode", tostring(gui_state.adjust_mode))
+        
         gui_state.last_selection_state = ""
         update_targets_list()
         return
@@ -736,44 +788,62 @@ local function render_ui()
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
 
-    -- Display details depending on current target mode
-    local first_info = gui_state.selected_targets[1]
-    if first_info then
-        local eff_mode = get_effective_mode()
-        if eff_mode == MODE_MIDI_NOTES then
-            local take_name = reaper.GetTakeName(first_info.take) or "Unnamed Take"
-            reaper.ImGui_Text(ctx, "MIDI Take: " .. take_name)
-            reaper.ImGui_Text(ctx, string.format("Selected MIDI Notes: %d", num_targets))
-        elseif eff_mode == MODE_TAKE_OFFSET then
-            if reaper.ValidatePtr(first_info.take, "MediaItem_Take*") then
-                local cur_offset_sec = reaper.GetMediaItemTakeInfo_Value(first_info.take, "D_STARTOFFS")
-                local display_name = first_info.name
-                if num_targets > 1 then
-                    display_name = string.format("%s (+ %d others)", first_info.name, num_targets - 1)
-                end
-                reaper.ImGui_Text(ctx, "Take: " .. display_name)
-                reaper.ImGui_Text(ctx, string.format("Current Take Start Offset: %.1f ms (%.4fs)", cur_offset_sec * 1000.0, cur_offset_sec))
+    -- Display details section
+    local track, take = get_current_context_track_and_take()
+    local eff_mode = get_effective_mode()
+    
+    -- 1. Track Playback Offset (Always visible)
+    if track and reaper.ValidatePtr(track, "MediaTrack*") then
+        local cur_offset_sec = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
+        local _, name = reaper.GetTrackName(track)
+        name = name or "Unnamed Track"
+        
+        local label = "Track (" .. name .. ")"
+        if eff_mode == MODE_TRACK_OFFSET and num_targets > 1 then
+            label = string.format("Track (%s + %d others)", name, num_targets - 1)
+        end
+        reaper.ImGui_Text(ctx, label .. " Playback Offset:")
+        reaper.ImGui_SameLine(ctx, 240)
+        reaper.ImGui_Text(ctx, string.format("%.1f ms (%.4fs)", cur_offset_sec * 1000.0, cur_offset_sec))
+    else
+        reaper.ImGui_Text(ctx, "Track Playback Offset:")
+        reaper.ImGui_SameLine(ctx, 240)
+        reaper.ImGui_Text(ctx, "No track selected")
+    end
+    
+    -- 2. Take Start Offset (Always visible)
+    if take and reaper.ValidatePtr(take, "MediaItem_Take*") then
+        local cur_offset_sec = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+        local name = reaper.GetTakeName(take) or "Unnamed Take"
+        
+        local label = "Take (" .. name .. ")"
+        if eff_mode == MODE_TAKE_OFFSET and num_targets > 1 then
+            label = string.format("Take (%s + %d others)", name, num_targets - 1)
+        end
+        reaper.ImGui_Text(ctx, label .. " Start Offset:")
+        reaper.ImGui_SameLine(ctx, 240)
+        reaper.ImGui_Text(ctx, string.format("%.1f ms (%.4fs)", cur_offset_sec * 1000.0, cur_offset_sec))
+    else
+        reaper.ImGui_Text(ctx, "Take Start Offset:")
+        reaper.ImGui_SameLine(ctx, 240)
+        reaper.ImGui_Text(ctx, "No take selected")
+    end
+
+    -- 3. Dynamic Mode Details (selected MIDI notes or Move Item position)
+    if eff_mode == MODE_MIDI_NOTES then
+        reaper.ImGui_Spacing(ctx)
+        reaper.ImGui_Text(ctx, string.format("Selected MIDI Notes: %d", num_targets))
+    elseif eff_mode == MODE_ITEM_POSITION then
+        local first_info = gui_state.selected_targets[1]
+        if first_info and reaper.ValidatePtr(first_info.item, "MediaItem*") then
+            local cur_pos_sec = reaper.GetMediaItemInfo_Value(first_info.item, "D_POSITION")
+            local display_name = first_info.name
+            if num_targets > 1 then
+                display_name = string.format("%s (+ %d others)", first_info.name, num_targets - 1)
             end
-        elseif eff_mode == MODE_TRACK_OFFSET then
-            if reaper.ValidatePtr(first_info.track, "MediaTrack*") then
-                local cur_offset_sec = reaper.GetMediaTrackInfo_Value(first_info.track, "D_PLAY_OFFSET")
-                local display_name = first_info.name
-                if num_targets > 1 then
-                    display_name = string.format("%s (+ %d others)", first_info.name, num_targets - 1)
-                end
-                reaper.ImGui_Text(ctx, "Track: " .. display_name)
-                reaper.ImGui_Text(ctx, string.format("Current Track Playback Offset: %.1f ms (%.4fs)", cur_offset_sec * 1000.0, cur_offset_sec))
-            end
-        elseif eff_mode == MODE_ITEM_POSITION then
-            if reaper.ValidatePtr(first_info.item, "MediaItem*") then
-                local cur_pos_sec = reaper.GetMediaItemInfo_Value(first_info.item, "D_POSITION")
-                local display_name = first_info.name
-                if num_targets > 1 then
-                    display_name = string.format("%s (+ %d others)", first_info.name, num_targets - 1)
-                end
-                reaper.ImGui_Text(ctx, "Item: " .. display_name)
-                reaper.ImGui_Text(ctx, string.format("Current Item Timeline Position: %.3f s", cur_pos_sec))
-            end
+            reaper.ImGui_Text(ctx, "Move Item (" .. display_name .. ") Pos:")
+            reaper.ImGui_SameLine(ctx, 240)
+            reaper.ImGui_Text(ctx, string.format("%.3f s", cur_pos_sec))
         end
     end
 end
