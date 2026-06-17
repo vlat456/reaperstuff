@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="82c74297d3b31e77d6b29894ab36cd33d33ecb97">
+<index version="1" name="Walter Scripts" commit="1f721bf3112e912cee6f7d14c6f3041c363ebe98">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -32,7 +32,7 @@
 {\pard \ql \f0 \sa180 \li0 \fi0 An ImGui-based utility for adjusting media offsets in REAPER. Supports three target modes selected via radio buttons:\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 1)\tx360\tab Take Start Offset\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 2)\tx360\tab Track Playback Offset\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 3)\tx360\tab Move Item Position Works inside the MIDI Editor for the current MIDI item, or falls back to selected items/tracks in the Arrange view. Features an absolute slider fixed at \u177 ?500ms, fine-tuning buttons, absolute offset reset, and clean status labels.\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3)\tx360\tab Move Item Position If MIDI notes are selected, overrides normal modes to adjust note timing directly. Works inside the MIDI Editor for the current MIDI item, or falls back to selected items/tracks in the Arrange view. Features an absolute slider fixed at \u177 ?500ms, fine-tuning buttons, absolute offset reset, and clean status labels.\sa180\par}
 }
 ]]></description>
       </metadata>
@@ -62,6 +62,9 @@
       </version>
       <version name="1.0.9" author="drvlat" time="2026-06-17T17:52:25Z">
         <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/82c74297d3b31e77d6b29894ab36cd33d33ecb97/Media_Tools/Media_Offset_Tool.lua</source>
+      </version>
+      <version name="1.1.0" author="drvlat" time="2026-06-17T18:07:21Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/1f721bf3112e912cee6f7d14c6f3041c363ebe98/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
     </reapack>
   </category>
