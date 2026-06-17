@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.0.4
+-- @version 1.0.5
 -- @about
 --   An ImGui-based utility for adjusting the track Media Playback Offset (positive and negative) of selected tracks.
 --   Works inside the MIDI Editor for the current MIDI item's track, or falls back to selected tracks in the Arrange view.
@@ -39,31 +39,32 @@ local gui_state = {
 local function get_selection_signature()
     local sig = {}
     
-    -- Check active MIDI editor
-    local midi_editor = reaper.MIDIEditor_GetActive()
-    if midi_editor then
-        local take = reaper.MIDIEditor_GetTake(midi_editor)
-        if take then
-            local item = reaper.GetMediaItemTake_Item(take)
-            if item then
-                local track = reaper.GetMediaItem_Track(item)
-                if track then
-                    table.insert(sig, "editor:" .. tostring(track))
-                    return table.concat(sig, ";")
+    local num_tracks = reaper.CountSelectedTracks(0)
+    if num_tracks > 0 then
+        if num_tracks > 1000 then num_tracks = 1000 end -- Safety limit
+        for i = 0, num_tracks - 1 do
+            local track = reaper.GetSelectedTrack(0, i)
+            if track then
+                table.insert(sig, tostring(track))
+            end
+        end
+    else
+        -- Fallback to active MIDI editor track only if no tracks are selected in Arrange
+        local midi_editor = reaper.MIDIEditor_GetActive()
+        if midi_editor then
+            local take = reaper.MIDIEditor_GetTake(midi_editor)
+            if take then
+                local item = reaper.GetMediaItemTake_Item(take)
+                if item then
+                    local track = reaper.GetMediaItem_Track(item)
+                    if track then
+                        table.insert(sig, "editor:" .. tostring(track))
+                    end
                 end
             end
         end
     end
     
-    -- Selected tracks fallback
-    local num_tracks = reaper.CountSelectedTracks(0)
-    if num_tracks > 1000 then num_tracks = 1000 end -- Safety limit
-    for i = 0, num_tracks - 1 do
-        local track = reaper.GetSelectedTrack(0, i)
-        if track then
-            table.insert(sig, tostring(track))
-        end
-    end
     return table.concat(sig, ";")
 end
 
@@ -76,32 +77,10 @@ local function update_tracks_list()
         gui_state.last_selection_state = current_sig
         gui_state.selected_tracks = {}
         
-        -- Check active MIDI editor
-        local midi_editor = reaper.MIDIEditor_GetActive()
-        if midi_editor then
-            local take = reaper.MIDIEditor_GetTake(midi_editor)
-            if take then
-                local item = reaper.GetMediaItemTake_Item(take)
-                if item then
-                    local track = reaper.GetMediaItem_Track(item)
-                    if track then
-                        local _, name = reaper.GetTrackName(track)
-                        name = name or "Unnamed Track"
-                        local cur_offset = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
-                        table.insert(gui_state.selected_tracks, {
-                            track = track,
-                            name = name .. " (MIDI Editor)",
-                            baseline_offset = cur_offset
-                        })
-                    end
-                end
-            end
-        end
-        
-        -- Fallback to selected tracks
-        if #gui_state.selected_tracks == 0 then
-            local num_tracks = reaper.CountSelectedTracks(0)
-            if num_tracks > 1000 then num_tracks = 1000 end -- Safety limit
+        local num_tracks = reaper.CountSelectedTracks(0)
+        if num_tracks > 0 then
+            -- Prioritize selected tracks in Arrange view
+            if num_tracks > 1000 then num_tracks = 1000 end
             for i = 0, num_tracks - 1 do
                 local track = reaper.GetSelectedTrack(0, i)
                 if track then
@@ -113,6 +92,28 @@ local function update_tracks_list()
                         name = name,
                         baseline_offset = cur_offset
                     })
+                end
+            end
+        else
+            -- Fallback to active MIDI editor track
+            local midi_editor = reaper.MIDIEditor_GetActive()
+            if midi_editor then
+                local take = reaper.MIDIEditor_GetTake(midi_editor)
+                if take then
+                    local item = reaper.GetMediaItemTake_Item(take)
+                    if item then
+                        local track = reaper.GetMediaItem_Track(item)
+                        if track then
+                            local _, name = reaper.GetTrackName(track)
+                            name = name or "Unnamed Track"
+                            local cur_offset = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
+                            table.insert(gui_state.selected_tracks, {
+                                track = track,
+                                name = name .. " (MIDI Editor)",
+                                baseline_offset = cur_offset
+                            })
+                        end
+                    end
                 end
             end
         end
@@ -150,12 +151,13 @@ local function adjust_offset_to_value(target_ms)
     local target_sec = target_ms / 1000.0
     for _, info in ipairs(gui_state.selected_tracks) do
         if reaper.ValidatePtr(info.track, "MediaTrack*") then
-            reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0) -- Enable & set to seconds
+            reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0) -- Enable (uncheck bypass) & set to seconds
             reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", target_sec)
             info.baseline_offset = target_sec
         end
     end
     reaper.Undo_EndBlock2(0, string.format("Set track media playback offset to %.1f ms", target_ms), -1)
+    reaper.TrackList_AdjustWindows(false)
     reaper.UpdateArrange()
     
     gui_state.slider_value = target_ms
@@ -227,10 +229,11 @@ local function render_ui()
         local offset_sec = new_slider_val / 1000.0
         for _, info in ipairs(gui_state.selected_tracks) do
             if reaper.ValidatePtr(info.track, "MediaTrack*") then
-                reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0)
+                reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0) -- Enable offset
                 reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", offset_sec)
             end
         end
+        reaper.TrackList_AdjustWindows(false)
         reaper.UpdateArrange()
     end
 
@@ -250,13 +253,14 @@ local function render_ui()
         local final_offset_sec = gui_state.slider_value / 1000.0
         for _, info in ipairs(gui_state.selected_tracks) do
             if reaper.ValidatePtr(info.track, "MediaTrack*") then
-                reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0)
+                reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0) -- Enable offset
                 reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", final_offset_sec)
             end
         end
         
         -- End undo block
         reaper.Undo_EndBlock2(0, string.format("Set track media playback offset to %.1f ms", gui_state.slider_value), -1)
+        reaper.TrackList_AdjustWindows(false)
         reaper.UpdateArrange()
         
         -- Update baselines
