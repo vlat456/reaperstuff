@@ -1,10 +1,10 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.0.2
+-- @version 1.0.3
 -- @about
 --   An ImGui-based utility for adjusting the track Media Playback Offset (positive and negative) of selected tracks.
 --   Works inside the MIDI Editor for the current MIDI item's track, or falls back to selected tracks in the Arrange view.
---   Features a relative slider centered at 0ms, fine-tuning buttons, absolute offset reset, and a real-time list of track offsets.
+--   Features an absolute slider fixed at ±500ms that always displays the current offset value, fine-tuning buttons, absolute offset reset, and a real-time list of track offsets.
 -- @provides
 --   [main=main,midi_editor,midi_inlineeditor,midi_eventlisteditor] Media_Offset_Tool.lua
 
@@ -25,15 +25,13 @@ local script_name = "Media Offset Tool"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
--- Slider ranges
-local RANGE_OPTIONS = {100, 500, 1000, 5000, 10000}
-local RANGE_LABELS = "±100 ms\0±500 ms\0±1000 ms\0±5000 ms\0±10000 ms\0"
+-- Fixed range ±500 ms
+local FIXED_RANGE = 500.0
 
 -- Unified GUI State
 local gui_state = {
     selected_tracks = {},
     slider_value = 0.0,
-    range_idx = 2, -- Default to ±1000 ms (index 2 in 0-indexed combo)
     custom_delta = 5.0,
     last_selection_state = "",
 }
@@ -96,32 +94,46 @@ local function update_tracks_list()
                             name = name .. " (MIDI Editor)",
                             baseline_offset = cur_offset
                         })
-                        return
                     end
                 end
             end
         end
         
         -- Fallback to selected tracks
-        local num_tracks = reaper.CountSelectedTracks(0)
-        if num_tracks > 1000 then num_tracks = 1000 end -- Safety limit
-        for i = 0, num_tracks - 1 do
-            local track = reaper.GetSelectedTrack(0, i)
-            if track then
-                local _, name = reaper.GetTrackName(track)
-                name = name or "Unnamed Track"
-                local cur_offset = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
-                table.insert(gui_state.selected_tracks, {
-                    track = track,
-                    name = name,
-                    baseline_offset = cur_offset
-                })
+        if #gui_state.selected_tracks == 0 then
+            local num_tracks = reaper.CountSelectedTracks(0)
+            if num_tracks > 1000 then num_tracks = 1000 end -- Safety limit
+            for i = 0, num_tracks - 1 do
+                local track = reaper.GetSelectedTrack(0, i)
+                if track then
+                    local _, name = reaper.GetTrackName(track)
+                    name = name or "Unnamed Track"
+                    local cur_offset = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
+                    table.insert(gui_state.selected_tracks, {
+                        track = track,
+                        name = name,
+                        baseline_offset = cur_offset
+                    })
+                end
             end
         end
+
+        -- Set slider value to first track's offset on selection change
+        if #gui_state.selected_tracks > 0 then
+            gui_state.slider_value = gui_state.selected_tracks[1].baseline_offset * 1000.0
+        else
+            gui_state.slider_value = 0.0
+        end
     else
-        -- Sync baseline offsets with REAPER's actual offsets if we are NOT dragging the slider
+        -- Sync baseline offsets and slider value with REAPER if we are NOT dragging the slider
         local is_slider_active = reaper.ImGui_IsAnyItemActive(ctx)
-        if not is_slider_active then
+        if not is_slider_active and #gui_state.selected_tracks > 0 then
+            local first_info = gui_state.selected_tracks[1]
+            if reaper.ValidatePtr(first_info.track, "MediaTrack*") then
+                local actual_offset = reaper.GetMediaTrackInfo_Value(first_info.track, "D_PLAY_OFFSET")
+                gui_state.slider_value = actual_offset * 1000.0
+            end
+
             for _, info in ipairs(gui_state.selected_tracks) do
                 if reaper.ValidatePtr(info.track, "MediaTrack*") then
                     info.baseline_offset = reaper.GetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET")
@@ -131,38 +143,34 @@ local function update_tracks_list()
     end
 end
 
--- Helper to apply offset by delta (from buttons or text box)
-local function adjust_offset_by_delta(delta_ms)
+-- Helper to set absolute offset value (with undo registration)
+local function adjust_offset_to_value(target_ms)
     if #gui_state.selected_tracks == 0 then return end
     
     reaper.Undo_BeginBlock2(0)
-    local delta_sec = delta_ms / 1000.0
+    local target_sec = target_ms / 1000.0
     for _, info in ipairs(gui_state.selected_tracks) do
         if reaper.ValidatePtr(info.track, "MediaTrack*") then
-            local new_offset = info.baseline_offset + delta_sec
             reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0) -- Enable & set to seconds
-            reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", new_offset)
-            info.baseline_offset = new_offset
+            reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", target_sec)
+            info.baseline_offset = target_sec
         end
     end
-    reaper.Undo_EndBlock2(0, string.format("Adjust track media playback offset by %.1f ms", delta_ms), -1)
+    reaper.Undo_EndBlock2(0, string.format("Set track media playback offset to %.1f ms", target_ms), -1)
     reaper.UpdateArrange()
+    
+    gui_state.slider_value = target_ms
+end
+
+-- Helper to apply delta relative to current value
+local function adjust_offset_by_delta(delta_ms)
+    local target_ms = gui_state.slider_value + delta_ms
+    adjust_offset_to_value(target_ms)
 end
 
 -- Helper to reset offsets to 0
 local function reset_offsets_to_zero()
-    if #gui_state.selected_tracks == 0 then return end
-    
-    reaper.Undo_BeginBlock2(0)
-    for _, info in ipairs(gui_state.selected_tracks) do
-        if reaper.ValidatePtr(info.track, "MediaTrack*") then
-            reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", 0.0)
-            reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0)
-            info.baseline_offset = 0.0
-        end
-    end
-    reaper.Undo_EndBlock2(0, "Reset track media playback offsets to 0", -1)
-    reaper.UpdateArrange()
+    adjust_offset_to_value(0.0)
 end
 
 -- Push Theme Custom Colors & Styles
@@ -216,17 +224,8 @@ local function render_ui()
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
 
-    -- Combo for selecting range
-    local range_changed, new_range_idx = reaper.ImGui_Combo(ctx, "Slider Range", gui_state.range_idx, RANGE_LABELS)
-    if range_changed then
-        gui_state.range_idx = new_range_idx
-    end
-
-    local current_range = RANGE_OPTIONS[gui_state.range_idx + 1] or 1000
-
-    -- Double-click / Drag slider for relative offset
-    -- Range is centered around 0
-    local slider_changed, new_slider_val = reaper.ImGui_SliderDouble(ctx, "Offset Adjust", gui_state.slider_value, -current_range, current_range, "%.1f ms")
+    -- Double-click / Drag slider for absolute offset (displaying current value)
+    local slider_changed, new_slider_val = reaper.ImGui_SliderDouble(ctx, "Offset (ms)", gui_state.slider_value, -FIXED_RANGE, FIXED_RANGE, "%.1f ms")
     local is_slider_active = reaper.ImGui_IsItemActive(ctx)
     local is_slider_activated = reaper.ImGui_IsItemActivated(ctx)
     local is_slider_deactivated = reaper.ImGui_IsItemDeactivatedAfterEdit(ctx)
@@ -238,47 +237,42 @@ local function render_ui()
         local offset_sec = new_slider_val / 1000.0
         for _, info in ipairs(gui_state.selected_tracks) do
             if reaper.ValidatePtr(info.track, "MediaTrack*") then
-                local target_offset = info.baseline_offset + offset_sec
                 reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0)
-                reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", target_offset)
+                reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", offset_sec)
             end
         end
         reaper.UpdateArrange()
     end
 
     if is_slider_deactivated then
-        -- User finished editing, commit the changes
-        if gui_state.slider_value ~= 0.0 then
-            -- Restore baseline offsets temporarily
-            for _, info in ipairs(gui_state.selected_tracks) do
-                if reaper.ValidatePtr(info.track, "MediaTrack*") then
-                    reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", info.baseline_offset)
-                end
-            end
-            
-            -- Begin proper undo block
-            reaper.Undo_BeginBlock2(0)
-            
-            -- Apply final offsets
-            local final_offset_sec = gui_state.slider_value / 1000.0
-            for _, info in ipairs(gui_state.selected_tracks) do
-                if reaper.ValidatePtr(info.track, "MediaTrack*") then
-                    local target_offset = info.baseline_offset + final_offset_sec
-                    reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0)
-                    reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", target_offset)
-                end
-            end
-            
-            -- End undo block
-            reaper.Undo_EndBlock2(0, string.format("Adjust track media playback offset by %.1f ms", gui_state.slider_value), -1)
-            reaper.UpdateArrange()
-            
-            -- Update baselines
-            for _, info in ipairs(gui_state.selected_tracks) do
-                info.baseline_offset = info.baseline_offset + final_offset_sec
+        -- User finished editing, commit the changes to a single undo point
+        -- Restore baseline offsets temporarily
+        for _, info in ipairs(gui_state.selected_tracks) do
+            if reaper.ValidatePtr(info.track, "MediaTrack*") then
+                reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", info.baseline_offset)
             end
         end
-        gui_state.slider_value = 0.0
+        
+        -- Begin proper undo block
+        reaper.Undo_BeginBlock2(0)
+        
+        -- Apply final offsets
+        local final_offset_sec = gui_state.slider_value / 1000.0
+        for _, info in ipairs(gui_state.selected_tracks) do
+            if reaper.ValidatePtr(info.track, "MediaTrack*") then
+                reaper.SetMediaTrackInfo_Value(info.track, "I_PLAY_OFFSET_FLAG", 0)
+                reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", final_offset_sec)
+            end
+        end
+        
+        -- End undo block
+        reaper.Undo_EndBlock2(0, string.format("Set track media playback offset to %.1f ms", gui_state.slider_value), -1)
+        reaper.UpdateArrange()
+        
+        -- Update baselines
+        for _, info in ipairs(gui_state.selected_tracks) do
+            info.baseline_offset = final_offset_sec
+        end
     end
 
     reaper.ImGui_Spacing(ctx)
