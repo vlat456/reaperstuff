@@ -21,7 +21,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool"
+local script_name = "Media Offset Tool v1.0.5"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
