@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="b6738a94196b00de335ab1af11ad5c61af21b8fb">
+<index version="1" name="Walter Scripts" commit="7bf84de89d8f94763e30666a12b6195dce9688e5">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -33,6 +33,9 @@
       </metadata>
       <version name="1.0.0" author="drvlat" time="2026-06-17T18:25:21Z">
         <source main="main">https://github.com/vlat456/reaperstuff/raw/b6738a94196b00de335ab1af11ad5c61af21b8fb/FX/Track_FX_Bypass_Manager.lua</source>
+      </version>
+      <version name="1.0.1" author="drvlat" time="2026-06-17T18:37:44Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/7bf84de89d8f94763e30666a12b6195dce9688e5/FX/Track_FX_Bypass_Manager.lua</source>
       </version>
     </reapack>
   </category>
