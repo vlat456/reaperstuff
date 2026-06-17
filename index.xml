@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="1f0482aeb9835518552abc03e7c886d0770748d7">
+<index version="1" name="Walter Scripts" commit="187d0f94971ef29aeda6116b81aa2dc48a1b1e3b">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -19,6 +19,62 @@
         <changelog><![CDATA[0.0.3 - A lot better randomness (Gaussian distribution)
 0.0.2 - Initial release]]></changelog>
         <source main="main" file="Kontakt_Tune_Humanizer.lua">https://github.com/vlat456/reaperstuff/raw/e88c0b9975e8eee7e223f6cad64d116f5b5fa08c/FX/Kontakt_Tune_Humanizer.lua</source>
+      </version>
+    </reapack>
+    <reapack name="Toggle_Bypass_FX_1-12.lua" type="script" desc="Toggle Bypass FX 1-12">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Toggles the bypass state for the first 12 FX slots (indices 0 to 11) on the selected track. If any of these FX are currently active, they will all be bypassed. If all of them are already bypassed, they will all be enabled.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0.0" author="drvlat" time="2026-06-17T18:54:11Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/187d0f94971ef29aeda6116b81aa2dc48a1b1e3b/FX/Toggle_Bypass_FX_1-12.lua</source>
+      </version>
+    </reapack>
+    <reapack name="Toggle_Bypass_FX_1-16.lua" type="script" desc="Toggle Bypass FX 1-16">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Toggles the bypass state for the first 16 FX slots (indices 0 to 15) on the selected track. If any of these FX are currently active, they will all be bypassed. If all of them are already bypassed, they will all be enabled.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0.0" author="drvlat" time="2026-06-17T18:54:11Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/187d0f94971ef29aeda6116b81aa2dc48a1b1e3b/FX/Toggle_Bypass_FX_1-16.lua</source>
+      </version>
+    </reapack>
+    <reapack name="Toggle_Bypass_FX_1-4.lua" type="script" desc="Toggle Bypass FX 1-4">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Toggles the bypass state for the first 4 FX slots (indices 0 to 3) on the selected track. If any of these FX are currently active, they will all be bypassed. If all of them are already bypassed, they will all be enabled.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0.0" author="drvlat" time="2026-06-17T18:54:11Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/187d0f94971ef29aeda6116b81aa2dc48a1b1e3b/FX/Toggle_Bypass_FX_1-4.lua</source>
+      </version>
+    </reapack>
+    <reapack name="Toggle_Bypass_FX_1-8.lua" type="script" desc="Toggle Bypass FX 1-8">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Toggles the bypass state for the first 8 FX slots (indices 0 to 7) on the selected track. If any of these FX are currently active, they will all be bypassed. If all of them are already bypassed, they will all be enabled.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0.0" author="drvlat" time="2026-06-17T18:54:11Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/187d0f94971ef29aeda6116b81aa2dc48a1b1e3b/FX/Toggle_Bypass_FX_1-8.lua</source>
       </version>
     </reapack>
     <reapack name="Track_FX_Bypass_Manager.lua" type="script" desc="Track FX Bypass Manager">
