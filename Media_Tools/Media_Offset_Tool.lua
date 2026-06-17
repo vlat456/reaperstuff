@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.1.1
+-- @version 1.1.2
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.1.1"
+local script_name = "Media Offset Tool v1.1.2"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -306,7 +306,7 @@ local function update_targets_list()
             end
             
         elseif eff_mode == MODE_ITEM_POSITION then
-            -- Mode C: Move Item Timeline Position (Relative offset shift starting at 0)
+            -- Mode C: Move Item Timeline Position
             local num_items = reaper.CountSelectedMediaItems(0)
             if num_items > 0 then
                 if num_items > 10000 then num_items = 10000 end
@@ -316,9 +316,21 @@ local function update_targets_list()
                         local take = reaper.GetActiveTake(item)
                         local name = take and reaper.GetTakeName(take) or "Empty Item"
                         local cur_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                        
+                        -- Read saved offset from item metadata
+                        local retval, saved_val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
+                        local saved_offset_sec = 0.0
+                        if retval and saved_val ~= "" then
+                            saved_offset_sec = (tonumber(saved_val) or 0.0) / 1000.0
+                        end
+                        
+                        -- The original zero position is current position minus saved offset
+                        local zero_pos = cur_pos - saved_offset_sec
+                        
                         table.insert(gui_state.selected_targets, {
                             item = item,
                             name = name,
+                            zero_position = zero_pos,
                             baseline_offset = cur_pos
                         })
                     end
@@ -333,9 +345,20 @@ local function update_targets_list()
                         if item then
                             local name = reaper.GetTakeName(take) or "Unnamed Take"
                             local cur_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                            
+                            -- Read saved offset from item metadata
+                            local retval, saved_val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
+                            local saved_offset_sec = 0.0
+                            if retval and saved_val ~= "" then
+                                saved_offset_sec = (tonumber(saved_val) or 0.0) / 1000.0
+                            end
+                            
+                            local zero_pos = cur_pos - saved_offset_sec
+                            
                             table.insert(gui_state.selected_targets, {
                                 item = item,
                                 name = name .. " (MIDI Editor)",
+                                zero_position = zero_pos,
                                 baseline_offset = cur_pos
                             })
                         end
@@ -343,7 +366,18 @@ local function update_targets_list()
                 end
             end
             
-            gui_state.slider_value = 0.0
+            -- Initialize slider value with the saved offset of the first item
+            if #gui_state.selected_targets > 0 then
+                local first_item = gui_state.selected_targets[1].item
+                local retval, saved_val = reaper.GetSetMediaItemInfo_String(first_item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
+                if retval and saved_val ~= "" then
+                    gui_state.slider_value = tonumber(saved_val) or 0.0
+                else
+                    gui_state.slider_value = 0.0
+                end
+            else
+                gui_state.slider_value = 0.0
+            end
         end
     else
         -- Sync baselines and values if NOT dragging
@@ -382,12 +416,30 @@ local function update_targets_list()
                     end
                 end
             elseif eff_mode == MODE_ITEM_POSITION then
+                local first_info = gui_state.selected_targets[1]
+                if first_info and reaper.ValidatePtr(first_info.item, "MediaItem*") then
+                    local cur_pos = reaper.GetMediaItemInfo_Value(first_info.item, "D_POSITION")
+                    local retval, saved_val = reaper.GetSetMediaItemInfo_String(first_info.item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
+                    local saved_offset_ms = 0.0
+                    if retval and saved_val ~= "" then
+                        saved_offset_ms = tonumber(saved_val) or 0.0
+                    end
+                    gui_state.slider_value = saved_offset_ms
+                    first_info.zero_position = cur_pos - (saved_offset_ms / 1000.0)
+                end
+                
                 for _, info in ipairs(gui_state.selected_targets) do
                     if reaper.ValidatePtr(info.item, "MediaItem*") then
-                        info.baseline_offset = reaper.GetMediaItemInfo_Value(info.item, "D_POSITION")
+                        local cur_pos = reaper.GetMediaItemInfo_Value(info.item, "D_POSITION")
+                        info.baseline_offset = cur_pos
+                        local retval, saved_val = reaper.GetSetMediaItemInfo_String(info.item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
+                        local saved_offset_ms = 0.0
+                        if retval and saved_val ~= "" then
+                            saved_offset_ms = tonumber(saved_val) or 0.0
+                        end
+                        info.zero_position = cur_pos - (saved_offset_ms / 1000.0)
                     end
                 end
-                gui_state.slider_value = 0.0
             end
         end
     end
@@ -443,7 +495,7 @@ local function apply_offset_to_targets(value)
         local shift_sec = value / 1000.0
         for _, info in ipairs(gui_state.selected_targets) do
             if reaper.ValidatePtr(info.item, "MediaItem*") then
-                reaper.SetMediaItemInfo_Value(info.item, "D_POSITION", info.baseline_offset + shift_sec)
+                reaper.SetMediaItemInfo_Value(info.item, "D_POSITION", info.zero_position + shift_sec)
                 reaper.UpdateItemInProject(info.item)
             end
         end
@@ -488,9 +540,12 @@ local function adjust_offset_to_value(target_ms)
         gui_state.slider_value = target_ms
     elseif eff_mode == MODE_ITEM_POSITION then
         for _, info in ipairs(gui_state.selected_targets) do
-            info.baseline_offset = info.baseline_offset + target_ms / 1000.0
+            if reaper.ValidatePtr(info.item, "MediaItem*") then
+                reaper.GetSetMediaItemInfo_String(info.item, "P_EXT:Walter_MediaOffsetTool_offset", tostring(target_ms), true)
+                info.baseline_offset = info.zero_position + (target_ms / 1000.0)
+            end
         end
-        gui_state.slider_value = 0.0
+        gui_state.slider_value = target_ms
     end
 end
 
@@ -734,19 +789,20 @@ local function render_ui()
                 info.baseline_offset = final_val_sec
             end
         elseif eff_mode == MODE_ITEM_POSITION then
-            local final_val_sec = gui_state.slider_value / 1000.0
             for _, info in ipairs(gui_state.selected_targets) do
-                info.baseline_offset = info.baseline_offset + final_val_sec
+                if reaper.ValidatePtr(info.item, "MediaItem*") then
+                    reaper.GetSetMediaItemInfo_String(info.item, "P_EXT:Walter_MediaOffsetTool_offset", tostring(gui_state.slider_value), true)
+                    info.baseline_offset = info.zero_position + (gui_state.slider_value / 1000.0)
+                end
             end
-            gui_state.slider_value = 0.0
         end
     end
 
     reaper.ImGui_Spacing(ctx)
 
     -- Fine-tuning buttons row
-    local win_width = reaper.ImGui_GetWindowWidth(ctx)
-    local button_width = math.floor((win_width - 40) / 7)
+    local avail_w, _ = reaper.ImGui_GetContentRegionAvail(ctx)
+    local button_width = math.floor((avail_w - 48) / 7)
     if button_width < 45 then button_width = 45 end
     local button_height = 24
 
@@ -829,7 +885,44 @@ local function render_ui()
         reaper.ImGui_Text(ctx, "No take selected")
     end
 
-    -- 3. Dynamic Mode Details (selected MIDI notes or Move Item position)
+    -- 3. Item Position Offset (Always visible, stored in item extension metadata)
+    local item
+    if take and reaper.ValidatePtr(take, "MediaItem_Take*") then
+        item = reaper.GetMediaItemTake_Item(take)
+    else
+        local num_items = reaper.CountSelectedMediaItems(0)
+        if num_items > 0 then
+            item = reaper.GetSelectedMediaItem(0, 0)
+        end
+    end
+    
+    if item and reaper.ValidatePtr(item, "MediaItem*") then
+        local retval, saved_val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
+        local saved_ms = 0.0
+        if retval and saved_val ~= "" then
+            saved_ms = tonumber(saved_val) or 0.0
+        end
+        
+        local display_name = "Unnamed Item"
+        local active_take = reaper.GetActiveTake(item)
+        if active_take then
+            display_name = reaper.GetTakeName(active_take) or "Unnamed Take"
+        end
+        
+        local label = "Item (" .. display_name .. ")"
+        if eff_mode == MODE_ITEM_POSITION and num_targets > 1 then
+            label = string.format("Item (%s + %d others)", display_name, num_targets - 1)
+        end
+        reaper.ImGui_Text(ctx, label .. " Position Offset:")
+        reaper.ImGui_SameLine(ctx, 240)
+        reaper.ImGui_Text(ctx, string.format("%.1f ms", saved_ms))
+    else
+        reaper.ImGui_Text(ctx, "Item Position Offset:")
+        reaper.ImGui_SameLine(ctx, 240)
+        reaper.ImGui_Text(ctx, "No item selected")
+    end
+
+    -- 4. Dynamic Mode Details (selected MIDI notes or Move Item position)
     if eff_mode == MODE_MIDI_NOTES then
         reaper.ImGui_Spacing(ctx)
         reaper.ImGui_Text(ctx, string.format("Selected MIDI Notes: %d", num_targets))
@@ -883,7 +976,7 @@ local function loop()
     update_targets_list()
 
     -- Set size constraints
-    reaper.ImGui_SetNextWindowSizeConstraints(ctx, 420, 200, 700, 300)
+    reaper.ImGui_SetNextWindowSizeConstraints(ctx, 460, 200, 700, 300)
 
     -- Set window style/colors
     push_theme()
