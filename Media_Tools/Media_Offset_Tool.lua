@@ -1,12 +1,12 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.0.8
+-- @version 1.0.9
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
---     1) Take offset (first variant)
---     2) Track offset (current)
---     3) Move item itself
+--     1) Take Start Offset
+--     2) Track Playback Offset
+--     3) Move Item Position
 --   Works inside the MIDI Editor for the current MIDI item, or falls back to selected items/tracks in the Arrange view.
 --   Features an absolute slider fixed at ±500ms, fine-tuning buttons, absolute offset reset, and clean status labels.
 -- @provides
@@ -25,7 +25,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.0.8"
+local script_name = "Media Offset Tool v1.0.9"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -421,21 +421,21 @@ local function render_ui()
     reaper.ImGui_Text(ctx, "Offset Mode:")
     local mode_changed = false
     
-    local rb_a = reaper.ImGui_RadioButton(ctx, "Take offset (first variant)", gui_state.adjust_mode == MODE_TAKE_OFFSET)
+    local rb_a = reaper.ImGui_RadioButton(ctx, "Take Start Offset", gui_state.adjust_mode == MODE_TAKE_OFFSET)
     if rb_a then
         gui_state.adjust_mode = MODE_TAKE_OFFSET
         mode_changed = true
     end
     
     reaper.ImGui_SameLine(ctx)
-    local rb_b = reaper.ImGui_RadioButton(ctx, "Track offset (current)", gui_state.adjust_mode == MODE_TRACK_OFFSET)
+    local rb_b = reaper.ImGui_RadioButton(ctx, "Track Playback Offset", gui_state.adjust_mode == MODE_TRACK_OFFSET)
     if rb_b then
         gui_state.adjust_mode = MODE_TRACK_OFFSET
         mode_changed = true
     end
     
     reaper.ImGui_SameLine(ctx)
-    local rb_c = reaper.ImGui_RadioButton(ctx, "Move item itself", gui_state.adjust_mode == MODE_ITEM_POSITION)
+    local rb_c = reaper.ImGui_RadioButton(ctx, "Move Item Position", gui_state.adjust_mode == MODE_ITEM_POSITION)
     if rb_c then
         gui_state.adjust_mode = MODE_ITEM_POSITION
         mode_changed = true
