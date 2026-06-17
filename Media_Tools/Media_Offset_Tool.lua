@@ -1,11 +1,11 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.0.0
+-- @version 1.0.1
 -- @about
 --   An ImGui-based utility for adjusting the media start offset (positive and negative) of selected items/takes.
 --   Features a relative slider centered at 0ms, fine-tuning buttons, absolute offset reset, and a real-time list of offsets.
 -- @provides
---   [main] Media_Offset_Tool.lua
+--   [main=main,midi_editor,midi_inlineeditor,midi_eventlisteditor] Media_Offset_Tool.lua
 
 local reaper = reaper
 
@@ -39,9 +39,21 @@ local gui_state = {
 
 -- Check selection signature to detect change
 local function get_selection_signature()
+    local sig = {}
+    
+    -- Check active MIDI editor
+    local midi_editor = reaper.MIDIEditor_GetActive()
+    if midi_editor then
+        local take = reaper.MIDIEditor_GetTake(midi_editor)
+        if take then
+            table.insert(sig, "editor:" .. tostring(take))
+            return table.concat(sig, ";")
+        end
+    end
+    
+    -- Arrange selection fallback
     local num_items = reaper.CountSelectedMediaItems(0)
     if num_items > 10000 then num_items = 10000 end -- Safety limit
-    local sig = {}
     for i = 0, num_items - 1 do
         local item = reaper.GetSelectedMediaItem(0, i)
         if item then
@@ -63,6 +75,27 @@ local function update_takes_list()
         gui_state.last_selection_state = current_sig
         gui_state.selected_takes = {}
         
+        -- Check active MIDI editor
+        local midi_editor = reaper.MIDIEditor_GetActive()
+        if midi_editor then
+            local take = reaper.MIDIEditor_GetTake(midi_editor)
+            if take then
+                local item = reaper.GetMediaItemTake_Item(take)
+                if item then
+                    local name = reaper.GetTakeName(take) or "Unnamed Take"
+                    local cur_offset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+                    table.insert(gui_state.selected_takes, {
+                        item = item,
+                        take = take,
+                        name = name .. " (MIDI Editor)",
+                        baseline_offset = cur_offset
+                    })
+                    return
+                end
+            end
+        end
+        
+        -- Fallback to selected media items in Arrange view
         local num_items = reaper.CountSelectedMediaItems(0)
         if num_items > 10000 then num_items = 10000 end -- Safety limit
         for i = 0, num_items - 1 do
@@ -150,14 +183,13 @@ local function push_theme()
     reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_FrameRounding, 6.0)
     reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_GrabRounding, 6.0)
     reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_WindowRounding, 8.0)
-    reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_ButtonRounding, 6.0)
     reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_ItemSpacing, 8.0, 6.0)
 end
 
 -- Pop Theme Styles & Colors
 local function pop_theme()
     reaper.ImGui_PopStyleColor(ctx, 16)
-    reaper.ImGui_PopStyleVar(ctx, 5)
+    reaper.ImGui_PopStyleVar(ctx, 4)
 end
 
 -- Render the main controls
