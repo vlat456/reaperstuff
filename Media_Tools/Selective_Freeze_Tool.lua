@@ -130,8 +130,23 @@ local function freeze_selected_items(track, selected_items, mode)
         end
     end
 
-    -- 6. Trigger rendering action: Render items to new take (original track format)
-    reaper.Main_OnCommand(41612, 0)
+    -- 6. Trigger rendering action: Render items to new take (mono/stereo based on original track format)
+    local action_id = 40209 -- Default to Stereo: Item: Apply track/take FX to items (stereo output)
+    if #selected_items > 0 then
+        local first_item = selected_items[1]
+        local active_take = reaper.GetActiveTake(first_item)
+        if active_take and not reaper.TakeIsMIDI(active_take) then
+            local source = reaper.GetMediaItemTake_Source(active_take)
+            if source then
+                local num_channels = reaper.GetMediaSourceNumChannels(source)
+                if num_channels == 1 then
+                    action_id = 40361 -- Mono: Item: Apply track/take FX to items (mono output)
+                end
+            end
+        end
+    end
+    
+    reaper.Main_OnCommand(action_id, 0)
 
     -- 7. Restore track FX states to pre-freeze state
     for i = 0, num_fx - 1 do
