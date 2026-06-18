@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.1.5
+-- @version 1.1.6
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.1.5"
+local script_name = "Media Offset Tool v1.1.6"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -179,12 +179,12 @@ local function get_take_note_offsets(take)
     local item = reaper.GetMediaItemTake_Item(take)
     if not item then return {} end
     
-    local ok, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
-    if not ok or guid == "" then return {} end
+    local _, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
+    if not guid or guid == "" then return {} end
     
-    local retval, val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Offsets_" .. guid, "", false)
+    local _, val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Offsets_" .. guid, "", false)
     local offsets = {}
-    if retval and val ~= "" then
+    if val and val ~= "" then
         for entry in val:gmatch("[^;]+") do
             local key, offset_str = entry:match("^([^:]+):([^:]+)$")
             if key and offset_str then
@@ -201,8 +201,8 @@ local function save_take_note_offsets(take, offsets)
     local item = reaper.GetMediaItemTake_Item(take)
     if not item then return end
     
-    local ok, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
-    if not ok or guid == "" then return end
+    local _, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
+    if not guid or guid == "" then return end
     
     local entries = {}
     for key, val in pairs(offsets) do
