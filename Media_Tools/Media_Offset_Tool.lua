@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.4.1
+-- @version 1.4.2
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.4.1"
+local script_name = "Media Offset Tool v1.4.2"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1147,26 +1147,36 @@ local function apply_offset_to_targets(value, preset_name)
                     true  -- noSort
                 )
                 
-                if ks_pitch >= 0 then
+                if gui_state.write_keyswitches and preset_name and preset_name ~= "" then
                     local exists = false
+                    local notes_to_delete = {}
                     local num_notes = reaper.MIDI_CountEvts(take)
                     for idx = 0, num_notes - 1 do
                         local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
-                        if r and ch == info.chan and pi == ks_pitch then
-                            if sppq >= (new_start_ppq - 40) and sppq <= new_start_ppq then
-                                exists = true
-                                break
+                        if r and ch == info.chan then
+                            if sppq >= (new_start_ppq - 60) and sppq <= new_start_ppq then
+                                if pi < 36 or is_keyswitch_pitch(pi) then
+                                    if ks_pitch >= 0 and pi == ks_pitch then
+                                        exists = true
+                                    else
+                                        table.insert(notes_to_delete, idx)
+                                    end
+                                end
                             end
                         end
                     end
                     
-                    if not exists then
+                    for d = #notes_to_delete, 1, -1 do
+                        reaper.MIDI_DeleteNote(take, notes_to_delete[d])
+                    end
+                    
+                    if ks_pitch >= 0 and not exists then
                         reaper.MIDI_InsertNote(
                             take,
                             false, -- selected
                             false, -- muted
-                            new_start_ppq - 20, -- startppq
-                            new_start_ppq - 5,  -- endppq
+                            new_start_ppq - 30, -- startppq
+                            new_start_ppq - 10,  -- endppq
                             info.chan,
                             ks_pitch,
                             ks_vel,
