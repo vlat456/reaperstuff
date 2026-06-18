@@ -1156,10 +1156,12 @@ local function render_ui()
 
     reaper.ImGui_SameLine(ctx)
     reaper.ImGui_SetNextItemWidth(ctx, 80)
-    local flags = reaper.ImGui_InputTextFlags_EnterReturnsTrue()
-    local input_changed, new_input_val = reaper.ImGui_InputDouble(ctx, "ms", gui_state.slider_value, 0.0, 0.0, "%.1f", flags)
+    local input_changed, new_input_val = reaper.ImGui_InputDouble(ctx, "ms", gui_state.slider_value, 0.0, 0.0, "%.1f")
     if input_changed then
-        adjust_offset_to_value(new_input_val)
+        gui_state.slider_value = new_input_val
+    end
+    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
+        adjust_offset_to_value(gui_state.slider_value)
     end
 
     if is_slider_deactivated then
