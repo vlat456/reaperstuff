@@ -86,6 +86,7 @@ gui_state = {
     slider_value = 0.0,
     adjust_mode = MODE_TRACK_OFFSET, -- Default to Mode B (Track Playback Offset)
     last_selection_state = "",
+    is_dragging = false,
 }
 
 -- Load persisted mode from project metadata
@@ -263,7 +264,7 @@ end
 local function update_targets_list(force)
     -- Skip rebuilding selection while the user is actively interacting with the GUI,
     -- unless forced (e.g. on mode change).
-    if not force and reaper.ImGui_IsAnyItemActive(ctx) then
+    if not force and (reaper.ImGui_IsAnyItemActive(ctx) or gui_state.is_dragging) then
         return
     end
     
@@ -525,7 +526,7 @@ local function update_targets_list(force)
         end
     else
         -- Sync baselines and values if NOT dragging
-        local is_slider_active = reaper.ImGui_IsAnyItemActive(ctx)
+        local is_slider_active = reaper.ImGui_IsAnyItemActive(ctx) or gui_state.is_dragging
         if not is_slider_active and #gui_state.selected_targets > 0 then
             local eff_mode, take = get_effective_mode()
             if eff_mode == MODE_MIDI_NOTES then
@@ -887,6 +888,10 @@ local function render_ui()
     local is_slider_activated = reaper.ImGui_IsItemActivated(ctx)
     local is_slider_deactivated = reaper.ImGui_IsItemDeactivatedAfterEdit(ctx)
 
+    if is_slider_activated or is_slider_active then
+        gui_state.is_dragging = true
+    end
+
     if slider_changed then
         local eff_mode = get_effective_mode()
         gui_state.slider_value = new_slider_val
@@ -995,6 +1000,7 @@ local function render_ui()
                 end
             end
         end
+        gui_state.is_dragging = false
     end
 
     reaper.ImGui_Spacing(ctx)
