@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.5.1
+-- @version 1.5.2
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.5.1"
+local script_name = "Media Offset Tool v1.5.2"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -233,7 +233,7 @@ end
 
 load_settings()
 
--- Helper: pack float {r,g,b} table to uint32 (the format ColorEdit3 uses)
+-- Helper: pack float {r,g,b} table to uint32 in 0xRRGGBBAA format (ColorEdit4 native format)
 local function theme_pack(t)
     return reaper.ImGui_ColorConvertDouble4ToU32(t[1], t[2], t[3], 1.0)
 end
@@ -2473,35 +2473,35 @@ local function render_ui()
 
         -- Background Color
         reaper.ImGui_TextDisabled(ctx, "Background Color")
-        local bg_changed, new_bg_u32 = reaper.ImGui_ColorEdit3(ctx, "##bg_color", settings_edit_bg_u32)
+        local bg_changed, new_bg_u32 = reaper.ImGui_ColorEdit4(ctx, "##bg_color", settings_edit_bg_u32)
         if bg_changed then settings_edit_bg_u32 = new_bg_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
         -- Accent Color
         reaper.ImGui_TextDisabled(ctx, "Accent Color")
-        local ac_changed, new_ac_u32 = reaper.ImGui_ColorEdit3(ctx, "##accent_color", settings_edit_accent_u32)
+        local ac_changed, new_ac_u32 = reaper.ImGui_ColorEdit4(ctx, "##accent_color", settings_edit_accent_u32)
         if ac_changed then settings_edit_accent_u32 = new_ac_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
         -- Text Color
         reaper.ImGui_TextDisabled(ctx, "Text Color")
-        local tx_changed, new_tx_u32 = reaper.ImGui_ColorEdit3(ctx, "##text_color", settings_edit_text_u32)
+        local tx_changed, new_tx_u32 = reaper.ImGui_ColorEdit4(ctx, "##text_color", settings_edit_text_u32)
         if tx_changed then settings_edit_text_u32 = new_tx_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
         -- Danger Color
         reaper.ImGui_TextDisabled(ctx, "Danger Color  (Reset, Delete buttons)")
-        local dg_changed, new_dg_u32 = reaper.ImGui_ColorEdit3(ctx, "##danger_color", settings_edit_danger_u32)
+        local dg_changed, new_dg_u32 = reaper.ImGui_ColorEdit4(ctx, "##danger_color", settings_edit_danger_u32)
         if dg_changed then settings_edit_danger_u32 = new_dg_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
         -- Positive Color
         reaper.ImGui_TextDisabled(ctx, "Positive Color  (Save buttons)")
-        local pos_changed, new_pos_u32 = reaper.ImGui_ColorEdit3(ctx, "##positive_color", settings_edit_positive_u32)
+        local pos_changed, new_pos_u32 = reaper.ImGui_ColorEdit4(ctx, "##positive_color", settings_edit_positive_u32)
         if pos_changed then settings_edit_positive_u32 = new_pos_u32 end
 
         reaper.ImGui_Spacing(ctx)
