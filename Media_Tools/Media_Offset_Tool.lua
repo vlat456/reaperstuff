@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.2.1
+-- @version 1.2.2
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.2.1"
+local script_name = "Media Offset Tool v1.2.2"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -35,11 +35,14 @@ local FIXED_RANGE = 500.0
 
 -- Presets configuration variables and helpers
 local current_preset_name = ""
+local combo_preset_name = ""
 local new_preset_lib_input = ""
 local new_preset_art_input = ""
 local rename_preset_lib_input = ""
 local rename_preset_art_input = ""
 local open_new_preset_modal = false
+local new_preset_show_in_grid = true
+local rename_preset_show_in_grid = true
 
 -- Helper to split a preset name into Library and Articulation
 local function split_preset_name(name)
@@ -67,24 +70,35 @@ end
 local function load_presets()
     local path = get_presets_file_path()
     local loaded_presets = {}
+    local show_in_grid = {}
     local keys = {}
     local f = io.open(path, "r")
     if f then
         for line in f:lines() do
             line = line:gsub("[\r\n]", "")
-            local name, val = line:match("^(.-)=([^=]+)$")
-            if name and val then
-                loaded_presets[name] = tonumber(val) or 0.0
+            local name, rest = line:match("^(.-)=([^=]+)$")
+            if name and rest then
+                local val_str, show_str = rest:match("^(.-)|(.-)$")
+                local val = 0.0
+                local show = true
+                if val_str and show_str then
+                    val = tonumber(val_str) or 0.0
+                    show = (show_str == "1")
+                else
+                    val = tonumber(rest) or 0.0
+                end
+                loaded_presets[name] = val
+                show_in_grid[name] = show
                 table.insert(keys, name)
             end
         end
         f:close()
     end
     table.sort(keys)
-    return loaded_presets, keys
+    return loaded_presets, keys, show_in_grid
 end
 
-local function save_presets(presets_table)
+local function save_presets(presets_table, show_in_grid_table)
     local path = get_presets_file_path()
     local f = io.open(path, "w")
     if f then
@@ -94,13 +108,17 @@ local function save_presets(presets_table)
         end
         table.sort(sorted_keys)
         for _, k in ipairs(sorted_keys) do
-            f:write(string.format("%s=%s\n", k, tostring(presets_table[k])))
+            local show = true
+            if show_in_grid_table and show_in_grid_table[k] ~= nil then
+                show = show_in_grid_table[k]
+            end
+            f:write(string.format("%s=%s|%d\n", k, tostring(presets_table[k]), show and 1 or 0))
         end
         f:close()
     end
 end
 
-local presets, preset_keys = load_presets()
+local presets, preset_keys, presets_show_in_grid = load_presets()
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -741,15 +759,19 @@ local function update_targets_list(force)
             end
             if all_same then
                 current_preset_name = first_preset
+                combo_preset_name = first_preset
             else
                 current_preset_name = ""
+                combo_preset_name = ""
             end
         else
             current_preset_name = ""
+            combo_preset_name = ""
         end
     else
         -- Sync baselines and values if NOT dragging
         local is_slider_active = reaper.ImGui_IsAnyItemActive(ctx) or gui_state.is_dragging
+        local is_previewing = (combo_preset_name ~= "" and combo_preset_name ~= current_preset_name)
         if not is_slider_active and #gui_state.selected_targets > 0 then
             local eff_mode, take = get_effective_mode()
             if eff_mode == MODE_MIDI_NOTES then
@@ -805,22 +827,16 @@ local function update_targets_list(force)
                         gui_state.slider_value = 0.0
                     end
                     
-                    -- Update current_preset_name on drift
-                    local first_preset = gui_state.selected_targets[1].preset_name or ""
-                    local all_same_preset = true
-                    for i = 2, #gui_state.selected_targets do
-                        if (gui_state.selected_targets[i].preset_name or "") ~= first_preset then
-                            all_same_preset = false
-                            break
-                        end
-                    end
                     current_preset_name = all_same_preset and first_preset or ""
+                    combo_preset_name = current_preset_name
                 end
             elseif eff_mode == MODE_TRACK_OFFSET then
-                local first_info = gui_state.selected_targets[1]
-                if reaper.ValidatePtr(first_info.track, "MediaTrack*") then
-                    local actual_offset = reaper.GetMediaTrackInfo_Value(first_info.track, "D_PLAY_OFFSET")
-                    gui_state.slider_value = actual_offset * 1000.0
+                if not is_previewing then
+                    local first_info = gui_state.selected_targets[1]
+                    if reaper.ValidatePtr(first_info.track, "MediaTrack*") then
+                        local actual_offset = reaper.GetMediaTrackInfo_Value(first_info.track, "D_PLAY_OFFSET")
+                        gui_state.slider_value = actual_offset * 1000.0
+                    end
                 end
                 for _, info in ipairs(gui_state.selected_targets) do
                     if reaper.ValidatePtr(info.track, "MediaTrack*") then
@@ -830,10 +846,12 @@ local function update_targets_list(force)
                     end
                 end
             elseif eff_mode == MODE_TAKE_OFFSET then
-                local first_info = gui_state.selected_targets[1]
-                if reaper.ValidatePtr(first_info.take, "MediaItem_Take*") then
-                    local actual_offset = reaper.GetMediaItemTakeInfo_Value(first_info.take, "D_STARTOFFS")
-                    gui_state.slider_value = actual_offset * 1000.0
+                if not is_previewing then
+                    local first_info = gui_state.selected_targets[1]
+                    if reaper.ValidatePtr(first_info.take, "MediaItem_Take*") then
+                        local actual_offset = reaper.GetMediaItemTakeInfo_Value(first_info.take, "D_STARTOFFS")
+                        gui_state.slider_value = actual_offset * 1000.0
+                    end
                 end
                 for _, info in ipairs(gui_state.selected_targets) do
                     if reaper.ValidatePtr(info.take, "MediaItem_Take*") then
@@ -850,16 +868,18 @@ local function update_targets_list(force)
                     end
                 end
             elseif eff_mode == MODE_ITEM_POSITION then
-                local first_info = gui_state.selected_targets[1]
-                if first_info and reaper.ValidatePtr(first_info.item, "MediaItem*") then
-                    local cur_pos = reaper.GetMediaItemInfo_Value(first_info.item, "D_POSITION")
-                    local retval, saved_val = reaper.GetSetMediaItemInfo_String(first_info.item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
-                    local saved_offset_ms = 0.0
-                    if retval and saved_val ~= "" then
-                        saved_offset_ms = tonumber(saved_val) or 0.0
+                if not is_previewing then
+                    local first_info = gui_state.selected_targets[1]
+                    if first_info and reaper.ValidatePtr(first_info.item, "MediaItem*") then
+                        local cur_pos = reaper.GetMediaItemInfo_Value(first_info.item, "D_POSITION")
+                        local retval, saved_val = reaper.GetSetMediaItemInfo_String(first_info.item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
+                        local saved_offset_ms = 0.0
+                        if retval and saved_val ~= "" then
+                            saved_offset_ms = tonumber(saved_val) or 0.0
+                        end
+                        gui_state.slider_value = saved_offset_ms
+                        first_info.zero_position = cur_pos - (saved_offset_ms / 1000.0)
                     end
-                    gui_state.slider_value = saved_offset_ms
-                    first_info.zero_position = cur_pos - (saved_offset_ms / 1000.0)
                 end
                 
                 for _, info in ipairs(gui_state.selected_targets) do
@@ -1000,12 +1020,15 @@ local function adjust_offset_to_value(target_ms, preset_name)
     local active_preset = ""
     if preset_name and preset_name ~= "" then
         active_preset = preset_name
-    elseif current_preset_name ~= "" and presets[current_preset_name] ~= nil then
-        if math.abs(presets[current_preset_name] - target_ms) < 0.01 then
-            active_preset = current_preset_name
+    elseif combo_preset_name ~= "" and presets[combo_preset_name] ~= nil then
+        if math.abs(presets[combo_preset_name] - target_ms) < 0.01 then
+            active_preset = combo_preset_name
         end
     end
     save_preset_name_to_targets(active_preset)
+    
+    current_preset_name = active_preset
+    combo_preset_name = active_preset
 end
 
 -- Helper to apply delta relative to current value
@@ -1154,16 +1177,16 @@ local function render_ui()
     reaper.ImGui_SameLine(ctx)
     reaper.ImGui_SetNextItemWidth(ctx, 220)
     
-    local combo_preview = current_preset_name
+    local combo_preview = combo_preset_name
     if combo_preview == "" then
         combo_preview = "-- Select Preset --"
     end
     
     if reaper.ImGui_BeginCombo(ctx, "##presets_combo", combo_preview) then
         for _, name in ipairs(preset_keys) do
-            local is_selected = (name == current_preset_name)
+            local is_selected = (name == combo_preset_name)
             if reaper.ImGui_Selectable(ctx, name, is_selected) then
-                current_preset_name = name
+                combo_preset_name = name
                 gui_state.slider_value = presets[name]
             end
             if is_selected then
@@ -1176,14 +1199,14 @@ local function render_ui()
     reaper.ImGui_SameLine(ctx)
     
     -- Save Button
-    local has_selected_preset = (current_preset_name ~= "" and presets[current_preset_name] ~= nil)
+    local has_selected_preset = (combo_preset_name ~= "" and presets[combo_preset_name] ~= nil)
     if not has_selected_preset then
         reaper.ImGui_BeginDisabled(ctx)
     end
     if reaper.ImGui_Button(ctx, "Save") then
-        presets[current_preset_name] = gui_state.slider_value
-        save_presets(presets)
-        presets, preset_keys = load_presets()
+        presets[combo_preset_name] = gui_state.slider_value
+        save_presets(presets, presets_show_in_grid)
+        presets, preset_keys, presets_show_in_grid = load_presets()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx, "Overwrite the selected preset with the current offset.")
@@ -1196,9 +1219,10 @@ local function render_ui()
     
     -- Save As Button
     if reaper.ImGui_Button(ctx, "Save As") then
-        local lib, art = split_preset_name(current_preset_name)
+        local lib, art = split_preset_name(combo_preset_name)
         new_preset_lib_input = lib
         new_preset_art_input = ""
+        new_preset_show_in_grid = true
         open_new_preset_modal = true
         open_new_preset_focus = true
     end
@@ -1258,6 +1282,13 @@ local function render_ui()
         
         reaper.ImGui_Spacing(ctx)
         
+        local cb_changed, new_cb_val = reaper.ImGui_Checkbox(ctx, "Show in Preset Grid", new_preset_show_in_grid)
+        if cb_changed then
+            new_preset_show_in_grid = new_cb_val
+        end
+        
+        reaper.ImGui_Spacing(ctx)
+        
         local lib_trimmed = new_preset_lib_input:gsub("^%s*(.-)%s*$", "%1")
         local art_trimmed = new_preset_art_input:gsub("^%s*(.-)%s*$", "%1")
         local can_save = (lib_trimmed ~= "" and art_trimmed ~= "")
@@ -1268,9 +1299,12 @@ local function render_ui()
         if reaper.ImGui_Button(ctx, "OK", 80) then
             local combined_name = lib_trimmed .. " - " .. art_trimmed
             presets[combined_name] = gui_state.slider_value
-            save_presets(presets)
-            presets, preset_keys = load_presets()
+            presets_show_in_grid[combined_name] = new_preset_show_in_grid
+            save_presets(presets, presets_show_in_grid)
+            presets, preset_keys, presets_show_in_grid = load_presets()
+            save_preset_name_to_targets(combined_name)
             current_preset_name = combined_name
+            combo_preset_name = combined_name
             reaper.ImGui_CloseCurrentPopup(ctx)
         end
         if not can_save then
@@ -1285,9 +1319,10 @@ local function render_ui()
     end
 
     if open_rename_preset_modal then
-        local lib, art = split_preset_name(current_preset_name)
+        local lib, art = split_preset_name(combo_preset_name)
         rename_preset_lib_input = lib
         rename_preset_art_input = art
+        rename_preset_show_in_grid = (presets_show_in_grid[combo_preset_name] ~= false)
         reaper.ImGui_OpenPopup(ctx, "Rename Preset")
         open_rename_preset_modal = false
     end
@@ -1310,21 +1345,35 @@ local function render_ui()
         
         reaper.ImGui_Spacing(ctx)
         
+        local cb_changed, new_cb_val = reaper.ImGui_Checkbox(ctx, "Show in Preset Grid", rename_preset_show_in_grid)
+        if cb_changed then
+            rename_preset_show_in_grid = new_cb_val
+        end
+        
+        reaper.ImGui_Spacing(ctx)
+        
         local lib_trimmed = rename_preset_lib_input:gsub("^%s*(.-)%s*$", "%1")
         local art_trimmed = rename_preset_art_input:gsub("^%s*(.-)%s*$", "%1")
         local combined_name = lib_trimmed .. " - " .. art_trimmed
-        local can_save = (lib_trimmed ~= "" and art_trimmed ~= "" and combined_name ~= current_preset_name)
+        local can_save = (lib_trimmed ~= "" and art_trimmed ~= "" and (combined_name ~= combo_preset_name or rename_preset_show_in_grid ~= (presets_show_in_grid[combo_preset_name] ~= false)))
         
         if not can_save then
             reaper.ImGui_BeginDisabled(ctx)
         end
         if reaper.ImGui_Button(ctx, "OK", 80) then
-            local val = presets[current_preset_name]
-            presets[current_preset_name] = nil
+            local val = presets[combo_preset_name]
+            presets[combo_preset_name] = nil
+            presets_show_in_grid[combo_preset_name] = nil
+            
             presets[combined_name] = val
-            save_presets(presets)
-            presets, preset_keys = load_presets()
-            current_preset_name = combined_name
+            presets_show_in_grid[combined_name] = rename_preset_show_in_grid
+            save_presets(presets, presets_show_in_grid)
+            presets, preset_keys, presets_show_in_grid = load_presets()
+            if current_preset_name == combo_preset_name then
+                current_preset_name = combined_name
+                save_preset_name_to_targets(combined_name)
+            end
+            combo_preset_name = combined_name
             reaper.ImGui_CloseCurrentPopup(ctx)
         end
         if not can_save then
@@ -1343,15 +1392,20 @@ local function render_ui()
         open_delete_preset_modal = false
     end
     if reaper.ImGui_BeginPopupModal(ctx, "Delete Preset?", nil, imgui.WindowFlags_AlwaysAutoResize) then
-        reaper.ImGui_Text(ctx, string.format("Are you sure you want to delete '%s'?", current_preset_name))
+        reaper.ImGui_Text(ctx, string.format("Are you sure you want to delete '%s'?", combo_preset_name))
         
         reaper.ImGui_Spacing(ctx)
         
         if reaper.ImGui_Button(ctx, "Yes", 80) then
-            presets[current_preset_name] = nil
-            save_presets(presets)
-            presets, preset_keys = load_presets()
-            current_preset_name = ""
+            presets[combo_preset_name] = nil
+            presets_show_in_grid[combo_preset_name] = nil
+            save_presets(presets, presets_show_in_grid)
+            presets, preset_keys, presets_show_in_grid = load_presets()
+            if current_preset_name == combo_preset_name then
+                current_preset_name = ""
+                save_preset_name_to_targets("")
+            end
+            combo_preset_name = ""
             reaper.ImGui_CloseCurrentPopup(ctx)
         end
         reaper.ImGui_SameLine(ctx)
@@ -1383,6 +1437,8 @@ local function render_ui()
         local eff_mode = get_effective_mode()
         gui_state.slider_value = new_slider_val
         apply_offset_to_targets(new_slider_val)
+        current_preset_name = ""
+        combo_preset_name = ""
         if eff_mode == MODE_TRACK_OFFSET then
             reaper.TrackList_AdjustWindows(false)
         end
@@ -1393,6 +1449,8 @@ local function render_ui()
     local input_changed, new_input_val = reaper.ImGui_InputDouble(ctx, "ms", gui_state.slider_value, 0.0, 0.0, "%.1f")
     if input_changed then
         gui_state.slider_value = new_input_val
+        current_preset_name = ""
+        combo_preset_name = ""
     end
     if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
         adjust_offset_to_value(gui_state.slider_value)
@@ -1717,17 +1775,19 @@ local function render_ui()
     local libs = {}
     local lib_names = {}
     for _, name in ipairs(preset_keys) do
-        local lib, art = name:match("^(.-)%s*-%s*(.-)$")
-        if not lib then
-            lib = "Other"
-            art = name
-        end
-        if not libs[lib] then
-            libs[lib] = {}
-            table.insert(lib_names, lib)
-        end
-        if #libs[lib] < 10 then
-            table.insert(libs[lib], { name = name, art = art, offset = presets[name] })
+        if presets_show_in_grid[name] ~= false then
+            local lib, art = name:match("^(.-)%s*-%s*(.-)$")
+            if not lib then
+                lib = "Other"
+                art = name
+            end
+            if not libs[lib] then
+                libs[lib] = {}
+                table.insert(lib_names, lib)
+            end
+            if #libs[lib] < 10 then
+                table.insert(libs[lib], { name = name, art = art, offset = presets[name] })
+            end
         end
     end
     
