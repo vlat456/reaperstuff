@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.4.2
+-- @version 1.4.3
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.4.2"
+local script_name = "Media Offset Tool v1.4.3"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1128,9 +1128,33 @@ local function apply_offset_to_targets(value, preset_name)
                 end
             end
 
+            local deletions_map = {}
+            local insertions = {}
+
             for _, info in ipairs(gui_state.selected_targets) do
                 note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
                 if note_idx == -1 then break end
+                
+                -- Retrieve target note's current timing and channel
+                local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, note_idx)
+                if retval then
+                    -- Collect old keyswitches around the current start position
+                    if gui_state.write_keyswitches and preset_name and preset_name ~= "" then
+                        local num_notes = reaper.MIDI_CountEvts(take)
+                        for idx = 0, num_notes - 1 do
+                            local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
+                            if r and ch == chan then
+                                if sppq >= (startppq - 60) and sppq <= startppq then
+                                    if pi < 36 or is_keyswitch_pitch(pi) then
+                                        -- Mark for deletion (even if it matches ks_pitch, we will re-insert it at the new position)
+                                        deletions_map[idx] = true
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+
                 local new_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + shift_sec)
                 local new_end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.end_time + shift_sec)
                 
@@ -1147,43 +1171,54 @@ local function apply_offset_to_targets(value, preset_name)
                     true  -- noSort
                 )
                 
-                if gui_state.write_keyswitches and preset_name and preset_name ~= "" then
-                    local exists = false
-                    local notes_to_delete = {}
-                    local num_notes = reaper.MIDI_CountEvts(take)
-                    for idx = 0, num_notes - 1 do
-                        local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
-                        if r and ch == info.chan then
-                            if sppq >= (new_start_ppq - 60) and sppq <= new_start_ppq then
-                                if pi < 36 or is_keyswitch_pitch(pi) then
-                                    if ks_pitch >= 0 and pi == ks_pitch then
-                                        exists = true
-                                    else
-                                        table.insert(notes_to_delete, idx)
-                                    end
-                                end
-                            end
+                if gui_state.write_keyswitches and preset_name and preset_name ~= "" and ks_pitch >= 0 then
+                    -- Queue insertion of the new keyswitch at the new position
+                    local target_ks_start = new_start_ppq - 30
+                    local target_ks_end = new_start_ppq - 10
+                    
+                    -- Avoid duplicate insertions for the same channel, pitch, and position
+                    local duplicate = false
+                    for _, ins in ipairs(insertions) do
+                        if ins.chan == chan and ins.pitch == ks_pitch and math.abs(ins.startppq - target_ks_start) < 2 then
+                            duplicate = true
+                            break
                         end
                     end
-                    
-                    for d = #notes_to_delete, 1, -1 do
-                        reaper.MIDI_DeleteNote(take, notes_to_delete[d])
-                    end
-                    
-                    if ks_pitch >= 0 and not exists then
-                        reaper.MIDI_InsertNote(
-                            take,
-                            false, -- selected
-                            false, -- muted
-                            new_start_ppq - 30, -- startppq
-                            new_start_ppq - 10,  -- endppq
-                            info.chan,
-                            ks_pitch,
-                            ks_vel,
-                            true -- noSort
-                        )
+                    if not duplicate then
+                        table.insert(insertions, {
+                            chan = chan,
+                            pitch = ks_pitch,
+                            vel = ks_vel,
+                            startppq = target_ks_start,
+                            endppq = target_ks_end
+                        })
                     end
                 end
+            end
+            
+            -- Delete old keyswitches in descending index order
+            local deletions_list = {}
+            for idx in pairs(deletions_map) do
+                table.insert(deletions_list, idx)
+            end
+            table.sort(deletions_list, function(a, b) return a > b end)
+            for _, idx in ipairs(deletions_list) do
+                reaper.MIDI_DeleteNote(take, idx)
+            end
+            
+            -- Insert new keyswitches
+            for _, ins in ipairs(insertions) do
+                reaper.MIDI_InsertNote(
+                    take,
+                    false, -- selected
+                    false, -- muted
+                    ins.startppq,
+                    ins.endppq,
+                    ins.chan,
+                    ins.pitch,
+                    ins.vel,
+                    true -- noSort
+                )
             end
             reaper.MIDI_Sort(take)
             local item = reaper.GetMediaItemTake_Item(take)
