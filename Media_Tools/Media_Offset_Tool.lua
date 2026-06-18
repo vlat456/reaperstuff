@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.4.8
+-- @version 1.4.9
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.4.8"
+local script_name = "Media Offset Tool v1.4.9"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -61,6 +61,7 @@ local open_rename_preset_modal = false
 local open_rename_preset_focus = false
 local open_delete_preset_modal = false
 local show_info = false
+local show_settings = false
 
 local presets
 local preset_keys
@@ -172,6 +173,54 @@ local function save_presets(presets_table, show_in_grid_table)
 end
 
 presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
+
+-- ── Settings file (load/save) ────────────────────────────────────────────
+local function get_settings_file_path()
+    local sep = package.config:sub(1,1)
+    return reaper.GetResourcePath() .. sep .. "Data" .. sep .. "Walter_MediaOffset_Settings.txt"
+end
+
+-- Default theme colors
+local DEFAULT_BG     = {0.08, 0.08, 0.10}  -- Col_WindowBg
+local DEFAULT_ACCENT = {0.50, 0.35, 0.80}  -- SliderGrab / Button family
+
+local theme_bg     = {DEFAULT_BG[1],     DEFAULT_BG[2],     DEFAULT_BG[3]}
+local theme_accent = {DEFAULT_ACCENT[1], DEFAULT_ACCENT[2], DEFAULT_ACCENT[3]}
+
+local function load_settings()
+    local path = get_settings_file_path()
+    local f = io.open(path, "r")
+    if not f then return end
+    for line in f:lines() do
+        line = line:gsub("[\r\n]", "")
+        local key, val = line:match("^([^=]+)=(.+)$")
+        if key and val then
+            local parts = {}
+            for v in val:gmatch("[^,]+") do parts[#parts+1] = tonumber(v) end
+            if key == "bg" and #parts == 3 then
+                theme_bg = {parts[1], parts[2], parts[3]}
+            elseif key == "accent" and #parts == 3 then
+                theme_accent = {parts[1], parts[2], parts[3]}
+            end
+        end
+    end
+    f:close()
+end
+
+local function save_settings()
+    local path = get_settings_file_path()
+    local f = io.open(path, "w")
+    if not f then return end
+    f:write(string.format("bg=%.4f,%.4f,%.4f\n",     theme_bg[1],     theme_bg[2],     theme_bg[3]))
+    f:write(string.format("accent=%.4f,%.4f,%.4f\n", theme_accent[1], theme_accent[2], theme_accent[3]))
+    f:close()
+end
+
+load_settings()
+
+-- Working copies used by the color pickers (only committed on Save)
+local settings_edit_bg     = {theme_bg[1],     theme_bg[2],     theme_bg[3]}
+local settings_edit_accent = {theme_accent[1], theme_accent[2], theme_accent[3]}
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -1435,22 +1484,47 @@ end
 
 -- Push Theme Custom Colors & Styles
 local function push_theme()
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_WindowBg,             reaper.ImGui_ColorConvertDouble4ToU32(0.08, 0.08, 0.1, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_TitleBg,              reaper.ImGui_ColorConvertDouble4ToU32(0.18, 0.15, 0.25, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_TitleBgActive,        reaper.ImGui_ColorConvertDouble4ToU32(0.25, 0.2, 0.4, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_FrameBg,              reaper.ImGui_ColorConvertDouble4ToU32(0.15, 0.15, 0.18, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_FrameBgHovered,       reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.2, 0.25, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_FrameBgActive,        reaper.ImGui_ColorConvertDouble4ToU32(0.25, 0.25, 0.35, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_SliderGrab,           reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.35, 0.8, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_SliderGrabActive,     reaper.ImGui_ColorConvertDouble4ToU32(0.6, 0.45, 0.9, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,               reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.25, 0.45, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered,        reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.35, 0.6, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,         reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.45, 0.75, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text,                 reaper.ImGui_ColorConvertDouble4ToU32(0.92, 0.92, 0.95, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Header,               reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.18, 0.3, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderHovered,        reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.25, 0.45, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderActive,         reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.35, 0.6, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Border,               reaper.ImGui_ColorConvertDouble4ToU32(0.25, 0.25, 0.3, 0.5))
+    -- Background family: derived from theme_bg
+    local bg   = theme_bg
+    local ac   = theme_accent
+    -- Helpers: darken / lighten by a factor
+    local function dim(c, f)  return {c[1]*f, c[2]*f, c[3]*f} end
+    local function mix(c, f)  return {math.min(c[1]+f, 1), math.min(c[2]+f, 1), math.min(c[3]+f, 1)} end
+
+    local bg_title  = mix(dim(bg, 1.0), 0.10)   -- slightly lighter than bg
+    local bg_titleA = mix(dim(bg, 1.0), 0.18)
+    local bg_frame  = mix(dim(bg, 1.0), 0.07)
+    local bg_frameH = mix(dim(bg, 1.0), 0.12)
+    local bg_frameA = mix(dim(bg, 1.0), 0.17)
+
+    local btn      = {ac[1]*0.60, ac[2]*0.50, ac[3]*0.90}  -- muted accent
+    local btnH     = {ac[1]*0.80, ac[2]*0.70, ac[3]*1.00}
+    local btnA     = {ac[1]*1.00, ac[2]*0.90, ac[3]*1.00}
+    local sliderG  = ac
+    local sliderGA = mix(ac, 0.10)
+    local hdr      = {ac[1]*0.40, ac[2]*0.36, ac[3]*0.60}
+    local hdrH     = {ac[1]*0.60, ac[2]*0.50, ac[3]*0.90}
+    local hdrA     = {ac[1]*0.80, ac[2]*0.70, ac[3]*1.00}
+    local border   = {bg[1]+0.17, bg[2]+0.17, bg[3]+0.20}
+
+    local function u32(c, a) return reaper.ImGui_ColorConvertDouble4ToU32(c[1], c[2], c[3], a or 1.0) end
+
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_WindowBg,         u32(bg))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_TitleBg,          u32(bg_title))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_TitleBgActive,    u32(bg_titleA))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_FrameBg,          u32(bg_frame))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_FrameBgHovered,   u32(bg_frameH))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_FrameBgActive,    u32(bg_frameA))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_SliderGrab,       u32(sliderG))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_SliderGrabActive, u32(sliderGA))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,           u32(btn))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered,    u32(btnH))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,     u32(btnA))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text,             reaper.ImGui_ColorConvertDouble4ToU32(0.92, 0.92, 0.95, 1.0))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Header,           u32(hdr))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderHovered,    u32(hdrH))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderActive,     u32(hdrA))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Border,           u32(border, 0.5))
 
     reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_FrameRounding, 6.0)
     reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_GrabRounding, 6.0)
@@ -2031,6 +2105,25 @@ local function render_ui()
         reaper.ImGui_PopStyleColor(ctx, 2)
     end
 
+    -- Settings Button
+    reaper.ImGui_SameLine(ctx)
+    local settings_active = show_settings
+    if settings_active then
+        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.3, 0.6, 1.0))
+        reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.4, 0.75, 1.0))
+    end
+    if reaper.ImGui_Button(ctx, "Settings") then
+        show_settings = not show_settings
+        if show_settings then
+            -- Sync edit copies from current applied theme
+            settings_edit_bg     = {theme_bg[1],     theme_bg[2],     theme_bg[3]}
+            settings_edit_accent = {theme_accent[1], theme_accent[2], theme_accent[3]}
+        end
+    end
+    if settings_active then
+        reaper.ImGui_PopStyleColor(ctx, 2)
+    end
+
     if is_slider_deactivated then
         local eff_mode, take = get_effective_mode()
         -- Restore baseline offsets temporarily
@@ -2318,6 +2411,58 @@ local function render_ui()
                 reaper.ImGui_SameLine(ctx, 240)
                 reaper.ImGui_Text(ctx, string.format("%.3f s", cur_pos_sec))
             end
+        end
+    end
+
+    -- Settings Panel
+    if show_settings then
+        reaper.ImGui_Spacing(ctx)
+        reaper.ImGui_Separator(ctx)
+        reaper.ImGui_Spacing(ctx)
+        reaper.ImGui_Text(ctx, "Settings")
+        reaper.ImGui_Spacing(ctx)
+
+        -- Background Color
+        reaper.ImGui_TextDisabled(ctx, "Background Color")
+        local bg_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
+            settings_edit_bg[1], settings_edit_bg[2], settings_edit_bg[3], 1.0)
+        local bg_changed, new_bg_u32 = reaper.ImGui_ColorEdit3(ctx, "##bg_color", bg_col_u32)
+        if bg_changed then
+            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_bg_u32)
+            settings_edit_bg = {nr, ng, nb}
+        end
+
+        reaper.ImGui_Spacing(ctx)
+
+        -- Accent Color
+        reaper.ImGui_TextDisabled(ctx, "Accent Color")
+        local ac_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
+            settings_edit_accent[1], settings_edit_accent[2], settings_edit_accent[3], 1.0)
+        local ac_changed, new_ac_u32 = reaper.ImGui_ColorEdit3(ctx, "##accent_color", ac_col_u32)
+        if ac_changed then
+            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_ac_u32)
+            settings_edit_accent = {nr, ng, nb}
+        end
+
+        reaper.ImGui_Spacing(ctx)
+
+        -- Preview live (update theme in real time from edit copies)
+        theme_bg     = {settings_edit_bg[1],     settings_edit_bg[2],     settings_edit_bg[3]}
+        theme_accent = {settings_edit_accent[1], settings_edit_accent[2], settings_edit_accent[3]}
+
+        -- Save button
+        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(0.25, 0.45, 0.25, 1.0))
+        reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.35, 0.6, 0.35, 1.0))
+        if reaper.ImGui_Button(ctx, "Save Settings") then
+            save_settings()
+        end
+        reaper.ImGui_PopStyleColor(ctx, 2)
+
+        -- Reset to defaults
+        reaper.ImGui_SameLine(ctx)
+        if reaper.ImGui_Button(ctx, "Reset Defaults") then
+            settings_edit_bg     = {DEFAULT_BG[1],     DEFAULT_BG[2],     DEFAULT_BG[3]}
+            settings_edit_accent = {DEFAULT_ACCENT[1], DEFAULT_ACCENT[2], DEFAULT_ACCENT[3]}
         end
     end
 
