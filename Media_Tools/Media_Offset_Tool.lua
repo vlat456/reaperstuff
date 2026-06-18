@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.5.9
+-- @version 1.6.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.5.9"
+local script_name = "Media Offset Tool v1.6.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1421,10 +1421,10 @@ local function apply_offset_to_targets(value, preset_name)
                     if display_label == "" then
                         display_label = lib
                     end
-                    local note_proj_time_before_shift = reaper.MIDI_GetProjTimeFromPPQPos(take, note_info.startppq)
+                    local old_proj_time = info.start_time + (info.offset_ms / 1000.0)
                     local new_proj_time = info.start_time + shift_sec
                     table.insert(take_marker_updates, {
-                        old_time = note_proj_time_before_shift,
+                        old_time = old_proj_time,
                         new_time = new_proj_time,
                         label = display_label
                     })
@@ -1436,9 +1436,10 @@ local function apply_offset_to_targets(value, preset_name)
                 for i, info in ipairs(gui_state.selected_targets) do
                     local note_info = selected_notes[i]
                     if not note_info then break end
+                    local old_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + (info.offset_ms / 1000.0))
                     local new_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + shift_sec)
                     
-                    write_note_preset_text_event(take, note_info.startppq, "")
+                    write_note_preset_text_event(take, old_start_ppq, "")
                     if preset_name ~= "" then
                         write_note_preset_text_event(take, new_start_ppq, preset_name)
                     end
