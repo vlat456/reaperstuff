@@ -38,7 +38,9 @@ local current_preset_name = ""
 local new_preset_name_input = ""
 local rename_preset_name_input = ""
 local open_new_preset_modal = false
+local open_new_preset_focus = false
 local open_rename_preset_modal = false
+local open_rename_preset_focus = false
 local open_delete_preset_modal = false
 
 local function get_presets_file_path()
@@ -972,29 +974,43 @@ local function render_ui()
     reaper.ImGui_SameLine(ctx)
     
     -- Save Button
+    local has_selected_preset = (current_preset_name ~= "" and presets[current_preset_name] ~= nil)
+    if not has_selected_preset then
+        reaper.ImGui_BeginDisabled(ctx)
+    end
     if reaper.ImGui_Button(ctx, "Save") then
-        if current_preset_name ~= "" and presets[current_preset_name] ~= nil then
-            presets[current_preset_name] = gui_state.slider_value
-            save_presets(presets)
-            presets, preset_keys = load_presets()
-        else
-            new_preset_name_input = ""
-            open_new_preset_modal = true
-        end
+        presets[current_preset_name] = gui_state.slider_value
+        save_presets(presets)
+        presets, preset_keys = load_presets()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Save current offset to the selected preset, or create a new one.")
+        reaper.ImGui_SetTooltip(ctx, "Overwrite the selected preset with the current offset.")
+    end
+    if not has_selected_preset then
+        reaper.ImGui_EndDisabled(ctx)
+    end
+    
+    reaper.ImGui_SameLine(ctx)
+    
+    -- Save As Button
+    if reaper.ImGui_Button(ctx, "Save As") then
+        new_preset_name_input = ""
+        open_new_preset_modal = true
+        open_new_preset_focus = true
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Save the current offset as a new preset.")
     end
     
     reaper.ImGui_SameLine(ctx)
     
     -- Rename Button (Rn)
-    local has_selected_preset = (current_preset_name ~= "" and presets[current_preset_name] ~= nil)
     if not has_selected_preset then
         reaper.ImGui_BeginDisabled(ctx)
     end
     if reaper.ImGui_Button(ctx, "Rn") then
         open_rename_preset_modal = true
+        open_rename_preset_focus = true
     end
     if reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx, "Rename selected preset.")
@@ -1021,6 +1037,12 @@ local function render_ui()
     end
     if reaper.ImGui_BeginPopupModal(ctx, "New Preset", nil, imgui.WindowFlags_AlwaysAutoResize) then
         reaper.ImGui_Text(ctx, "Enter Libname - Articulation:")
+        
+        if open_new_preset_focus then
+            reaper.ImGui_SetKeyboardFocusHere(ctx, 0)
+            open_new_preset_focus = false
+        end
+        
         local changed, new_val = reaper.ImGui_InputText(ctx, "##new_preset_name", new_preset_name_input)
         if changed then
             new_preset_name_input = new_val
@@ -1051,6 +1073,12 @@ local function render_ui()
     end
     if reaper.ImGui_BeginPopupModal(ctx, "Rename Preset", nil, imgui.WindowFlags_AlwaysAutoResize) then
         reaper.ImGui_Text(ctx, "Rename preset:")
+        
+        if open_rename_preset_focus then
+            reaper.ImGui_SetKeyboardFocusHere(ctx, 0)
+            open_rename_preset_focus = false
+        end
+        
         local changed, new_val = reaper.ImGui_InputText(ctx, "##rename_preset_name", rename_preset_name_input)
         if changed then
             rename_preset_name_input = new_val
@@ -1103,8 +1131,12 @@ local function render_ui()
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
 
-    -- Double-click / Drag slider for absolute offset (displaying current value)
-    local slider_changed, new_slider_val = reaper.ImGui_SliderDouble(ctx, "Offset (ms)", gui_state.slider_value, -FIXED_RANGE, FIXED_RANGE, "%.1f ms")
+    -- Double-click / Drag slider for absolute offset (displaying current value) and manual input box side by side
+    reaper.ImGui_Text(ctx, "Offset:")
+    reaper.ImGui_SameLine(ctx, 90)
+    
+    reaper.ImGui_SetNextItemWidth(ctx, 220)
+    local slider_changed, new_slider_val = reaper.ImGui_SliderDouble(ctx, "##slider", gui_state.slider_value, -FIXED_RANGE, FIXED_RANGE, "%.1f ms")
     local is_slider_active = reaper.ImGui_IsItemActive(ctx)
     local is_slider_activated = reaper.ImGui_IsItemActivated(ctx)
     local is_slider_deactivated = reaper.ImGui_IsItemDeactivatedAfterEdit(ctx)
@@ -1120,6 +1152,14 @@ local function render_ui()
         if eff_mode == MODE_TRACK_OFFSET then
             reaper.TrackList_AdjustWindows(false)
         end
+    end
+
+    reaper.ImGui_SameLine(ctx)
+    reaper.ImGui_SetNextItemWidth(ctx, 80)
+    local flags = reaper.ImGui_InputTextFlags_EnterReturnsTrue()
+    local input_changed, new_input_val = reaper.ImGui_InputDouble(ctx, "ms", gui_state.slider_value, 0.0, 0.0, "%.1f", flags)
+    if input_changed then
+        adjust_offset_to_value(new_input_val)
     end
 
     if is_slider_deactivated then
