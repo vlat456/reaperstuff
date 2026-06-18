@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.1.8
+-- @version 1.2.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,12 +26,63 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.1.8"
+local script_name = "Media Offset Tool v1.2.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
 -- Fixed range ±500 ms
 local FIXED_RANGE = 500.0
+
+-- Presets configuration variables and helpers
+local current_preset_name = ""
+local new_preset_name_input = ""
+local rename_preset_name_input = ""
+local open_new_preset_modal = false
+local open_rename_preset_modal = false
+local open_delete_preset_modal = false
+
+local function get_presets_file_path()
+    local sep = package.config:sub(1,1)
+    return reaper.GetResourcePath() .. sep .. "Data" .. sep .. "Walter_MediaOffset_Presets.txt"
+end
+
+local function load_presets()
+    local path = get_presets_file_path()
+    local loaded_presets = {}
+    local keys = {}
+    local f = io.open(path, "r")
+    if f then
+        for line in f:lines() do
+            line = line:gsub("[\r\n]", "")
+            local name, val = line:match("^(.-)=([^=]+)$")
+            if name and val then
+                loaded_presets[name] = tonumber(val) or 0.0
+                table.insert(keys, name)
+            end
+        end
+        f:close()
+    end
+    table.sort(keys)
+    return loaded_presets, keys
+end
+
+local function save_presets(presets_table)
+    local path = get_presets_file_path()
+    local f = io.open(path, "w")
+    if f then
+        local sorted_keys = {}
+        for k in pairs(presets_table) do
+            table.insert(sorted_keys, k)
+        end
+        table.sort(sorted_keys)
+        for _, k in ipairs(sorted_keys) do
+            f:write(string.format("%s=%s\n", k, tostring(presets_table[k])))
+        end
+        f:close()
+    end
+end
+
+local presets, preset_keys = load_presets()
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -894,6 +945,164 @@ local function render_ui()
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
 
+    -- Articulation presets dropdown and controls row
+    reaper.ImGui_Text(ctx, "Preset:")
+    reaper.ImGui_SameLine(ctx)
+    reaper.ImGui_SetNextItemWidth(ctx, 220)
+    
+    local combo_preview = current_preset_name
+    if combo_preview == "" then
+        combo_preview = "-- Select Preset --"
+    end
+    
+    if reaper.ImGui_BeginCombo(ctx, "##presets_combo", combo_preview) then
+        for _, name in ipairs(preset_keys) do
+            local is_selected = (name == current_preset_name)
+            if reaper.ImGui_Selectable(ctx, name, is_selected) then
+                current_preset_name = name
+                adjust_offset_to_value(presets[name])
+            end
+            if is_selected then
+                reaper.ImGui_SetItemDefaultFocus(ctx)
+            end
+        end
+        reaper.ImGui_EndCombo(ctx)
+    end
+    
+    reaper.ImGui_SameLine(ctx)
+    
+    -- Save Button
+    if reaper.ImGui_Button(ctx, "Save") then
+        if current_preset_name ~= "" and presets[current_preset_name] ~= nil then
+            presets[current_preset_name] = gui_state.slider_value
+            save_presets(presets)
+            presets, preset_keys = load_presets()
+        else
+            new_preset_name_input = ""
+            open_new_preset_modal = true
+        end
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Save current offset to the selected preset, or create a new one.")
+    end
+    
+    reaper.ImGui_SameLine(ctx)
+    
+    -- Rename Button (Rn)
+    local has_selected_preset = (current_preset_name ~= "" and presets[current_preset_name] ~= nil)
+    if not has_selected_preset then
+        reaper.ImGui_BeginDisabled(ctx)
+    end
+    if reaper.ImGui_Button(ctx, "Rn") then
+        open_rename_preset_modal = true
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Rename selected preset.")
+    end
+    
+    reaper.ImGui_SameLine(ctx)
+    
+    -- Delete Button (Dl)
+    if reaper.ImGui_Button(ctx, "Dl") then
+        open_delete_preset_modal = true
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Delete selected preset.")
+    end
+    
+    if not has_selected_preset then
+        reaper.ImGui_EndDisabled(ctx)
+    end
+
+    -- Modals rendering
+    if open_new_preset_modal then
+        reaper.ImGui_OpenPopup(ctx, "New Preset")
+        open_new_preset_modal = false
+    end
+    if reaper.ImGui_BeginPopupModal(ctx, "New Preset", nil, imgui.WindowFlags_AlwaysAutoResize) then
+        reaper.ImGui_Text(ctx, "Enter Libname - Articulation:")
+        local changed, new_val = reaper.ImGui_InputText(ctx, "##new_preset_name", new_preset_name_input)
+        if changed then
+            new_preset_name_input = new_val
+        end
+        
+        reaper.ImGui_Spacing(ctx)
+        
+        if reaper.ImGui_Button(ctx, "OK", 80) then
+            if new_preset_name_input ~= "" then
+                presets[new_preset_name_input] = gui_state.slider_value
+                save_presets(presets)
+                presets, preset_keys = load_presets()
+                current_preset_name = new_preset_name_input
+            end
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        reaper.ImGui_SameLine(ctx)
+        if reaper.ImGui_Button(ctx, "Cancel", 80) then
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        reaper.ImGui_EndPopup(ctx)
+    end
+
+    if open_rename_preset_modal then
+        rename_preset_name_input = current_preset_name
+        reaper.ImGui_OpenPopup(ctx, "Rename Preset")
+        open_rename_preset_modal = false
+    end
+    if reaper.ImGui_BeginPopupModal(ctx, "Rename Preset", nil, imgui.WindowFlags_AlwaysAutoResize) then
+        reaper.ImGui_Text(ctx, "Rename preset:")
+        local changed, new_val = reaper.ImGui_InputText(ctx, "##rename_preset_name", rename_preset_name_input)
+        if changed then
+            rename_preset_name_input = new_val
+        end
+        
+        reaper.ImGui_Spacing(ctx)
+        
+        if reaper.ImGui_Button(ctx, "OK", 80) then
+            if rename_preset_name_input ~= "" and rename_preset_name_input ~= current_preset_name then
+                local val = presets[current_preset_name]
+                presets[current_preset_name] = nil
+                presets[rename_preset_name_input] = val
+                save_presets(presets)
+                presets, preset_keys = load_presets()
+                current_preset_name = rename_preset_name_input
+            end
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        reaper.ImGui_SameLine(ctx)
+        if reaper.ImGui_Button(ctx, "Cancel", 80) then
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        reaper.ImGui_EndPopup(ctx)
+    end
+
+    if open_delete_preset_modal then
+        reaper.ImGui_OpenPopup(ctx, "Delete Preset?")
+        open_delete_preset_modal = false
+    end
+    if reaper.ImGui_BeginPopupModal(ctx, "Delete Preset?", nil, imgui.WindowFlags_AlwaysAutoResize) then
+        reaper.ImGui_Text(ctx, string.format("Are you sure you want to delete '%s'?", current_preset_name))
+        
+        reaper.ImGui_Spacing(ctx)
+        
+        if reaper.ImGui_Button(ctx, "Yes", 80) then
+            presets[current_preset_name] = nil
+            save_presets(presets)
+            presets, preset_keys = load_presets()
+            current_preset_name = ""
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        reaper.ImGui_SameLine(ctx)
+        if reaper.ImGui_Button(ctx, "No", 80) then
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        reaper.ImGui_EndPopup(ctx)
+    end
+
+    reaper.ImGui_Spacing(ctx)
+    reaper.ImGui_Separator(ctx)
+    reaper.ImGui_Spacing(ctx)
+
     -- Double-click / Drag slider for absolute offset (displaying current value)
     local slider_changed, new_slider_val = reaper.ImGui_SliderDouble(ctx, "Offset (ms)", gui_state.slider_value, -FIXED_RANGE, FIXED_RANGE, "%.1f ms")
     local is_slider_active = reaper.ImGui_IsItemActive(ctx)
@@ -1222,7 +1431,7 @@ local function loop()
     update_targets_list()
 
     -- Set size constraints
-    reaper.ImGui_SetNextWindowSizeConstraints(ctx, 460, 200, 700, 300)
+    reaper.ImGui_SetNextWindowSizeConstraints(ctx, 460, 230, 700, 350)
 
     -- Set window style/colors
     push_theme()
