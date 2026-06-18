@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.5.0
+-- @version 1.5.1
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.5.0"
+local script_name = "Media Offset Tool v1.5.1"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -233,12 +233,23 @@ end
 
 load_settings()
 
--- Working copies used by the color pickers (only committed on Save)
-local settings_edit_bg       = {theme_bg[1],       theme_bg[2],       theme_bg[3]}
-local settings_edit_accent   = {theme_accent[1],   theme_accent[2],   theme_accent[3]}
-local settings_edit_text     = {theme_text[1],     theme_text[2],     theme_text[3]}
-local settings_edit_danger   = {theme_danger[1],   theme_danger[2],   theme_danger[3]}
-local settings_edit_positive = {theme_positive[1], theme_positive[2], theme_positive[3]}
+-- Helper: pack float {r,g,b} table to uint32 (the format ColorEdit3 uses)
+local function theme_pack(t)
+    return reaper.ImGui_ColorConvertDouble4ToU32(t[1], t[2], t[3], 1.0)
+end
+-- Helper: unpack uint32 to float {r,g,b} table
+local function theme_unpack(u)
+    local r, g, b = reaper.ImGui_ColorConvertU32ToDouble4(u)
+    return {r, g, b}
+end
+
+-- Working copies for the color pickers: stored as uint32 to avoid float→uint8→float
+-- precision drift inside the picker loop (which causes HUE/saturation self-movement).
+local settings_edit_bg_u32       = theme_pack(theme_bg)
+local settings_edit_accent_u32   = theme_pack(theme_accent)
+local settings_edit_text_u32     = theme_pack(theme_text)
+local settings_edit_danger_u32   = theme_pack(theme_danger)
+local settings_edit_positive_u32 = theme_pack(theme_positive)
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -2151,12 +2162,12 @@ local function render_ui()
     if reaper.ImGui_Button(ctx, "Settings") then
         show_settings = not show_settings
         if show_settings then
-            -- Sync all edit copies from current applied theme
-            settings_edit_bg       = {theme_bg[1],       theme_bg[2],       theme_bg[3]}
-            settings_edit_accent   = {theme_accent[1],   theme_accent[2],   theme_accent[3]}
-            settings_edit_text     = {theme_text[1],     theme_text[2],     theme_text[3]}
-            settings_edit_danger   = {theme_danger[1],   theme_danger[2],   theme_danger[3]}
-            settings_edit_positive = {theme_positive[1], theme_positive[2], theme_positive[3]}
+            -- Snapshot current theme as uint32 (one-time float→u32, no further round-trip)
+            settings_edit_bg_u32       = theme_pack(theme_bg)
+            settings_edit_accent_u32   = theme_pack(theme_accent)
+            settings_edit_text_u32     = theme_pack(theme_text)
+            settings_edit_danger_u32   = theme_pack(theme_danger)
+            settings_edit_positive_u32 = theme_pack(theme_positive)
         end
     end
     if settings_active then
@@ -2462,70 +2473,46 @@ local function render_ui()
 
         -- Background Color
         reaper.ImGui_TextDisabled(ctx, "Background Color")
-        local bg_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
-            settings_edit_bg[1], settings_edit_bg[2], settings_edit_bg[3], 1.0)
-        local bg_changed, new_bg_u32 = reaper.ImGui_ColorEdit3(ctx, "##bg_color", bg_col_u32)
-        if bg_changed then
-            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_bg_u32)
-            settings_edit_bg = {nr, ng, nb}
-        end
+        local bg_changed, new_bg_u32 = reaper.ImGui_ColorEdit3(ctx, "##bg_color", settings_edit_bg_u32)
+        if bg_changed then settings_edit_bg_u32 = new_bg_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
         -- Accent Color
         reaper.ImGui_TextDisabled(ctx, "Accent Color")
-        local ac_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
-            settings_edit_accent[1], settings_edit_accent[2], settings_edit_accent[3], 1.0)
-        local ac_changed, new_ac_u32 = reaper.ImGui_ColorEdit3(ctx, "##accent_color", ac_col_u32)
-        if ac_changed then
-            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_ac_u32)
-            settings_edit_accent = {nr, ng, nb}
-        end
+        local ac_changed, new_ac_u32 = reaper.ImGui_ColorEdit3(ctx, "##accent_color", settings_edit_accent_u32)
+        if ac_changed then settings_edit_accent_u32 = new_ac_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
         -- Text Color
         reaper.ImGui_TextDisabled(ctx, "Text Color")
-        local tx_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
-            settings_edit_text[1], settings_edit_text[2], settings_edit_text[3], 1.0)
-        local tx_changed, new_tx_u32 = reaper.ImGui_ColorEdit3(ctx, "##text_color", tx_col_u32)
-        if tx_changed then
-            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_tx_u32)
-            settings_edit_text = {nr, ng, nb}
-        end
+        local tx_changed, new_tx_u32 = reaper.ImGui_ColorEdit3(ctx, "##text_color", settings_edit_text_u32)
+        if tx_changed then settings_edit_text_u32 = new_tx_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
         -- Danger Color
         reaper.ImGui_TextDisabled(ctx, "Danger Color  (Reset, Delete buttons)")
-        local dg_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
-            settings_edit_danger[1], settings_edit_danger[2], settings_edit_danger[3], 1.0)
-        local dg_changed, new_dg_u32 = reaper.ImGui_ColorEdit3(ctx, "##danger_color", dg_col_u32)
-        if dg_changed then
-            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_dg_u32)
-            settings_edit_danger = {nr, ng, nb}
-        end
+        local dg_changed, new_dg_u32 = reaper.ImGui_ColorEdit3(ctx, "##danger_color", settings_edit_danger_u32)
+        if dg_changed then settings_edit_danger_u32 = new_dg_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
         -- Positive Color
         reaper.ImGui_TextDisabled(ctx, "Positive Color  (Save buttons)")
-        local pos_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
-            settings_edit_positive[1], settings_edit_positive[2], settings_edit_positive[3], 1.0)
-        local pos_changed, new_pos_u32 = reaper.ImGui_ColorEdit3(ctx, "##positive_color", pos_col_u32)
-        if pos_changed then
-            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_pos_u32)
-            settings_edit_positive = {nr, ng, nb}
-        end
+        local pos_changed, new_pos_u32 = reaper.ImGui_ColorEdit3(ctx, "##positive_color", settings_edit_positive_u32)
+        if pos_changed then settings_edit_positive_u32 = new_pos_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
-        -- Preview live (update all theme values in real time from edit copies)
-        theme_bg       = {settings_edit_bg[1],       settings_edit_bg[2],       settings_edit_bg[3]}
-        theme_accent   = {settings_edit_accent[1],   settings_edit_accent[2],   settings_edit_accent[3]}
-        theme_text     = {settings_edit_text[1],     settings_edit_text[2],     settings_edit_text[3]}
-        theme_danger   = {settings_edit_danger[1],   settings_edit_danger[2],   settings_edit_danger[3]}
-        theme_positive = {settings_edit_positive[1], settings_edit_positive[2], settings_edit_positive[3]}
+        -- Live preview: unpack from uint32 once per frame → float tables for the theme
+        -- (uint32 → float is lossless at the picker side since we store the picker's own output)
+        theme_bg       = theme_unpack(settings_edit_bg_u32)
+        theme_accent   = theme_unpack(settings_edit_accent_u32)
+        theme_text     = theme_unpack(settings_edit_text_u32)
+        theme_danger   = theme_unpack(settings_edit_danger_u32)
+        theme_positive = theme_unpack(settings_edit_positive_u32)
 
         -- Save button
         push_positive_style()
@@ -2538,11 +2525,11 @@ local function render_ui()
         reaper.ImGui_SameLine(ctx)
         push_danger_style()
         if reaper.ImGui_Button(ctx, "Reset Defaults") then
-            settings_edit_bg       = {DEFAULT_BG[1],       DEFAULT_BG[2],       DEFAULT_BG[3]}
-            settings_edit_accent   = {DEFAULT_ACCENT[1],   DEFAULT_ACCENT[2],   DEFAULT_ACCENT[3]}
-            settings_edit_text     = {DEFAULT_TEXT[1],     DEFAULT_TEXT[2],     DEFAULT_TEXT[3]}
-            settings_edit_danger   = {DEFAULT_DANGER[1],   DEFAULT_DANGER[2],   DEFAULT_DANGER[3]}
-            settings_edit_positive = {DEFAULT_POSITIVE[1], DEFAULT_POSITIVE[2], DEFAULT_POSITIVE[3]}
+            settings_edit_bg_u32       = theme_pack(DEFAULT_BG)
+            settings_edit_accent_u32   = theme_pack(DEFAULT_ACCENT)
+            settings_edit_text_u32     = theme_pack(DEFAULT_TEXT)
+            settings_edit_danger_u32   = theme_pack(DEFAULT_DANGER)
+            settings_edit_positive_u32 = theme_pack(DEFAULT_POSITIVE)
         end
         pop_danger_style()
     end
