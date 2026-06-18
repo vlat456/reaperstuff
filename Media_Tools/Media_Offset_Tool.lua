@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.4.6
+-- @version 1.4.7
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.4.6"
+local script_name = "Media Offset Tool v1.4.7"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1989,8 +1989,7 @@ local function render_ui()
         local eff_mode = get_effective_mode()
         gui_state.slider_value = new_slider_val
         apply_offset_to_targets(new_slider_val)
-        current_preset_name = ""
-        combo_preset_name = ""
+        current_preset_name = "" -- clear committed association, but keep combo selection for Save
         if eff_mode == MODE_TRACK_OFFSET then
             reaper.TrackList_AdjustWindows(false)
         end
@@ -2001,8 +2000,7 @@ local function render_ui()
     local input_changed, new_input_val = reaper.ImGui_InputDouble(ctx, "ms", gui_state.slider_value, 0.0, 0.0, "%.1f")
     if input_changed then
         gui_state.slider_value = new_input_val
-        current_preset_name = ""
-        combo_preset_name = ""
+        current_preset_name = "" -- clear committed association, but keep combo selection for Save
     end
     if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
         adjust_offset_to_value(gui_state.slider_value)
@@ -2101,6 +2099,11 @@ local function render_ui()
             if math.abs(presets[current_preset_name] - gui_state.slider_value) < 0.01 then
                 active_preset = current_preset_name
             end
+        end
+        -- If user has a preset selected in the dropdown (but dragged to a new value),
+        -- still associate it so "Save" afterwards can overwrite the preset value.
+        if active_preset == "" and combo_preset_name ~= "" and presets[combo_preset_name] ~= nil then
+            active_preset = combo_preset_name
         end
 
         reaper.Undo_BeginBlock2(0)
