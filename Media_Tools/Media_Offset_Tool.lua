@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.6.0
+-- @version 1.6.1
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.6.0"
+local script_name = "Media Offset Tool v1.6.1"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1308,24 +1308,40 @@ local function apply_offset_to_targets(value, preset_name)
                     target_indices[note_info.idx] = true
                 end
                 
+                -- Build a list of candidate keyswitch notes in this take
+                local ks_candidates = {}
+                for idx = 0, num_notes - 1 do
+                    local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
+                    if r and not target_indices[idx] and is_keyswitch_pitch(pi) then
+                        table.insert(ks_candidates, {
+                            idx = idx,
+                            sppq = sppq,
+                            chan = ch
+                        })
+                    end
+                end
+                
                 for i, note_info in ipairs(selected_notes) do
                     local startppq = note_info.startppq
                     local chan = note_info.chan
                     
                     local target_info = gui_state.selected_targets[i]
                     local orig_ppq = target_info and target_info.original_ppq or startppq
+                    local prev_ppq = target_info and reaper.MIDI_GetPPQPosFromProjTime(take, target_info.start_time + (target_info.offset_ms / 1000.0)) or orig_ppq
+                    local new_ppq = target_info and reaper.MIDI_GetPPQPosFromProjTime(take, target_info.start_time + shift_sec) or startppq
                     
-                    -- Look in a wide range around original and current positions to capture any shifted keyswitches
-                    local min_ppq = math.min(startppq, orig_ppq) - 100
-                    local max_ppq = math.max(startppq, orig_ppq) + 100
-                    
-                    for idx = 0, num_notes - 1 do
-                        local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
-                        if r and ch == chan and not target_indices[idx] then -- Skip target notes based on exact indices!
-                            if sppq >= min_ppq and sppq <= max_ppq then
-                                if is_keyswitch_pitch(pi) then
-                                    deletions_map[idx] = true
-                                end
+                    for _, cand in ipairs(ks_candidates) do
+                        if cand.chan == chan then
+                            local match = false
+                            if math.abs(cand.sppq - math.max(0, orig_ppq - 30)) <= 10 then
+                                match = true
+                            elseif math.abs(cand.sppq - math.max(0, prev_ppq - 30)) <= 10 then
+                                match = true
+                            elseif math.abs(cand.sppq - math.max(0, new_ppq - 30)) <= 10 then
+                                match = true
+                            end
+                            if match then
+                                deletions_map[cand.idx] = true
                             end
                         end
                     end
