@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.7.5
+-- @version 1.8.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.7.5"
+local script_name = "Media Offset Tool v1.8.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -190,6 +190,7 @@ local DEFAULT_POSITIVE    = {0.25, 0.55, 0.28}  -- Positive actions (Save)
 local DEFAULT_SLIDER_GRAB = {0.50, 0.35, 0.80}  -- SliderGrab pin
 local DEFAULT_APPLY_BTN   = {0.35, 0.14, 0.88}  -- Apply button
 local DEFAULT_FRAME_BG    = {0.15, 0.15, 0.17}  -- Slider Background (FrameBg)
+local DEFAULT_CHECK_MARK  = {0.50, 0.35, 0.80}  -- Radio / Checkbox mark
 
 local theme_bg          = {DEFAULT_BG[1],          DEFAULT_BG[2],          DEFAULT_BG[3]}
 local theme_accent      = {DEFAULT_ACCENT[1],      DEFAULT_ACCENT[2],      DEFAULT_ACCENT[3]}
@@ -199,6 +200,7 @@ local theme_positive    = {DEFAULT_POSITIVE[1],    DEFAULT_POSITIVE[2],    DEFAU
 local theme_slider_grab = {DEFAULT_SLIDER_GRAB[1], DEFAULT_SLIDER_GRAB[2], DEFAULT_SLIDER_GRAB[3]}
 local theme_apply_btn   = {DEFAULT_APPLY_BTN[1],   DEFAULT_APPLY_BTN[2],   DEFAULT_APPLY_BTN[3]}
 local theme_frame_bg    = {DEFAULT_FRAME_BG[1],    DEFAULT_FRAME_BG[2],    DEFAULT_FRAME_BG[3]}
+local theme_check_mark  = {DEFAULT_CHECK_MARK[1],  DEFAULT_CHECK_MARK[2],  DEFAULT_CHECK_MARK[3]}
 
 local settings_write_keyswitches = false
 
@@ -228,6 +230,8 @@ local function load_settings()
                 theme_apply_btn = {parts[1], parts[2], parts[3]}
             elseif key == "frame_bg" and #parts == 3 then
                 theme_frame_bg = {parts[1], parts[2], parts[3]}
+            elseif key == "check_mark" and #parts == 3 then
+                theme_check_mark = {parts[1], parts[2], parts[3]}
             elseif key == "write_keyswitches" then
                 settings_write_keyswitches = (val == "1" or val == "true")
             end
@@ -248,6 +252,7 @@ local function save_settings()
     f:write(string.format("slider_grab=%.4f,%.4f,%.4f\n", theme_slider_grab[1], theme_slider_grab[2], theme_slider_grab[3]))
     f:write(string.format("apply_btn=%.4f,%.4f,%.4f\n",   theme_apply_btn[1],   theme_apply_btn[2],   theme_apply_btn[3]))
     f:write(string.format("frame_bg=%.4f,%.4f,%.4f\n",    theme_frame_bg[1],    theme_frame_bg[2],    theme_frame_bg[3]))
+    f:write(string.format("check_mark=%.4f,%.4f,%.4f\n",  theme_check_mark[1],  theme_check_mark[2],  theme_check_mark[3]))
     f:write(string.format("write_keyswitches=%s\n", (gui_state and gui_state.write_keyswitches) and "1" or "0"))
     f:close()
 end
@@ -274,6 +279,7 @@ local settings_edit_positive_u32    = theme_pack(theme_positive)
 local settings_edit_slider_grab_u32 = theme_pack(theme_slider_grab)
 local settings_edit_apply_btn_u32   = theme_pack(theme_apply_btn)
 local settings_edit_frame_bg_u32    = theme_pack(theme_frame_bg)
+local settings_edit_check_mark_u32  = theme_pack(theme_check_mark)
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -1710,6 +1716,7 @@ local function push_theme()
     reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderHovered,    u32(hdrH))
     reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderActive,     u32(hdrA))
     reaper.ImGui_PushStyleColor(ctx, imgui.Col_Border,           u32(border, 0.5))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_CheckMark,        u32(theme_check_mark))
 
     reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_FrameRounding, 6.0)
     reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_GrabRounding, 6.0)
@@ -1719,7 +1726,7 @@ end
 
 -- Pop Theme Styles & Colors
 local function pop_theme()
-    reaper.ImGui_PopStyleColor(ctx, 16)
+    reaper.ImGui_PopStyleColor(ctx, 17)
     reaper.ImGui_PopStyleVar(ctx, 4)
 end
 
@@ -2323,6 +2330,7 @@ local function render_ui()
             settings_edit_slider_grab_u32 = theme_pack(theme_slider_grab)
             settings_edit_apply_btn_u32   = theme_pack(theme_apply_btn)
             settings_edit_frame_bg_u32    = theme_pack(theme_frame_bg)
+            settings_edit_check_mark_u32  = theme_pack(theme_check_mark)
         end
     end
     if settings_active then
@@ -2676,6 +2684,13 @@ local function render_ui()
 
         reaper.ImGui_Spacing(ctx)
 
+        -- Radio Button Pin Color
+        reaper.ImGui_TextDisabled(ctx, "Radio Button Pin Color")
+        local cm_changed, new_cm_u32 = reaper.ImGui_ColorEdit4(ctx, "##check_mark_color", settings_edit_check_mark_u32)
+        if cm_changed then settings_edit_check_mark_u32 = new_cm_u32 end
+
+        reaper.ImGui_Spacing(ctx)
+
         -- Text Color
         reaper.ImGui_TextDisabled(ctx, "Text Color")
         local tx_changed, new_tx_u32 = reaper.ImGui_ColorEdit4(ctx, "##text_color", settings_edit_text_u32)
@@ -2706,6 +2721,7 @@ local function render_ui()
         theme_slider_grab = theme_unpack(settings_edit_slider_grab_u32)
         theme_apply_btn   = theme_unpack(settings_edit_apply_btn_u32)
         theme_frame_bg    = theme_unpack(settings_edit_frame_bg_u32)
+        theme_check_mark  = theme_unpack(settings_edit_check_mark_u32)
 
         -- Save button
         push_positive_style()
@@ -2727,6 +2743,7 @@ local function render_ui()
             settings_edit_slider_grab_u32 = theme_pack(DEFAULT_SLIDER_GRAB)
             settings_edit_apply_btn_u32   = theme_pack(DEFAULT_APPLY_BTN)
             settings_edit_frame_bg_u32    = theme_pack(DEFAULT_FRAME_BG)
+            settings_edit_check_mark_u32  = theme_pack(DEFAULT_CHECK_MARK)
         end
         pop_danger_style()
     end
