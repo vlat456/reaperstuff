@@ -37,7 +37,6 @@ local last_fx_count = -1
 
 local gui_state = {
     render_mode = "offline", -- "offline" or "online"
-    render_format = "stereo", -- "stereo" or "mono"
 }
 
 -- Push Theme Custom Colors & Styles (matching Track FX Bypass Manager)
@@ -85,7 +84,7 @@ local function get_selected_items_on_track(track)
 end
 
 -- Core Render/Freeze Function
-local function freeze_selected_items(track, selected_items, mode, format)
+local function freeze_selected_items(track, selected_items, mode)
     local num_fx = reaper.TrackFX_GetCount(track)
     
     -- 1. Save original global workrender preference (speed)
@@ -131,13 +130,8 @@ local function freeze_selected_items(track, selected_items, mode, format)
         end
     end
 
-    -- 6. Trigger rendering action
-    local action_id = 40209 -- Stereo: Take: Render items to new take
-    if format == "mono" then
-        action_id = 41612   -- Mono: Take: Render items to new take (mono)
-    end
-    
-    reaper.Main_OnCommand(action_id, 0)
+    -- 6. Trigger rendering action: Render items to new take (original track format)
+    reaper.Main_OnCommand(41612, 0)
 
     -- 7. Restore track FX states to pre-freeze state
     for i = 0, num_fx - 1 do
@@ -278,13 +272,7 @@ local function draw_gui()
     local rb_on = reaper.ImGui_RadioButton(ctx, "Online (1x)", gui_state.render_mode == "online")
     if rb_on then gui_state.render_mode = "online" end
 
-    reaper.ImGui_Text(ctx, "Format:")
-    reaper.ImGui_SameLine(ctx, 110)
-    local rb_st = reaper.ImGui_RadioButton(ctx, "Stereo", gui_state.render_format == "stereo")
-    if rb_st then gui_state.render_format = "stereo" end
-    reaper.ImGui_SameLine(ctx)
-    local rb_mo = reaper.ImGui_RadioButton(ctx, "Mono", gui_state.render_format == "mono")
-    if rb_mo then gui_state.render_format = "mono" end
+
 
     -- Check item selections on selected track
     local selected_items = get_selected_items_on_track(track)
@@ -302,7 +290,7 @@ local function draw_gui()
     end
 
     if reaper.ImGui_Button(ctx, button_label, -1, 0) then
-        freeze_selected_items(track, selected_items, gui_state.render_mode, gui_state.render_format)
+        freeze_selected_items(track, selected_items, gui_state.render_mode)
     end
 
     if not has_selection then
