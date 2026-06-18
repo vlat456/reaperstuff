@@ -139,20 +139,9 @@ local function freeze_selected_items(track, selected_items, mode, format)
     
     reaper.Main_OnCommand(action_id, 0)
 
-    -- 7. Update track FX states post-render
+    -- 7. Update track FX states post-render: Bypass ALL plugins on the track
     for i = 0, num_fx - 1 do
-        local guid = reaper.TrackFX_GetFXGUID(track, i)
-        if guid then
-            if checked_fx[guid] then
-                -- Plugin was baked into take -> bypass it on the track so it doesn't double-process
-                if orig_enabled[guid] then
-                    reaper.TrackFX_SetEnabled(track, i, false)
-                end
-            else
-                -- Plugin was bypassed/skipped -> restore it to its original state
-                reaper.TrackFX_SetEnabled(track, i, orig_enabled[guid])
-            end
-        end
+        reaper.TrackFX_SetEnabled(track, i, false)
     end
 
     reaper.Undo_EndBlock("Freeze selected items with custom FX", -1)
@@ -225,6 +214,16 @@ local function draw_gui()
                 checked_fx[guid] = false
             end
         end
+    end
+
+    reaper.ImGui_SameLine(ctx)
+
+    if reaper.ImGui_Button(ctx, "Re-enable All") then
+        reaper.Undo_BeginBlock()
+        for i = 0, num_fx - 1 do
+            reaper.TrackFX_SetEnabled(track, i, true)
+        end
+        reaper.Undo_EndBlock("Re-enable all FX on track", -1)
     end
 
     -- FX checklist child window
