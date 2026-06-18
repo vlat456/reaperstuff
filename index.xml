@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="191fcd5055bd391bd9b06f5631a8d9bca4f62407">
+<index version="1" name="Walter Scripts" commit="a9c3136e443db23dd7e419590f8379b6315c43ef">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -311,6 +311,9 @@
       </version>
       <version name="1.7.2" author="drvlat" time="2026-06-18T19:26:09Z">
         <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/191fcd5055bd391bd9b06f5631a8d9bca4f62407/Media_Tools/Media_Offset_Tool.lua</source>
+      </version>
+      <version name="1.7.3" author="drvlat" time="2026-06-18T19:31:14Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/a9c3136e443db23dd7e419590f8379b6315c43ef/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
     </reapack>
     <reapack name="Selective_Freeze_Tool.lua" type="script" desc="Selective Freeze Tool">
