@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.6.1
+-- @version 1.7.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.6.1"
+local script_name = "Media Offset Tool v1.7.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -181,17 +181,25 @@ local function get_settings_file_path()
 end
 
 -- Default theme colors
-local DEFAULT_BG       = {0.08, 0.08, 0.10}  -- Col_WindowBg
-local DEFAULT_ACCENT   = {0.50, 0.35, 0.80}  -- SliderGrab / Button family
-local DEFAULT_TEXT     = {0.92, 0.92, 0.95}  -- Col_Text
-local DEFAULT_DANGER   = {0.65, 0.25, 0.25}  -- Destructive actions (Reset, Delete)
-local DEFAULT_POSITIVE = {0.25, 0.55, 0.28}  -- Positive actions (Save)
+local DEFAULT_BG          = {0.08, 0.08, 0.10}  -- Col_WindowBg
+local DEFAULT_ACCENT      = {0.50, 0.35, 0.80}  -- Button family
+local DEFAULT_TEXT        = {0.92, 0.92, 0.95}  -- Col_Text
+local DEFAULT_DANGER      = {0.65, 0.25, 0.25}  -- Destructive actions (Reset, Delete)
+local DEFAULT_POSITIVE    = {0.25, 0.55, 0.28}  -- Positive actions (Save)
+local DEFAULT_SLIDER_GRAB = {0.50, 0.35, 0.80}  -- SliderGrab pin
+local DEFAULT_APPLY_BTN   = {0.35, 0.14, 0.88}  -- Apply button
+local DEFAULT_FRAME_BG    = {0.15, 0.15, 0.17}  -- Slider Background (FrameBg)
 
-local theme_bg       = {DEFAULT_BG[1],       DEFAULT_BG[2],       DEFAULT_BG[3]}
-local theme_accent   = {DEFAULT_ACCENT[1],   DEFAULT_ACCENT[2],   DEFAULT_ACCENT[3]}
-local theme_text     = {DEFAULT_TEXT[1],     DEFAULT_TEXT[2],     DEFAULT_TEXT[3]}
-local theme_danger   = {DEFAULT_DANGER[1],   DEFAULT_DANGER[2],   DEFAULT_DANGER[3]}
-local theme_positive = {DEFAULT_POSITIVE[1], DEFAULT_POSITIVE[2], DEFAULT_POSITIVE[3]}
+local theme_bg          = {DEFAULT_BG[1],          DEFAULT_BG[2],          DEFAULT_BG[3]}
+local theme_accent      = {DEFAULT_ACCENT[1],      DEFAULT_ACCENT[2],      DEFAULT_ACCENT[3]}
+local theme_text        = {DEFAULT_TEXT[1],        DEFAULT_TEXT[2],        DEFAULT_TEXT[3]}
+local theme_danger      = {DEFAULT_DANGER[1],      DEFAULT_DANGER[2],      DEFAULT_DANGER[3]}
+local theme_positive    = {DEFAULT_POSITIVE[1],    DEFAULT_POSITIVE[2],    DEFAULT_POSITIVE[3]}
+local theme_slider_grab = {DEFAULT_SLIDER_GRAB[1], DEFAULT_SLIDER_GRAB[2], DEFAULT_SLIDER_GRAB[3]}
+local theme_apply_btn   = {DEFAULT_APPLY_BTN[1],   DEFAULT_APPLY_BTN[2],   DEFAULT_APPLY_BTN[3]}
+local theme_frame_bg    = {DEFAULT_FRAME_BG[1],    DEFAULT_FRAME_BG[2],    DEFAULT_FRAME_BG[3]}
+
+local settings_write_keyswitches = false
 
 local function load_settings()
     local path = get_settings_file_path()
@@ -213,6 +221,14 @@ local function load_settings()
                 theme_danger = {parts[1], parts[2], parts[3]}
             elseif key == "positive" and #parts == 3 then
                 theme_positive = {parts[1], parts[2], parts[3]}
+            elseif key == "slider_grab" and #parts == 3 then
+                theme_slider_grab = {parts[1], parts[2], parts[3]}
+            elseif key == "apply_btn" and #parts == 3 then
+                theme_apply_btn = {parts[1], parts[2], parts[3]}
+            elseif key == "frame_bg" and #parts == 3 then
+                theme_frame_bg = {parts[1], parts[2], parts[3]}
+            elseif key == "write_keyswitches" then
+                settings_write_keyswitches = (val == "1" or val == "true")
             end
         end
     end
@@ -223,11 +239,15 @@ local function save_settings()
     local path = get_settings_file_path()
     local f = io.open(path, "w")
     if not f then return end
-    f:write(string.format("bg=%.4f,%.4f,%.4f\n",       theme_bg[1],       theme_bg[2],       theme_bg[3]))
-    f:write(string.format("accent=%.4f,%.4f,%.4f\n",   theme_accent[1],   theme_accent[2],   theme_accent[3]))
-    f:write(string.format("text=%.4f,%.4f,%.4f\n",     theme_text[1],     theme_text[2],     theme_text[3]))
-    f:write(string.format("danger=%.4f,%.4f,%.4f\n",   theme_danger[1],   theme_danger[2],   theme_danger[3]))
-    f:write(string.format("positive=%.4f,%.4f,%.4f\n", theme_positive[1], theme_positive[2], theme_positive[3]))
+    f:write(string.format("bg=%.4f,%.4f,%.4f\n",          theme_bg[1],          theme_bg[2],          theme_bg[3]))
+    f:write(string.format("accent=%.4f,%.4f,%.4f\n",      theme_accent[1],      theme_accent[2],      theme_accent[3]))
+    f:write(string.format("text=%.4f,%.4f,%.4f\n",        theme_text[1],        theme_text[2],        theme_text[3]))
+    f:write(string.format("danger=%.4f,%.4f,%.4f\n",      theme_danger[1],      theme_danger[2],      theme_danger[3]))
+    f:write(string.format("positive=%.4f,%.4f,%.4f\n",    theme_positive[1],    theme_positive[2],    theme_positive[3]))
+    f:write(string.format("slider_grab=%.4f,%.4f,%.4f\n", theme_slider_grab[1], theme_slider_grab[2], theme_slider_grab[3]))
+    f:write(string.format("apply_btn=%.4f,%.4f,%.4f\n",   theme_apply_btn[1],   theme_apply_btn[2],   theme_apply_btn[3]))
+    f:write(string.format("frame_bg=%.4f,%.4f,%.4f\n",    theme_frame_bg[1],    theme_frame_bg[2],    theme_frame_bg[3]))
+    f:write(string.format("write_keyswitches=%s\n", (gui_state and gui_state.write_keyswitches) and "1" or "0"))
     f:close()
 end
 
@@ -245,11 +265,14 @@ end
 
 -- Working copies for the color pickers: stored as uint32 to avoid float→uint8→float
 -- precision drift inside the picker loop (which causes HUE/saturation self-movement).
-local settings_edit_bg_u32       = theme_pack(theme_bg)
-local settings_edit_accent_u32   = theme_pack(theme_accent)
-local settings_edit_text_u32     = theme_pack(theme_text)
-local settings_edit_danger_u32   = theme_pack(theme_danger)
-local settings_edit_positive_u32 = theme_pack(theme_positive)
+local settings_edit_bg_u32          = theme_pack(theme_bg)
+local settings_edit_accent_u32      = theme_pack(theme_accent)
+local settings_edit_text_u32        = theme_pack(theme_text)
+local settings_edit_danger_u32      = theme_pack(theme_danger)
+local settings_edit_positive_u32    = theme_pack(theme_positive)
+local settings_edit_slider_grab_u32 = theme_pack(theme_slider_grab)
+local settings_edit_apply_btn_u32   = theme_pack(theme_apply_btn)
+local settings_edit_frame_bg_u32    = theme_pack(theme_frame_bg)
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -305,7 +328,7 @@ gui_state = {
     adjust_mode = MODE_TRACK_OFFSET, -- Default to Mode B (Track Playback Offset)
     last_selection_state = "",
     is_dragging = false,
-    write_keyswitches = false, -- Default to false
+    write_keyswitches = settings_write_keyswitches, -- Default to loaded settings
 }
 
 -- Load persisted mode from project metadata
@@ -315,12 +338,6 @@ if saved_mode_str and saved_mode_str ~= "" then
     if saved_mode == MODE_TAKE_OFFSET or saved_mode == MODE_TRACK_OFFSET or saved_mode == MODE_ITEM_POSITION then
         gui_state.adjust_mode = saved_mode
     end
-end
-
--- Load persisted write_keyswitches checkbox from project metadata
-local _, saved_write_ks_str = reaper.GetProjExtState(0, "Walter_MediaOffsetTool", "write_keyswitches")
-if saved_write_ks_str and saved_write_ks_str ~= "" then
-    gui_state.write_keyswitches = (saved_write_ks_str == "1")
 end
 
 -- Check selection signature to detect change
@@ -1664,15 +1681,15 @@ local function push_theme()
 
     local bg_title  = mix(dim(bg, 1.0), 0.10)   -- slightly lighter than bg
     local bg_titleA = mix(dim(bg, 1.0), 0.18)
-    local bg_frame  = mix(dim(bg, 1.0), 0.07)
-    local bg_frameH = mix(dim(bg, 1.0), 0.12)
-    local bg_frameA = mix(dim(bg, 1.0), 0.17)
+    local bg_frame  = theme_frame_bg            -- CUSTOMIZED FRAME BG (slider background)
+    local bg_frameH = mix(dim(bg_frame, 1.0), 0.05)
+    local bg_frameA = mix(dim(bg_frame, 1.0), 0.10)
 
     local btn      = {ac[1]*0.60, ac[2]*0.50, ac[3]*0.90}  -- muted accent
     local btnH     = {ac[1]*0.80, ac[2]*0.70, ac[3]*1.00}
     local btnA     = {ac[1]*1.00, ac[2]*0.90, ac[3]*1.00}
-    local sliderG  = ac
-    local sliderGA = mix(ac, 0.10)
+    local sliderG  = theme_slider_grab          -- CUSTOMIZED SLIDER GRAB
+    local sliderGA = mix(sliderG, 0.10)
     local hdr      = {ac[1]*0.40, ac[2]*0.36, ac[3]*0.60}
     local hdrH     = {ac[1]*0.60, ac[2]*0.50, ac[3]*0.90}
     local hdrA     = {ac[1]*0.80, ac[2]*0.70, ac[3]*1.00}
@@ -2226,15 +2243,7 @@ local function render_ui()
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
 
-    local has_notes, _ = has_selected_midi_notes()
-    if has_notes then
-        local changed_cb, new_cb = reaper.ImGui_Checkbox(ctx, "Write Keyswitches", gui_state.write_keyswitches)
-        if changed_cb then
-            gui_state.write_keyswitches = new_cb
-            reaper.SetProjExtState(0, "Walter_MediaOffsetTool", "write_keyswitches", gui_state.write_keyswitches and "1" or "0")
-        end
-        reaper.ImGui_Spacing(ctx)
-    end
+    -- Write Keyswitches has been moved to Settings
 
     -- Double-click / Drag slider for absolute offset (displaying current value) and manual input box side by side
     reaper.ImGui_Text(ctx, "Offset:")
@@ -2273,13 +2282,16 @@ local function render_ui()
 
     -- Explicit Apply Button
     reaper.ImGui_SameLine(ctx)
-    local ac = theme_accent
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(ac[1]*0.70, ac[2]*0.40, ac[3]*1.10 > 1 and 1 or ac[3]*1.10, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(ac[1]*0.90, ac[2]*0.60, math.min(ac[3]*1.20, 1.0), 1.0))
+    local ap = theme_apply_btn
+    local apH = {math.min(ap[1] + 0.15, 1.0), math.min(ap[2] + 0.15, 1.0), math.min(ap[3] + 0.15, 1.0)}
+    local apA = {ap[1] * 0.80, ap[2] * 0.80, ap[3] * 0.80}
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(ap[1], ap[2], ap[3], 1.0))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(apH[1], apH[2], apH[3], 1.0))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(apA[1], apA[2], apA[3], 1.0))
     if reaper.ImGui_Button(ctx, "Apply") then
         adjust_offset_to_value(gui_state.slider_value)
     end
-    reaper.ImGui_PopStyleColor(ctx, 2)
+    reaper.ImGui_PopStyleColor(ctx, 3)
 
     -- Information Button
     reaper.ImGui_SameLine(ctx)
@@ -2306,11 +2318,14 @@ local function render_ui()
         show_settings = not show_settings
         if show_settings then
             -- Snapshot current theme as uint32 (one-time float→u32, no further round-trip)
-            settings_edit_bg_u32       = theme_pack(theme_bg)
-            settings_edit_accent_u32   = theme_pack(theme_accent)
-            settings_edit_text_u32     = theme_pack(theme_text)
-            settings_edit_danger_u32   = theme_pack(theme_danger)
-            settings_edit_positive_u32 = theme_pack(theme_positive)
+            settings_edit_bg_u32          = theme_pack(theme_bg)
+            settings_edit_accent_u32      = theme_pack(theme_accent)
+            settings_edit_text_u32        = theme_pack(theme_text)
+            settings_edit_danger_u32      = theme_pack(theme_danger)
+            settings_edit_positive_u32    = theme_pack(theme_positive)
+            settings_edit_slider_grab_u32 = theme_pack(theme_slider_grab)
+            settings_edit_apply_btn_u32   = theme_pack(theme_apply_btn)
+            settings_edit_frame_bg_u32    = theme_pack(theme_frame_bg)
         end
     end
     if settings_active then
@@ -2614,6 +2629,21 @@ local function render_ui()
         reaper.ImGui_Text(ctx, "Settings")
         reaper.ImGui_Spacing(ctx)
 
+        -- Write Keyswitches Option
+        local changed_cb, new_cb = reaper.ImGui_Checkbox(ctx, "Write Keyswitches (MIDI notes)", gui_state.write_keyswitches)
+        if changed_cb then
+            gui_state.write_keyswitches = new_cb
+            save_settings()
+        end
+
+        reaper.ImGui_Spacing(ctx)
+        reaper.ImGui_Separator(ctx)
+        reaper.ImGui_Spacing(ctx)
+
+        -- Colors Header
+        reaper.ImGui_Text(ctx, "Custom Colors")
+        reaper.ImGui_Spacing(ctx)
+
         -- Background Color
         reaper.ImGui_TextDisabled(ctx, "Background Color")
         local bg_changed, new_bg_u32 = reaper.ImGui_ColorEdit4(ctx, "##bg_color", settings_edit_bg_u32)
@@ -2622,9 +2652,30 @@ local function render_ui()
         reaper.ImGui_Spacing(ctx)
 
         -- Accent Color
-        reaper.ImGui_TextDisabled(ctx, "Accent Color")
+        reaper.ImGui_TextDisabled(ctx, "Accent Color (General Buttons & Headers)")
         local ac_changed, new_ac_u32 = reaper.ImGui_ColorEdit4(ctx, "##accent_color", settings_edit_accent_u32)
         if ac_changed then settings_edit_accent_u32 = new_ac_u32 end
+
+        reaper.ImGui_Spacing(ctx)
+
+        -- Slider Pin Color
+        reaper.ImGui_TextDisabled(ctx, "Slider Pin Color")
+        local sg_changed, new_sg_u32 = reaper.ImGui_ColorEdit4(ctx, "##slider_grab_color", settings_edit_slider_grab_u32)
+        if sg_changed then settings_edit_slider_grab_u32 = new_sg_u32 end
+
+        reaper.ImGui_Spacing(ctx)
+
+        -- Slider Background Color
+        reaper.ImGui_TextDisabled(ctx, "Slider Background Color")
+        local fb_changed, new_fb_u32 = reaper.ImGui_ColorEdit4(ctx, "##frame_bg_color", settings_edit_frame_bg_u32)
+        if fb_changed then settings_edit_frame_bg_u32 = new_fb_u32 end
+
+        reaper.ImGui_Spacing(ctx)
+
+        -- Apply Button Color
+        reaper.ImGui_TextDisabled(ctx, "Apply Button Color")
+        local ap_changed, new_ap_u32 = reaper.ImGui_ColorEdit4(ctx, "##apply_btn_color", settings_edit_apply_btn_u32)
+        if ap_changed then settings_edit_apply_btn_u32 = new_ap_u32 end
 
         reaper.ImGui_Spacing(ctx)
 
@@ -2650,12 +2701,14 @@ local function render_ui()
         reaper.ImGui_Spacing(ctx)
 
         -- Live preview: unpack from uint32 once per frame → float tables for the theme
-        -- (uint32 → float is lossless at the picker side since we store the picker's own output)
-        theme_bg       = theme_unpack(settings_edit_bg_u32)
-        theme_accent   = theme_unpack(settings_edit_accent_u32)
-        theme_text     = theme_unpack(settings_edit_text_u32)
-        theme_danger   = theme_unpack(settings_edit_danger_u32)
-        theme_positive = theme_unpack(settings_edit_positive_u32)
+        theme_bg          = theme_unpack(settings_edit_bg_u32)
+        theme_accent      = theme_unpack(settings_edit_accent_u32)
+        theme_text        = theme_unpack(settings_edit_text_u32)
+        theme_danger      = theme_unpack(settings_edit_danger_u32)
+        theme_positive    = theme_unpack(settings_edit_positive_u32)
+        theme_slider_grab = theme_unpack(settings_edit_slider_grab_u32)
+        theme_apply_btn   = theme_unpack(settings_edit_apply_btn_u32)
+        theme_frame_bg    = theme_unpack(settings_edit_frame_bg_u32)
 
         -- Save button
         push_positive_style()
@@ -2668,11 +2721,14 @@ local function render_ui()
         reaper.ImGui_SameLine(ctx)
         push_danger_style()
         if reaper.ImGui_Button(ctx, "Reset Defaults") then
-            settings_edit_bg_u32       = theme_pack(DEFAULT_BG)
-            settings_edit_accent_u32   = theme_pack(DEFAULT_ACCENT)
-            settings_edit_text_u32     = theme_pack(DEFAULT_TEXT)
-            settings_edit_danger_u32   = theme_pack(DEFAULT_DANGER)
-            settings_edit_positive_u32 = theme_pack(DEFAULT_POSITIVE)
+            settings_edit_bg_u32          = theme_pack(DEFAULT_BG)
+            settings_edit_accent_u32      = theme_pack(DEFAULT_ACCENT)
+            settings_edit_text_u32        = theme_pack(DEFAULT_TEXT)
+            settings_edit_danger_u32      = theme_pack(DEFAULT_DANGER)
+            settings_edit_positive_u32    = theme_pack(DEFAULT_POSITIVE)
+            settings_edit_slider_grab_u32 = theme_pack(DEFAULT_SLIDER_GRAB)
+            settings_edit_apply_btn_u32   = theme_pack(DEFAULT_APPLY_BTN)
+            settings_edit_frame_bg_u32    = theme_pack(DEFAULT_FRAME_BG)
         end
         pop_danger_style()
     end
