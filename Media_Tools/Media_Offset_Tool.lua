@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.5.7
+-- @version 1.5.8
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.5.7"
+local script_name = "Media Offset Tool v1.5.8"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -487,7 +487,7 @@ local function write_note_preset_text_event(take, startppq, preset_name)
     for idx = 0, sysex_count - 1 do
         local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
         if r and type_val == 1 then
-            if math.abs(ppqpos - startppq) < 5 and msg:sub(1, 13) == "WalterPreset:" then
+            if math.abs(ppqpos - startppq) < 5 and (msg:sub(1, 13) == "WalterPreset:" or msg:sub(1, 2) == "A:") then
                 table.insert(events_to_delete, idx)
             end
         end
@@ -502,7 +502,7 @@ local function write_note_preset_text_event(take, startppq, preset_name)
             false, -- muted
             startppq,
             1, -- type 1 = Text Event
-            "WalterPreset:" .. preset_name
+            "A:" .. preset_name
         )
     end
 end
@@ -513,8 +513,12 @@ local function read_note_preset_text_event(take, startppq)
     for idx = 0, sysex_count - 1 do
         local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
         if r and type_val == 1 then
-            if math.abs(ppqpos - startppq) < 5 and msg:sub(1, 13) == "WalterPreset:" then
-                return msg:sub(14)
+            if math.abs(ppqpos - startppq) < 5 then
+                if msg:sub(1, 2) == "A:" then
+                    return msg:sub(3)
+                elseif msg:sub(1, 13) == "WalterPreset:" then
+                    return msg:sub(14)
+                end
             end
         end
     end
