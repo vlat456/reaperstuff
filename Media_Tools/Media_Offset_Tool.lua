@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.4.3
+-- @version 1.4.4
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.4.3"
+local script_name = "Media Offset Tool v1.4.4"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -402,6 +402,47 @@ local function save_take_note_presets(take, note_presets)
     reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Presets_" .. guid, val_str, true)
 end
 
+-- Helper to delete/write preset name as a MIDI Text Event
+local function write_note_preset_text_event(take, startppq, preset_name)
+    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
+    local events_to_delete = {}
+    for idx = 0, sysex_count - 1 do
+        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
+        if r and type_val == 1 then
+            if math.abs(ppqpos - startppq) < 5 and msg:sub(1, 13) == "WalterPreset:" then
+                table.insert(events_to_delete, idx)
+            end
+        end
+    end
+    for d = #events_to_delete, 1, -1 do
+        reaper.MIDI_DeleteTextSysexEvt(take, events_to_delete[d])
+    end
+    if preset_name and preset_name ~= "" then
+        reaper.MIDI_InsertTextSysexEvt(
+            take,
+            false, -- selected
+            false, -- muted
+            startppq,
+            1, -- type 1 = Text Event
+            "WalterPreset:" .. preset_name
+        )
+    end
+end
+
+-- Helper to read preset name from MIDI Text Event
+local function read_note_preset_text_event(take, startppq)
+    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
+    for idx = 0, sysex_count - 1 do
+        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
+        if r and type_val == 1 then
+            if math.abs(ppqpos - startppq) < 5 and msg:sub(1, 13) == "WalterPreset:" then
+                return msg:sub(14)
+            end
+        end
+    end
+    return ""
+end
+
 -- Helper to save the preset name metadata to all selected targets
 local function save_preset_name_to_targets(preset_name)
     local eff_mode = get_effective_mode()
@@ -421,6 +462,10 @@ local function save_preset_name_to_targets(preset_name)
                     note_presets[key] = nil
                     info.preset_name = ""
                 end
+                
+                -- Write preset name to MIDI Text Event
+                local current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + (info.offset_ms / 1000.0))
+                write_note_preset_text_event(take, current_ppq, preset_name)
             end
             save_take_note_presets(take, note_presets)
         end
@@ -650,6 +695,12 @@ local function update_targets_list(force)
                     local found_preset = ""
                     local original_ppq = startppq
                     
+                    -- Prioritize reading from MIDI Text Event
+                    local text_preset = read_note_preset_text_event(take, startppq)
+                    if text_preset ~= "" then
+                        found_preset = text_preset
+                    end
+                    
                     for key, offset_ms in pairs(offsets) do
                         local o_pitch, o_chan, o_orig_ppq = key:match("^(%d+)_(%d+)_(%d+)$")
                         if o_pitch and o_chan and o_orig_ppq then
@@ -664,7 +715,9 @@ local function update_targets_list(force)
                                 
                                 if math.abs(startppq - expected_current_ppq) < 5 then
                                     found_offset = offset_ms
-                                    found_preset = note_presets[key] or ""
+                                    if found_preset == "" then
+                                        found_preset = note_presets[key] or ""
+                                    end
                                     original_ppq = o_orig_ppq
                                     break
                                 end
@@ -976,6 +1029,12 @@ local function update_targets_list(force)
                             info.start_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, startppq)
                             info.end_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, endppq)
                             any_drifted = true
+                        end
+
+                        -- Prioritize reading the preset name from the MIDI Text Event at its current position
+                        local text_preset = read_note_preset_text_event(info.take, startppq)
+                        if text_preset ~= "" then
+                            found_preset = text_preset
                         else
                             local old_key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
                             found_preset = note_presets[old_key] or ""
@@ -1128,39 +1187,59 @@ local function apply_offset_to_targets(value, preset_name)
                 end
             end
 
-            local deletions_map = {}
-            local insertions = {}
-
-            for _, info in ipairs(gui_state.selected_targets) do
+            -- 1. Gather all selected notes and their properties from the take before making any modifications
+            local selected_notes = {}
+            local note_idx = -1
+            while true do
                 note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
                 if note_idx == -1 then break end
-                
-                -- Retrieve target note's current timing and channel
                 local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, note_idx)
                 if retval then
-                    -- Collect old keyswitches around the current start position
-                    if gui_state.write_keyswitches and preset_name and preset_name ~= "" then
-                        local num_notes = reaper.MIDI_CountEvts(take)
-                        for idx = 0, num_notes - 1 do
-                            local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
-                            if r and ch == chan then
-                                if sppq >= (startppq - 60) and sppq <= startppq then
-                                    if pi < 36 or is_keyswitch_pitch(pi) then
-                                        -- Mark for deletion (even if it matches ks_pitch, we will re-insert it at the new position)
-                                        deletions_map[idx] = true
-                                    end
+                    table.insert(selected_notes, {
+                        idx = note_idx,
+                        selected = selected,
+                        muted = muted,
+                        startppq = startppq,
+                        endppq = endppq,
+                        chan = chan,
+                        pitch = pitch,
+                        vel = vel
+                    })
+                end
+            end
+
+            -- 2. Collect indices of old keyswitches to delete, safely referencing the original take structure
+            local deletions_map = {}
+            if gui_state.write_keyswitches and preset_name and preset_name ~= "" then
+                local num_notes = reaper.MIDI_CountEvts(take)
+                for _, note_info in ipairs(selected_notes) do
+                    local startppq = note_info.startppq
+                    local chan = note_info.chan
+                    for idx = 0, num_notes - 1 do
+                        local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
+                        if r and ch == chan and not sel then -- Skip selected target notes!
+                            if sppq >= (startppq - 60) and sppq <= startppq then
+                                if pi < 36 or is_keyswitch_pitch(pi) then
+                                    deletions_map[idx] = true
                                 end
                             end
                         end
                     end
                 end
+            end
 
+            -- 3. Modify the target notes' positions and queue new keyswitch insertions
+            local insertions = {}
+            for i, info in ipairs(gui_state.selected_targets) do
+                local note_info = selected_notes[i]
+                if not note_info then break end
+                
                 local new_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + shift_sec)
                 local new_end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.end_time + shift_sec)
                 
                 reaper.MIDI_SetNote(
                     take,
-                    note_idx,
+                    note_info.idx,
                     nil,  -- selected
                     nil,  -- muted
                     new_start_ppq,
@@ -1179,14 +1258,14 @@ local function apply_offset_to_targets(value, preset_name)
                     -- Avoid duplicate insertions for the same channel, pitch, and position
                     local duplicate = false
                     for _, ins in ipairs(insertions) do
-                        if ins.chan == chan and ins.pitch == ks_pitch and math.abs(ins.startppq - target_ks_start) < 2 then
+                        if ins.chan == note_info.chan and ins.pitch == ks_pitch and math.abs(ins.startppq - target_ks_start) < 2 then
                             duplicate = true
                             break
                         end
                     end
                     if not duplicate then
                         table.insert(insertions, {
-                            chan = chan,
+                            chan = note_info.chan,
                             pitch = ks_pitch,
                             vel = ks_vel,
                             startppq = target_ks_start,
@@ -1196,7 +1275,7 @@ local function apply_offset_to_targets(value, preset_name)
                 end
             end
             
-            -- Delete old keyswitches in descending index order
+            -- 4. Delete old keyswitches in descending index order (safe from index shifting)
             local deletions_list = {}
             for idx in pairs(deletions_map) do
                 table.insert(deletions_list, idx)
@@ -1205,8 +1284,22 @@ local function apply_offset_to_targets(value, preset_name)
             for _, idx in ipairs(deletions_list) do
                 reaper.MIDI_DeleteNote(take, idx)
             end
+
+            -- 5. Write MIDI Text Events (safe to do after note deletion)
+            if preset_name then
+                for i, info in ipairs(gui_state.selected_targets) do
+                    local note_info = selected_notes[i]
+                    if not note_info then break end
+                    local new_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + shift_sec)
+                    
+                    write_note_preset_text_event(take, note_info.startppq, "")
+                    if preset_name ~= "" then
+                        write_note_preset_text_event(take, new_start_ppq, preset_name)
+                    end
+                end
+            end
             
-            -- Insert new keyswitches
+            -- 6. Insert new keyswitches
             for _, ins in ipairs(insertions) do
                 reaper.MIDI_InsertNote(
                     take,
