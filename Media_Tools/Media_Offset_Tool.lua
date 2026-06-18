@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.3.0
+-- @version 1.3.1
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.3.0"
+local script_name = "Media Offset Tool v1.3.1"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1835,16 +1835,22 @@ local function render_ui()
         reaper.ImGui_TextDisabled(ctx, "Libraries:")
         reaper.ImGui_Spacing(ctx)
         
-        local avail_w, _ = reaper.ImGui_GetContentRegionAvail(ctx)
+        local window_w = reaper.ImGui_GetWindowWidth(ctx)
+        local wrap_w = window_w - 24.0
+        if wrap_w < 400.0 then wrap_w = 400.0 end
+        
+        local pad_x, _ = reaper.ImGui_GetStyleVar(ctx, imgui.StyleVar_FramePadding)
+        local space_x, _ = reaper.ImGui_GetStyleVar(ctx, imgui.StyleVar_ItemSpacing)
+        
         local current_x = 0.0
         for i, lib_name in ipairs(lib_names) do
             local text_w, _ = reaper.ImGui_CalcTextSize(ctx, lib_name)
-            local btn_w = text_w + 14.0 -- extra width for padding
+            local btn_w = text_w + pad_x * 2
             
             if i > 1 then
-                if current_x + btn_w + 4.0 < avail_w then
-                    reaper.ImGui_SameLine(ctx, nil, 4.0)
-                    current_x = current_x + btn_w + 4.0
+                if current_x + btn_w + space_x < wrap_w then
+                    reaper.ImGui_SameLine(ctx, nil, space_x)
+                    current_x = current_x + btn_w + space_x
                 else
                     current_x = btn_w
                 end
@@ -1881,12 +1887,12 @@ local function render_ui()
         local current_art_x = 0.0
         for i, art_data in ipairs(arts) do
             local text_w, _ = reaper.ImGui_CalcTextSize(ctx, art_data.art)
-            local btn_w = text_w + 14.0
+            local btn_w = text_w + pad_x * 2
             
             if i > 1 then
-                if current_art_x + btn_w + 4.0 < avail_w then
-                    reaper.ImGui_SameLine(ctx, nil, 4.0)
-                    current_art_x = current_art_x + btn_w + 4.0
+                if current_art_x + btn_w + space_x < wrap_w then
+                    reaper.ImGui_SameLine(ctx, nil, space_x)
+                    current_art_x = current_art_x + btn_w + space_x
                 else
                     current_art_x = btn_w
                 end
