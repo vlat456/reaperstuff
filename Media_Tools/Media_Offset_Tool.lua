@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.5.2
+-- @version 1.5.3
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.5.2"
+local script_name = "Media Offset Tool v1.5.3"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1290,15 +1290,23 @@ local function apply_offset_to_targets(value, preset_name)
 
             -- 2. Collect indices of old keyswitches to delete, safely referencing the original take structure
             local deletions_map = {}
-            if gui_state.write_keyswitches and preset_name and preset_name ~= "" then
+            if gui_state.write_keyswitches and preset_name ~= nil then
                 local num_notes = reaper.MIDI_CountEvts(take)
-                for _, note_info in ipairs(selected_notes) do
+                for i, note_info in ipairs(selected_notes) do
                     local startppq = note_info.startppq
                     local chan = note_info.chan
+                    
+                    local target_info = gui_state.selected_targets[i]
+                    local orig_ppq = target_info and target_info.original_ppq or startppq
+                    
+                    -- Look in a wide range around original and current positions to capture any shifted keyswitches
+                    local min_ppq = math.min(startppq, orig_ppq) - 100
+                    local max_ppq = math.max(startppq, orig_ppq) + 100
+                    
                     for idx = 0, num_notes - 1 do
                         local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
                         if r and ch == chan and not sel then -- Skip selected target notes!
-                            if sppq >= (startppq - 60) and sppq <= startppq then
+                            if sppq >= min_ppq and sppq <= max_ppq then
                                 if pi < 36 or is_keyswitch_pitch(pi) then
                                     deletions_map[idx] = true
                                 end
@@ -1431,6 +1439,16 @@ end
 local function adjust_offset_to_value(target_ms, preset_name)
     if #gui_state.selected_targets == 0 then return end
     
+    -- Determine active preset first so we can apply the correct keyswitches/triggers
+    local active_preset = ""
+    if preset_name and preset_name ~= "" then
+        active_preset = preset_name
+    elseif combo_preset_name ~= "" and presets[combo_preset_name] ~= nil then
+        if math.abs(presets[combo_preset_name] - target_ms) < 0.01 then
+            active_preset = combo_preset_name
+        end
+    end
+    
     local eff_mode = get_effective_mode()
     local undo_msg = ""
     if eff_mode == MODE_MIDI_NOTES then
@@ -1444,7 +1462,7 @@ local function adjust_offset_to_value(target_ms, preset_name)
     end
     
     reaper.Undo_BeginBlock2(0)
-    apply_offset_to_targets(target_ms, preset_name)
+    apply_offset_to_targets(target_ms, active_preset)
     reaper.Undo_EndBlock2(0, undo_msg, -1)
     
     if eff_mode == MODE_TRACK_OFFSET then
@@ -1480,14 +1498,6 @@ local function adjust_offset_to_value(target_ms, preset_name)
     end
     
     -- Persist/Clear preset association
-    local active_preset = ""
-    if preset_name and preset_name ~= "" then
-        active_preset = preset_name
-    elseif combo_preset_name ~= "" and presets[combo_preset_name] ~= nil then
-        if math.abs(presets[combo_preset_name] - target_ms) < 0.01 then
-            active_preset = combo_preset_name
-        end
-    end
     save_preset_name_to_targets(active_preset)
     
     current_preset_name = active_preset
@@ -1703,6 +1713,7 @@ local function render_ui()
                 if lib ~= "" then
                     gui_state.selected_library = lib
                 end
+                adjust_offset_to_value(presets[name], name)
             end
             if is_selected then
                 reaper.ImGui_SetItemDefaultFocus(ctx)
