@@ -139,9 +139,12 @@ local function freeze_selected_items(track, selected_items, mode, format)
     
     reaper.Main_OnCommand(action_id, 0)
 
-    -- 7. Update track FX states post-render: Bypass ALL plugins on the track
+    -- 7. Restore track FX states to pre-freeze state
     for i = 0, num_fx - 1 do
-        reaper.TrackFX_SetEnabled(track, i, false)
+        local guid = reaper.TrackFX_GetFXGUID(track, i)
+        if guid and orig_enabled[guid] ~= nil then
+            reaper.TrackFX_SetEnabled(track, i, orig_enabled[guid])
+        end
     end
 
     reaper.Undo_EndBlock("Freeze selected items with custom FX", -1)
