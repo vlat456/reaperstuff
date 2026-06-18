@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.5.8
+-- @version 1.5.9
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.5.8"
+local script_name = "Media Offset Tool v1.5.9"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1368,8 +1368,9 @@ local function apply_offset_to_targets(value, preset_name)
                 end
             end
 
-            -- 5. Modify the target notes' positions and queue new keyswitch insertions
+            -- 5. Modify the target notes' positions, queue new keyswitch insertions, and queue take marker updates
             local insertions = {}
+            local take_marker_updates = {}
             for i, info in ipairs(gui_state.selected_targets) do
                 local note_info = selected_notes[i]
                 if not note_info then break end
@@ -1413,6 +1414,21 @@ local function apply_offset_to_targets(value, preset_name)
                         })
                     end
                 end
+                
+                if preset_name ~= nil then
+                    local lib, art = split_preset_name(preset_name)
+                    local display_label = art
+                    if display_label == "" then
+                        display_label = lib
+                    end
+                    local note_proj_time_before_shift = reaper.MIDI_GetProjTimeFromPPQPos(take, note_info.startppq)
+                    local new_proj_time = info.start_time + shift_sec
+                    table.insert(take_marker_updates, {
+                        old_time = note_proj_time_before_shift,
+                        new_time = new_proj_time,
+                        label = display_label
+                    })
+                end
             end
 
             -- 6. Write MIDI Text Events (safe to do, only when keyswitch writing is enabled)
@@ -1444,6 +1460,63 @@ local function apply_offset_to_targets(value, preset_name)
                 )
             end
             reaper.MIDI_Sort(take)
+            
+            -- 8. Update Take Markers (for UI convenience in Arrange view)
+            if #take_marker_updates > 0 then
+                local item = reaper.GetMediaItemTake_Item(take)
+                if item then
+                    local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                    local offset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+                    local playrate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+                    
+                    -- Collect old source positions to delete
+                    local old_positions = {}
+                    for _, up in ipairs(take_marker_updates) do
+                        local old_src = (up.old_time - item_pos) * playrate + offset
+                        table.insert(old_positions, old_src)
+                    end
+                    
+                    -- Delete take markers at any of the old positions
+                    local num_markers = reaper.GetNumTakeMarkers(take)
+                    local indices_to_delete = {}
+                    for idx = 0, num_markers - 1 do
+                        local m_pos, m_name = reaper.GetTakeMarker(take, idx)
+                        if m_pos >= 0 then
+                            for _, old_src in ipairs(old_positions) do
+                                if math.abs(m_pos - old_src) < 0.001 then
+                                    table.insert(indices_to_delete, idx)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    -- Sort and delete in descending order
+                    table.sort(indices_to_delete, function(a, b) return a > b end)
+                    for _, idx in ipairs(indices_to_delete) do
+                        reaper.DeleteTakeMarker(take, idx)
+                    end
+                    
+                    -- Insert new markers, avoiding duplicates at the same position
+                    local inserted_positions = {}
+                    for _, up in ipairs(take_marker_updates) do
+                        if up.label ~= "" then
+                            local new_src = (up.new_time - item_pos) * playrate + offset
+                            local duplicate = false
+                            for _, pos in ipairs(inserted_positions) do
+                                if math.abs(pos - new_src) < 0.001 then
+                                    duplicate = true
+                                    break
+                                end
+                            end
+                            if not duplicate then
+                                reaper.SetTakeMarker(take, -1, up.label, new_src)
+                                table.insert(inserted_positions, new_src)
+                            end
+                        end
+                    end
+                end
+            end
+            
             local item = reaper.GetMediaItemTake_Item(take)
             if item then
                 reaper.UpdateItemInProject(item)
