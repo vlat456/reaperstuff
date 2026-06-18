@@ -728,6 +728,25 @@ local function update_targets_list(force)
                 gui_state.slider_value = 0.0
             end
         end
+        
+        -- Determine common preset name on selection change
+        if #gui_state.selected_targets > 0 then
+            local first_preset = gui_state.selected_targets[1].preset_name or ""
+            local all_same = true
+            for i = 2, #gui_state.selected_targets do
+                if (gui_state.selected_targets[i].preset_name or "") ~= first_preset then
+                    all_same = false
+                    break
+                end
+            end
+            if all_same then
+                current_preset_name = first_preset
+            else
+                current_preset_name = ""
+            end
+        else
+            current_preset_name = ""
+        end
     else
         -- Sync baselines and values if NOT dragging
         local is_slider_active = reaper.ImGui_IsAnyItemActive(ctx) or gui_state.is_dragging
@@ -785,6 +804,17 @@ local function update_targets_list(force)
                     else
                         gui_state.slider_value = 0.0
                     end
+                    
+                    -- Update current_preset_name on drift
+                    local first_preset = gui_state.selected_targets[1].preset_name or ""
+                    local all_same_preset = true
+                    for i = 2, #gui_state.selected_targets do
+                        if (gui_state.selected_targets[i].preset_name or "") ~= first_preset then
+                            all_same_preset = false
+                            break
+                        end
+                    end
+                    current_preset_name = all_same_preset and first_preset or ""
                 end
             elseif eff_mode == MODE_TRACK_OFFSET then
                 local first_info = gui_state.selected_targets[1]
@@ -850,24 +880,7 @@ local function update_targets_list(force)
         end
     end
     
-    -- Determine common preset name
-    if #gui_state.selected_targets > 0 then
-        local first_preset = gui_state.selected_targets[1].preset_name or ""
-        local all_same = true
-        for i = 2, #gui_state.selected_targets do
-            if (gui_state.selected_targets[i].preset_name or "") ~= first_preset then
-                all_same = false
-                break
-            end
-        end
-        if all_same then
-            current_preset_name = first_preset
-        else
-            current_preset_name = ""
-        end
-    else
-        current_preset_name = ""
-    end
+
 end
 
 -- Apply current slider/adjustment value to all selected targets
