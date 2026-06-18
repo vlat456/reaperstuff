@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.2.2
+-- @version 1.3.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.2.2"
+local script_name = "Media Offset Tool v1.3.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -760,6 +760,12 @@ local function update_targets_list(force)
             if all_same then
                 current_preset_name = first_preset
                 combo_preset_name = first_preset
+                if first_preset ~= "" then
+                    local lib, art = split_preset_name(first_preset)
+                    if lib ~= "" then
+                        gui_state.selected_library = lib
+                    end
+                end
             else
                 current_preset_name = ""
                 combo_preset_name = ""
@@ -827,8 +833,22 @@ local function update_targets_list(force)
                         gui_state.slider_value = 0.0
                     end
                     
+                    local first_preset = gui_state.selected_targets[1].preset_name or ""
+                    local all_same_preset = true
+                    for i = 2, #gui_state.selected_targets do
+                        if (gui_state.selected_targets[i].preset_name or "") ~= first_preset then
+                            all_same_preset = false
+                            break
+                        end
+                    end
                     current_preset_name = all_same_preset and first_preset or ""
                     combo_preset_name = current_preset_name
+                    if current_preset_name ~= "" then
+                        local lib, art = split_preset_name(current_preset_name)
+                        if lib ~= "" then
+                            gui_state.selected_library = lib
+                        end
+                    end
                 end
             elseif eff_mode == MODE_TRACK_OFFSET then
                 if not is_previewing then
@@ -1029,6 +1049,12 @@ local function adjust_offset_to_value(target_ms, preset_name)
     
     current_preset_name = active_preset
     combo_preset_name = active_preset
+    if active_preset ~= "" then
+        local lib, art = split_preset_name(active_preset)
+        if lib ~= "" then
+            gui_state.selected_library = lib
+        end
+    end
 end
 
 -- Helper to apply delta relative to current value
@@ -1188,6 +1214,10 @@ local function render_ui()
             if reaper.ImGui_Selectable(ctx, name, is_selected) then
                 combo_preset_name = name
                 gui_state.slider_value = presets[name]
+                local lib, art = split_preset_name(name)
+                if lib ~= "" then
+                    gui_state.selected_library = lib
+                end
             end
             if is_selected then
                 reaper.ImGui_SetItemDefaultFocus(ctx)
@@ -1764,12 +1794,13 @@ local function render_ui()
         end
     end
 
-    -- Preset Board (10x10 Grid)
+    -- Preset Board (2-Row wrapped buttons)
     reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
     
-    reaper.ImGui_Text(ctx, "Preset Board (10x10):")
+    reaper.ImGui_Text(ctx, "Preset Board:")
+    reaper.ImGui_Spacing(ctx)
     
     -- Prepare grouped data
     local libs = {}
@@ -1785,9 +1816,7 @@ local function render_ui()
                 libs[lib] = {}
                 table.insert(lib_names, lib)
             end
-            if #libs[lib] < 10 then
-                table.insert(libs[lib], { name = name, art = art, offset = presets[name] })
-            end
+            table.insert(libs[lib], { name = name, art = art, offset = presets[name] })
         end
     end
     
@@ -1796,75 +1825,98 @@ local function render_ui()
         table.sort(libs[lib], function(a, b) return a.art < b.art end)
     end
     
-    -- Limit to first 10 libraries
-    local num_cols = math.min(#lib_names, 10)
-    
-    -- Set style for the table buttons
-    reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_FramePadding, 2.0, 2.0)
-    
-    local table_flags = (imgui.TableFlags_Borders or 0) | (imgui.TableFlags_RowBg or 0) | (imgui.TableFlags_SizingStretchSame or 0)
-    if reaper.ImGui_BeginTable(ctx, "preset_grid_table", 10, table_flags, 700.0) then
-        -- Table Headers (Library Names)
-        local col_flags = imgui.TableColumnFlags_WidthStretch or 8
-        for col = 1, 10 do
-            local lib_name = ""
-            if col <= num_cols then
-                lib_name = lib_names[col]
-            end
-            reaper.ImGui_TableSetupColumn(ctx, lib_name ~= "" and lib_name or " ", col_flags, 1.0)
+    if #lib_names > 0 then
+        -- Keep selected library valid
+        if not gui_state.selected_library or not libs[gui_state.selected_library] then
+            gui_state.selected_library = lib_names[1]
         end
-        reaper.ImGui_TableHeadersRow(ctx)
         
-        -- Table Rows (Articulations)
-        for row = 1, 10 do
-            reaper.ImGui_TableNextRow(ctx)
-            for col = 1, 10 do
-                reaper.ImGui_TableSetColumnIndex(ctx, col - 1)
-                
-                local cell_data = nil
-                if col <= num_cols then
-                    local lib_name = lib_names[col]
-                    cell_data = libs[lib_name][row]
-                end
-                
-                local cell_w, _ = reaper.ImGui_GetContentRegionAvail(ctx)
-                if cell_data then
-                    -- Draw button with articulation name
-                    local button_label = cell_data.art
-                    if button_label == "" then button_label = "Preset" end
-                    
-                    -- Color button if it's the currently selected preset
-                    local is_current = (current_preset_name == cell_data.name)
-                    if is_current then
-                        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.35, 0.8, 1.0))
-                    end
-                    
-                    -- Unique ID for ImGui button
-                    local button_id = string.format("%s##btn_%d_%d", button_label, col, row)
-                    if reaper.ImGui_Button(ctx, button_id, cell_w, 20) then
-                        current_preset_name = cell_data.name
-                        adjust_offset_to_value(cell_data.offset, cell_data.name)
-                    end
-                    
-                    if is_current then
-                        reaper.ImGui_PopStyleColor(ctx)
-                    end
-                    
-                    if reaper.ImGui_IsItemHovered(ctx) then
-                        reaper.ImGui_SetTooltip(ctx, string.format("%s\nOffset: %.1f ms", cell_data.name, cell_data.offset))
-                    end
+        -- Libraries Row
+        reaper.ImGui_TextDisabled(ctx, "Libraries:")
+        reaper.ImGui_Spacing(ctx)
+        
+        local avail_w, _ = reaper.ImGui_GetContentRegionAvail(ctx)
+        local current_x = 0.0
+        for i, lib_name in ipairs(lib_names) do
+            local text_w, _ = reaper.ImGui_CalcTextSize(ctx, lib_name)
+            local btn_w = text_w + 14.0 -- extra width for padding
+            
+            if i > 1 then
+                if current_x + btn_w + 4.0 < avail_w then
+                    reaper.ImGui_SameLine(ctx, nil, 4.0)
+                    current_x = current_x + btn_w + 4.0
                 else
-                    -- Render a disabled placeholder button to maintain the grid look
-                    reaper.ImGui_BeginDisabled(ctx)
-                    reaper.ImGui_Button(ctx, string.format("-##empty_%d_%d", col, row), cell_w, 20)
-                    reaper.ImGui_EndDisabled(ctx)
+                    current_x = btn_w
                 end
+            else
+                current_x = btn_w
+            end
+            
+            local is_active = (gui_state.selected_library == lib_name)
+            if is_active then
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.45, 0.25, 0.65, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.55, 0.35, 0.75, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive, reaper.ImGui_ColorConvertDouble4ToU32(0.35, 0.15, 0.55, 1.0))
+            else
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.18, 0.26, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.28, 0.25, 0.36, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive, reaper.ImGui_ColorConvertDouble4ToU32(0.15, 0.13, 0.2, 1.0))
+            end
+            
+            if reaper.ImGui_Button(ctx, lib_name .. "##lib_" .. i) then
+                gui_state.selected_library = lib_name
+            end
+            
+            reaper.ImGui_PopStyleColor(ctx, 3)
+        end
+        
+        reaper.ImGui_Spacing(ctx)
+        reaper.ImGui_Spacing(ctx)
+        
+        -- Articulations Row
+        reaper.ImGui_TextDisabled(ctx, "Articulations (" .. gui_state.selected_library .. "):")
+        reaper.ImGui_Spacing(ctx)
+        
+        local arts = libs[gui_state.selected_library] or {}
+        local current_art_x = 0.0
+        for i, art_data in ipairs(arts) do
+            local text_w, _ = reaper.ImGui_CalcTextSize(ctx, art_data.art)
+            local btn_w = text_w + 14.0
+            
+            if i > 1 then
+                if current_art_x + btn_w + 4.0 < avail_w then
+                    reaper.ImGui_SameLine(ctx, nil, 4.0)
+                    current_art_x = current_art_x + btn_w + 4.0
+                else
+                    current_art_x = btn_w
+                end
+            else
+                current_art_x = btn_w
+            end
+            
+            local is_current = (current_preset_name == art_data.name)
+            if is_current then
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.35, 0.8, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.6, 0.45, 0.9, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive, reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.25, 0.7, 1.0))
+            end
+            
+            if reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. i) then
+                current_preset_name = art_data.name
+                adjust_offset_to_value(art_data.offset, art_data.name)
+            end
+            
+            if is_current then
+                reaper.ImGui_PopStyleColor(ctx, 3)
+            end
+            
+            if reaper.ImGui_IsItemHovered(ctx) then
+                reaper.ImGui_SetTooltip(ctx, string.format("%s\nOffset: %.1f ms", art_data.name, art_data.offset))
             end
         end
-        reaper.ImGui_EndTable(ctx)
+    else
+        reaper.ImGui_TextDisabled(ctx, "No presets configured to show in grid.")
     end
-    
-    reaper.ImGui_PopStyleVar(ctx)
 end
 
 -- Key shortcuts
@@ -1902,7 +1954,7 @@ local function loop()
     update_targets_list()
 
     -- Set size constraints
-    reaper.ImGui_SetNextWindowSizeConstraints(ctx, 720, 200, 1200, 800)
+    reaper.ImGui_SetNextWindowSizeConstraints(ctx, 460, 150, 800, 800)
 
     -- Set window style/colors
     push_theme()
