@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.5.5
+-- @version 1.5.6
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.5.5"
+local script_name = "Media Offset Tool v1.5.6"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -666,7 +666,7 @@ local function detect_preset_for_note(take, target_idx, target_vel, target_start
         local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
         if not retval then break end
         if target_start_ppq - startppq > 960.0 then break end -- Limit keyswitch search to 960 ticks (1 beat) to prevent inheriting previous notes' keyswitches
-        if chan == target_chan and (pitch < 36 or is_keyswitch_pitch(pitch)) then
+        if chan == target_chan and is_keyswitch_pitch(pitch) then
             table.insert(candidates, { pitch = pitch, vel = vel, startppq = startppq, dist = target_start_ppq - startppq })
         end
         i = i - 1
@@ -680,7 +680,7 @@ local function detect_preset_for_note(take, target_idx, target_vel, target_start
         local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, j)
         if not retval then break end
         if startppq ~= target_start_ppq then break end
-        if chan == target_chan and (pitch < 36 or is_keyswitch_pitch(pitch)) then
+        if chan == target_chan and is_keyswitch_pitch(pitch) then
             table.insert(candidates, { pitch = pitch, vel = vel, startppq = startppq, dist = 0.0 })
         end
         j = j + 1
@@ -771,7 +771,7 @@ local function update_targets_list(force)
                 local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, note_idx)
                 if retval then
                     -- Ignore keyswitches from being shifted as target notes
-                    if not (pitch < 36 or is_keyswitch_pitch(pitch)) then
+                    if not is_keyswitch_pitch(pitch) then
                         -- Look up in offsets metadata
                         local found_offset = 0.0
                         local found_preset = ""
@@ -1279,7 +1279,7 @@ local function apply_offset_to_targets(value, preset_name)
                 local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, note_idx)
                 if retval then
                     -- Ignore keyswitches from target notes collection
-                    if not (pitch < 36 or is_keyswitch_pitch(pitch)) then
+                    if not is_keyswitch_pitch(pitch) then
                         table.insert(selected_notes, {
                             idx = note_idx,
                             selected = selected,
@@ -1320,7 +1320,7 @@ local function apply_offset_to_targets(value, preset_name)
                         local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
                         if r and ch == chan and not target_indices[idx] then -- Skip target notes based on exact indices!
                             if sppq >= min_ppq and sppq <= max_ppq then
-                                if pi < 36 or is_keyswitch_pitch(pi) then
+                                if is_keyswitch_pitch(pi) then
                                     deletions_map[idx] = true
                                 end
                             end
@@ -1350,7 +1350,7 @@ local function apply_offset_to_targets(value, preset_name)
                 local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, note_idx)
                 if retval then
                     -- Ignore keyswitches from target notes collection
-                    if not (pitch < 36 or is_keyswitch_pitch(pitch)) then
+                    if not is_keyswitch_pitch(pitch) then
                         table.insert(selected_notes, {
                             idx = note_idx,
                             selected = selected,
