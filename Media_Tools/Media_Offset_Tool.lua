@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.4.0
+-- @version 1.4.1
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.4.0"
+local script_name = "Media Offset Tool v1.4.1"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1712,76 +1712,101 @@ local function render_ui()
                 return string.format("%s%d", note, octave)
             end
             
-            -- Keyswitch Note Slider
-            local pitch_val = presets_ks_pitch[combo_preset_name] or -1
-            reaper.ImGui_Text(ctx, "Keyswitch Note:")
-            reaper.ImGui_SameLine(ctx, 150)
-            reaper.ImGui_SetNextItemWidth(ctx, 220)
-            local fmt = (pitch_val == -1) and "Disabled" or ("%d (" .. get_note_name(pitch_val) .. ")")
-            local changed_pitch, new_pitch = reaper.ImGui_SliderInt(ctx, "##ks_pitch", pitch_val, -1, 127, fmt)
-            if changed_pitch then
-                presets_ks_pitch[combo_preset_name] = new_pitch
-                save_presets(presets, presets_show_in_grid)
-            end
-            
-            -- Keyswitch Velocity Range
-            local ks_vel_min_val = presets_ks_vel_min[combo_preset_name] or -1
-            local ks_vel_max_val = presets_ks_vel_max[combo_preset_name] or -1
-            local has_ks_vel = (ks_vel_min_val ~= -1 or ks_vel_max_val ~= -1)
-            
-            reaper.ImGui_Text(ctx, "Keyswitch Vel:")
-            reaper.ImGui_SameLine(ctx, 150)
-            local cb_changed_ks_vel, new_has_ks_vel = reaper.ImGui_Checkbox(ctx, "Limit##limit_ks_vel", has_ks_vel)
-            if cb_changed_ks_vel then
-                if new_has_ks_vel then
-                    presets_ks_vel_min[combo_preset_name] = 1
-                    presets_ks_vel_max[combo_preset_name] = 127
+            -- Helper to determine Trigger Mode from trigger values
+            local function get_preset_trigger_mode(name)
+                local ks_pitch = presets_ks_pitch[name] or -1
+                local note_vel_min = presets_note_vel_min[name] or -1
+                local note_vel_max = presets_note_vel_max[name] or -1
+                
+                if ks_pitch >= 0 and note_vel_min >= 0 and note_vel_max >= 0 then
+                    return "Note + Velocity"
+                elseif ks_pitch >= 0 then
+                    return "Note"
+                elseif note_vel_min >= 0 and note_vel_max >= 0 then
+                    return "Velocity"
                 else
-                    presets_ks_vel_min[combo_preset_name] = -1
-                    presets_ks_vel_max[combo_preset_name] = -1
-                end
-                save_presets(presets, presets_show_in_grid)
-            end
-            if new_has_ks_vel or has_ks_vel then
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_SetNextItemWidth(ctx, 180)
-                local min_val = presets_ks_vel_min[combo_preset_name] or -1
-                if min_val < 0 then min_val = 1 end
-                local max_val = presets_ks_vel_max[combo_preset_name] or -1
-                if max_val < 0 then max_val = 127 end
-                local changed_range, new_min, new_max = reaper.ImGui_DragIntRange2(ctx, "##ks_vel_range", min_val, max_val, 1.0, 1, 127, "Min: %d", "Max: %d")
-                if changed_range then
-                    presets_ks_vel_min[combo_preset_name] = new_min
-                    presets_ks_vel_max[combo_preset_name] = new_max
-                    save_presets(presets, presets_show_in_grid)
+                    return "None"
                 end
             end
             
-            -- Note Velocity Range
-            local note_vel_min_val = presets_note_vel_min[combo_preset_name] or -1
-            local note_vel_max_val = presets_note_vel_max[combo_preset_name] or -1
-            local has_note_vel = (note_vel_min_val ~= -1 or note_vel_max_val ~= -1)
+            local current_mode = get_preset_trigger_mode(combo_preset_name)
             
-            reaper.ImGui_Text(ctx, "Played Note Vel:")
+            reaper.ImGui_Text(ctx, "Trigger Mode:")
             reaper.ImGui_SameLine(ctx, 150)
-            local cb_changed_note_vel, new_has_note_vel = reaper.ImGui_Checkbox(ctx, "Limit##limit_note_vel", has_note_vel)
-            if cb_changed_note_vel then
-                if new_has_note_vel then
-                    presets_note_vel_min[combo_preset_name] = 1
-                    presets_note_vel_max[combo_preset_name] = 127
-                else
-                    presets_note_vel_min[combo_preset_name] = -1
-                    presets_note_vel_max[combo_preset_name] = -1
+            reaper.ImGui_SetNextItemWidth(ctx, 180)
+            if reaper.ImGui_BeginCombo(ctx, "##trigger_mode", current_mode) then
+                local modes = {"None", "Note", "Velocity", "Note + Velocity"}
+                for _, m in ipairs(modes) do
+                    local is_sel = (m == current_mode)
+                    if reaper.ImGui_Selectable(ctx, m, is_sel) then
+                        if m == "None" then
+                            presets_ks_pitch[combo_preset_name] = -1
+                            presets_note_vel_min[combo_preset_name] = -1
+                            presets_note_vel_max[combo_preset_name] = -1
+                        elseif m == "Note" then
+                            if (presets_ks_pitch[combo_preset_name] or -1) < 0 then
+                                presets_ks_pitch[combo_preset_name] = 24 -- default C0
+                            end
+                            presets_note_vel_min[combo_preset_name] = -1
+                            presets_note_vel_max[combo_preset_name] = -1
+                        elseif m == "Velocity" then
+                            presets_ks_pitch[combo_preset_name] = -1
+                            if (presets_note_vel_min[combo_preset_name] or -1) < 0 then
+                                presets_note_vel_min[combo_preset_name] = 1
+                                presets_note_vel_max[combo_preset_name] = 127
+                            end
+                        elseif m == "Note + Velocity" then
+                            if (presets_ks_pitch[combo_preset_name] or -1) < 0 then
+                                presets_ks_pitch[combo_preset_name] = 24
+                            end
+                            if (presets_note_vel_min[combo_preset_name] or -1) < 0 then
+                                presets_note_vel_min[combo_preset_name] = 1
+                                presets_note_vel_max[combo_preset_name] = 127
+                            end
+                        end
+                        save_presets(presets, presets_show_in_grid)
+                    end
                 end
-                save_presets(presets, presets_show_in_grid)
+                reaper.ImGui_EndCombo(ctx)
             end
-            if new_has_note_vel or has_note_vel then
-                reaper.ImGui_SameLine(ctx)
+            
+            reaper.ImGui_Spacing(ctx)
+            
+            -- Render Note dropdown if mode is Note or Note + Velocity
+            if current_mode == "Note" or current_mode == "Note + Velocity" then
+                local pitch_val = presets_ks_pitch[combo_preset_name] or 24
+                if pitch_val < 0 then pitch_val = 24 end
+                reaper.ImGui_Text(ctx, "Keyswitch Note:")
+                reaper.ImGui_SameLine(ctx, 150)
                 reaper.ImGui_SetNextItemWidth(ctx, 180)
-                local min_val = presets_note_vel_min[combo_preset_name] or -1
+                
+                local ks_preview = get_note_name(pitch_val) .. " (" .. tostring(pitch_val) .. ")"
+                if reaper.ImGui_BeginCombo(ctx, "##ks_pitch_combo", ks_preview) then
+                    for p = 0, 127 do
+                        local is_sel = (p == pitch_val)
+                        local label = get_note_name(p) .. " (" .. tostring(p) .. ")"
+                        if reaper.ImGui_Selectable(ctx, label, is_sel) then
+                            presets_ks_pitch[combo_preset_name] = p
+                            save_presets(presets, presets_show_in_grid)
+                        end
+                        if is_sel then
+                            reaper.ImGui_SetItemDefaultFocus(ctx)
+                        end
+                    end
+                    reaper.ImGui_EndCombo(ctx)
+                end
+            end
+            
+            -- Render Played Note Velocity Range drag if mode is Velocity or Note + Velocity
+            if current_mode == "Velocity" or current_mode == "Note + Velocity" then
+                local min_val = presets_note_vel_min[combo_preset_name] or 1
+                local max_val = presets_note_vel_max[combo_preset_name] or 127
                 if min_val < 0 then min_val = 1 end
-                local max_val = presets_note_vel_max[combo_preset_name] or -1
                 if max_val < 0 then max_val = 127 end
+                
+                reaper.ImGui_Text(ctx, "Played Note Vel:")
+                reaper.ImGui_SameLine(ctx, 150)
+                reaper.ImGui_SetNextItemWidth(ctx, 180)
                 local changed_range, new_min, new_max = reaper.ImGui_DragIntRange2(ctx, "##note_vel_range", min_val, max_val, 1.0, 1, 127, "Min: %d", "Max: %d")
                 if changed_range then
                     presets_note_vel_min[combo_preset_name] = new_min
