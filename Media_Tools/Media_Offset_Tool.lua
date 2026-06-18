@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.4.9
+-- @version 1.5.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.4.9"
+local script_name = "Media Offset Tool v1.5.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -181,11 +181,17 @@ local function get_settings_file_path()
 end
 
 -- Default theme colors
-local DEFAULT_BG     = {0.08, 0.08, 0.10}  -- Col_WindowBg
-local DEFAULT_ACCENT = {0.50, 0.35, 0.80}  -- SliderGrab / Button family
+local DEFAULT_BG       = {0.08, 0.08, 0.10}  -- Col_WindowBg
+local DEFAULT_ACCENT   = {0.50, 0.35, 0.80}  -- SliderGrab / Button family
+local DEFAULT_TEXT     = {0.92, 0.92, 0.95}  -- Col_Text
+local DEFAULT_DANGER   = {0.65, 0.25, 0.25}  -- Destructive actions (Reset, Delete)
+local DEFAULT_POSITIVE = {0.25, 0.55, 0.28}  -- Positive actions (Save)
 
-local theme_bg     = {DEFAULT_BG[1],     DEFAULT_BG[2],     DEFAULT_BG[3]}
-local theme_accent = {DEFAULT_ACCENT[1], DEFAULT_ACCENT[2], DEFAULT_ACCENT[3]}
+local theme_bg       = {DEFAULT_BG[1],       DEFAULT_BG[2],       DEFAULT_BG[3]}
+local theme_accent   = {DEFAULT_ACCENT[1],   DEFAULT_ACCENT[2],   DEFAULT_ACCENT[3]}
+local theme_text     = {DEFAULT_TEXT[1],     DEFAULT_TEXT[2],     DEFAULT_TEXT[3]}
+local theme_danger   = {DEFAULT_DANGER[1],   DEFAULT_DANGER[2],   DEFAULT_DANGER[3]}
+local theme_positive = {DEFAULT_POSITIVE[1], DEFAULT_POSITIVE[2], DEFAULT_POSITIVE[3]}
 
 local function load_settings()
     local path = get_settings_file_path()
@@ -201,6 +207,12 @@ local function load_settings()
                 theme_bg = {parts[1], parts[2], parts[3]}
             elseif key == "accent" and #parts == 3 then
                 theme_accent = {parts[1], parts[2], parts[3]}
+            elseif key == "text" and #parts == 3 then
+                theme_text = {parts[1], parts[2], parts[3]}
+            elseif key == "danger" and #parts == 3 then
+                theme_danger = {parts[1], parts[2], parts[3]}
+            elseif key == "positive" and #parts == 3 then
+                theme_positive = {parts[1], parts[2], parts[3]}
             end
         end
     end
@@ -211,16 +223,22 @@ local function save_settings()
     local path = get_settings_file_path()
     local f = io.open(path, "w")
     if not f then return end
-    f:write(string.format("bg=%.4f,%.4f,%.4f\n",     theme_bg[1],     theme_bg[2],     theme_bg[3]))
-    f:write(string.format("accent=%.4f,%.4f,%.4f\n", theme_accent[1], theme_accent[2], theme_accent[3]))
+    f:write(string.format("bg=%.4f,%.4f,%.4f\n",       theme_bg[1],       theme_bg[2],       theme_bg[3]))
+    f:write(string.format("accent=%.4f,%.4f,%.4f\n",   theme_accent[1],   theme_accent[2],   theme_accent[3]))
+    f:write(string.format("text=%.4f,%.4f,%.4f\n",     theme_text[1],     theme_text[2],     theme_text[3]))
+    f:write(string.format("danger=%.4f,%.4f,%.4f\n",   theme_danger[1],   theme_danger[2],   theme_danger[3]))
+    f:write(string.format("positive=%.4f,%.4f,%.4f\n", theme_positive[1], theme_positive[2], theme_positive[3]))
     f:close()
 end
 
 load_settings()
 
 -- Working copies used by the color pickers (only committed on Save)
-local settings_edit_bg     = {theme_bg[1],     theme_bg[2],     theme_bg[3]}
-local settings_edit_accent = {theme_accent[1], theme_accent[2], theme_accent[3]}
+local settings_edit_bg       = {theme_bg[1],       theme_bg[2],       theme_bg[3]}
+local settings_edit_accent   = {theme_accent[1],   theme_accent[2],   theme_accent[3]}
+local settings_edit_text     = {theme_text[1],     theme_text[2],     theme_text[3]}
+local settings_edit_danger   = {theme_danger[1],   theme_danger[2],   theme_danger[3]}
+local settings_edit_positive = {theme_positive[1], theme_positive[2], theme_positive[3]}
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -1520,7 +1538,7 @@ local function push_theme()
     reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,           u32(btn))
     reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered,    u32(btnH))
     reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,     u32(btnA))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text,             reaper.ImGui_ColorConvertDouble4ToU32(0.92, 0.92, 0.95, 1.0))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text,             reaper.ImGui_ColorConvertDouble4ToU32(theme_text[1], theme_text[2], theme_text[3], 1.0))
     reaper.ImGui_PushStyleColor(ctx, imgui.Col_Header,           u32(hdr))
     reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderHovered,    u32(hdrH))
     reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderActive,     u32(hdrA))
@@ -1537,6 +1555,23 @@ local function pop_theme()
     reaper.ImGui_PopStyleColor(ctx, 16)
     reaper.ImGui_PopStyleVar(ctx, 4)
 end
+
+-- Push/pop helpers for semantically-colored buttons (override the theme defaults)
+local function push_danger_style()
+    local d = theme_danger
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(d[1]*0.70, d[2]*0.40, d[3]*0.40, 1.0))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(d[1]*0.90, d[2]*0.50, d[3]*0.50, 1.0))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(d[1]*1.00, d[2]*0.60, d[3]*0.60, 1.0))
+end
+local function pop_danger_style()   reaper.ImGui_PopStyleColor(ctx, 3) end
+
+local function push_positive_style()
+    local p = theme_positive
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(p[1]*0.55, p[2]*0.85, p[3]*0.55, 1.0))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(p[1]*0.70, p[2]*1.00, p[3]*0.70, 1.0))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(p[1]*0.40, p[2]*0.70, p[3]*0.40, 1.0))
+end
+local function pop_positive_style() reaper.ImGui_PopStyleColor(ctx, 3) end
 
 -- Helper to get track and take from current context, independent of mode
 local function get_current_context_track_and_take()
@@ -2084,8 +2119,9 @@ local function render_ui()
 
     -- Explicit Apply Button
     reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.35, 0.2, 0.55, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.45, 0.3, 0.7, 1.0))
+    local ac = theme_accent
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(ac[1]*0.70, ac[2]*0.40, ac[3]*1.10 > 1 and 1 or ac[3]*1.10, 1.0))
+    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(ac[1]*0.90, ac[2]*0.60, math.min(ac[3]*1.20, 1.0), 1.0))
     if reaper.ImGui_Button(ctx, "Apply") then
         adjust_offset_to_value(gui_state.slider_value)
     end
@@ -2115,9 +2151,12 @@ local function render_ui()
     if reaper.ImGui_Button(ctx, "Settings") then
         show_settings = not show_settings
         if show_settings then
-            -- Sync edit copies from current applied theme
-            settings_edit_bg     = {theme_bg[1],     theme_bg[2],     theme_bg[3]}
-            settings_edit_accent = {theme_accent[1], theme_accent[2], theme_accent[3]}
+            -- Sync all edit copies from current applied theme
+            settings_edit_bg       = {theme_bg[1],       theme_bg[2],       theme_bg[3]}
+            settings_edit_accent   = {theme_accent[1],   theme_accent[2],   theme_accent[3]}
+            settings_edit_text     = {theme_text[1],     theme_text[2],     theme_text[3]}
+            settings_edit_danger   = {theme_danger[1],   theme_danger[2],   theme_danger[3]}
+            settings_edit_positive = {theme_positive[1], theme_positive[2], theme_positive[3]}
         end
     end
     if settings_active then
@@ -2263,12 +2302,11 @@ local function render_ui()
     reaper.ImGui_SameLine(ctx)
     
     -- Highlight Reset 0 button
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.25, 0.25, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.65, 0.3, 0.3, 1.0))
+    push_danger_style()
     if reaper.ImGui_Button(ctx, "Reset 0", button_width, button_height) then
         reset_offsets_to_zero()
     end
-    reaper.ImGui_PopStyleColor(ctx, 2)
+    pop_danger_style()
     
     reaper.ImGui_SameLine(ctx)
     if reaper.ImGui_Button(ctx, "+0.1ms", button_width, button_height) then
@@ -2446,24 +2484,67 @@ local function render_ui()
 
         reaper.ImGui_Spacing(ctx)
 
-        -- Preview live (update theme in real time from edit copies)
-        theme_bg     = {settings_edit_bg[1],     settings_edit_bg[2],     settings_edit_bg[3]}
-        theme_accent = {settings_edit_accent[1], settings_edit_accent[2], settings_edit_accent[3]}
+        -- Text Color
+        reaper.ImGui_TextDisabled(ctx, "Text Color")
+        local tx_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
+            settings_edit_text[1], settings_edit_text[2], settings_edit_text[3], 1.0)
+        local tx_changed, new_tx_u32 = reaper.ImGui_ColorEdit3(ctx, "##text_color", tx_col_u32)
+        if tx_changed then
+            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_tx_u32)
+            settings_edit_text = {nr, ng, nb}
+        end
+
+        reaper.ImGui_Spacing(ctx)
+
+        -- Danger Color
+        reaper.ImGui_TextDisabled(ctx, "Danger Color  (Reset, Delete buttons)")
+        local dg_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
+            settings_edit_danger[1], settings_edit_danger[2], settings_edit_danger[3], 1.0)
+        local dg_changed, new_dg_u32 = reaper.ImGui_ColorEdit3(ctx, "##danger_color", dg_col_u32)
+        if dg_changed then
+            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_dg_u32)
+            settings_edit_danger = {nr, ng, nb}
+        end
+
+        reaper.ImGui_Spacing(ctx)
+
+        -- Positive Color
+        reaper.ImGui_TextDisabled(ctx, "Positive Color  (Save buttons)")
+        local pos_col_u32 = reaper.ImGui_ColorConvertDouble4ToU32(
+            settings_edit_positive[1], settings_edit_positive[2], settings_edit_positive[3], 1.0)
+        local pos_changed, new_pos_u32 = reaper.ImGui_ColorEdit3(ctx, "##positive_color", pos_col_u32)
+        if pos_changed then
+            local nr, ng, nb = reaper.ImGui_ColorConvertU32ToDouble4(new_pos_u32)
+            settings_edit_positive = {nr, ng, nb}
+        end
+
+        reaper.ImGui_Spacing(ctx)
+
+        -- Preview live (update all theme values in real time from edit copies)
+        theme_bg       = {settings_edit_bg[1],       settings_edit_bg[2],       settings_edit_bg[3]}
+        theme_accent   = {settings_edit_accent[1],   settings_edit_accent[2],   settings_edit_accent[3]}
+        theme_text     = {settings_edit_text[1],     settings_edit_text[2],     settings_edit_text[3]}
+        theme_danger   = {settings_edit_danger[1],   settings_edit_danger[2],   settings_edit_danger[3]}
+        theme_positive = {settings_edit_positive[1], settings_edit_positive[2], settings_edit_positive[3]}
 
         -- Save button
-        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(0.25, 0.45, 0.25, 1.0))
-        reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.35, 0.6, 0.35, 1.0))
+        push_positive_style()
         if reaper.ImGui_Button(ctx, "Save Settings") then
             save_settings()
         end
-        reaper.ImGui_PopStyleColor(ctx, 2)
+        pop_positive_style()
 
         -- Reset to defaults
         reaper.ImGui_SameLine(ctx)
+        push_danger_style()
         if reaper.ImGui_Button(ctx, "Reset Defaults") then
-            settings_edit_bg     = {DEFAULT_BG[1],     DEFAULT_BG[2],     DEFAULT_BG[3]}
-            settings_edit_accent = {DEFAULT_ACCENT[1], DEFAULT_ACCENT[2], DEFAULT_ACCENT[3]}
+            settings_edit_bg       = {DEFAULT_BG[1],       DEFAULT_BG[2],       DEFAULT_BG[3]}
+            settings_edit_accent   = {DEFAULT_ACCENT[1],   DEFAULT_ACCENT[2],   DEFAULT_ACCENT[3]}
+            settings_edit_text     = {DEFAULT_TEXT[1],     DEFAULT_TEXT[2],     DEFAULT_TEXT[3]}
+            settings_edit_danger   = {DEFAULT_DANGER[1],   DEFAULT_DANGER[2],   DEFAULT_DANGER[3]}
+            settings_edit_positive = {DEFAULT_POSITIVE[1], DEFAULT_POSITIVE[2], DEFAULT_POSITIVE[3]}
         end
+        pop_danger_style()
     end
 
     -- Preset Board (2-Row wrapped buttons)
@@ -2532,13 +2613,15 @@ local function render_ui()
             
             local is_active = (gui_state.selected_library == lib_name)
             if is_active then
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.45, 0.25, 0.65, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.55, 0.35, 0.75, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive, reaper.ImGui_ColorConvertDouble4ToU32(0.35, 0.15, 0.55, 1.0))
+                local a = theme_accent
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.90, a[2]*0.50, a[3]*0.82, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(a[1]*1.10 > 1 and 1 or a[1]*1.10, a[2]*0.70, a[3]*0.94, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.70, a[2]*0.30, a[3]*0.69, 1.0))
             else
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.18, 0.26, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.28, 0.25, 0.36, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive, reaper.ImGui_ColorConvertDouble4ToU32(0.15, 0.13, 0.2, 1.0))
+                local bg = theme_bg
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.12, bg[2]+0.10, bg[3]+0.16, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.20, bg[2]+0.17, bg[3]+0.26, 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.07, bg[2]+0.05, bg[3]+0.10, 1.0))
             end
             
             if reaper.ImGui_Button(ctx, lib_name .. "##lib_" .. i) then
@@ -2574,9 +2657,10 @@ local function render_ui()
             
             local is_current = (current_preset_name == art_data.name)
             if is_current then
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.35, 0.8, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.6, 0.45, 0.9, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive, reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.25, 0.7, 1.0))
+                local a = theme_accent
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(a[1], a[2], a[3], 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(math.min(a[1]+0.10, 1), math.min(a[2]+0.10, 1), math.min(a[3]+0.10, 1), 1.0))
+                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.80, a[2]*0.71, a[3]*0.88, 1.0))
             end
             
             if reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. i) then
