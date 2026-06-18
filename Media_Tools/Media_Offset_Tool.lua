@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.1.6
+-- @version 1.1.7
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.1.6"
+local script_name = "Media Offset Tool v1.1.7"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -219,7 +219,7 @@ end
 -- Helper to clean up note offsets metadata from a take
 local function cleanup_take_note_offsets(take)
     if not take or not reaper.TakeIsMIDI(take) then return end
-    local _, _, _, notes_count = reaper.MIDI_CountEvts(take)
+    local _, notes_count = reaper.MIDI_CountEvts(take)
     local offsets = get_take_note_offsets(take)
     
     -- Build a quick lookup map of existing notes by pitch_chan:ppq
