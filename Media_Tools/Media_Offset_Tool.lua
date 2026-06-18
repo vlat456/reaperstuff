@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.1.7
+-- @version 1.1.8
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.1.7"
+local script_name = "Media Offset Tool v1.1.8"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -183,7 +183,6 @@ local function get_take_note_offsets(take)
     if not guid or guid == "" then return {} end
     
     local _, val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Offsets_" .. guid, "", false)
-    reaper.ShowConsoleMsg("DEBUG [get_take_note_offsets]: Read P_EXT value: " .. tostring(val) .. "\n")
     local offsets = {}
     if val and val ~= "" then
         for entry in val:gmatch("[^;]+") do
@@ -212,7 +211,6 @@ local function save_take_note_offsets(take, offsets)
         end
     end
     local val_str = table.concat(entries, ";")
-    reaper.ShowConsoleMsg("DEBUG [save_take_note_offsets]: Writing P_EXT value: " .. val_str .. "\n")
     reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Offsets_" .. guid, val_str, true)
 end
 
@@ -252,12 +250,9 @@ local function cleanup_take_note_offsets(take)
             local lookup_key = string.format("%d_%d", o_pitch, o_chan)
             local found = false
             local ppqs = existing_notes[lookup_key]
-            local closest_diff = 999999
             if ppqs then
                 for _, startppq in ipairs(ppqs) do
-                    local diff = math.abs(startppq - expected_current_ppq)
-                    if diff < closest_diff then closest_diff = diff end
-                    if diff < 5 then
+                    if math.abs(startppq - expected_current_ppq) < 5 then
                         found = true
                         break
                     end
@@ -267,7 +262,6 @@ local function cleanup_take_note_offsets(take)
             if found then
                 cleaned_offsets[key] = offset_ms
             else
-                reaper.ShowConsoleMsg("DEBUG [cleanup]: Key " .. key .. " with offset " .. offset_ms .. " was NOT found! Closest diff: " .. closest_diff .. "\n")
                 changed = true
             end
         end
@@ -323,13 +317,10 @@ local function update_targets_list(force)
                                 local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(take, o_orig_ppq)
                                 local current_time_expected = orig_time + (offset_ms / 1000.0)
                                 local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, current_time_expected)
-                                local diff = math.abs(startppq - expected_current_ppq)
                                 
-                                reaper.ShowConsoleMsg("DEBUG [match_check]: key=" .. key .. " expected_ppq=" .. expected_current_ppq .. " note_startppq=" .. startppq .. " diff=" .. diff .. "\n")
-                                if diff < 5 then
+                                if math.abs(startppq - expected_current_ppq) < 5 then
                                     found_offset = offset_ms
                                     original_ppq = o_orig_ppq
-                                    reaper.ShowConsoleMsg("DEBUG [match_check]: SUCCESS matched! offset_ms=" .. found_offset .. "\n")
                                     break
                                 end
                             end
