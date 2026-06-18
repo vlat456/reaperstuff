@@ -283,11 +283,105 @@ local function save_take_note_offsets(take, offsets)
     reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Offsets_" .. guid, val_str, true)
 end
 
--- Helper to clean up note offsets metadata from a take
+-- Helper to parse note presets metadata from parent item (namespaced by take GUID)
+local function get_take_note_presets(take)
+    if not take or not reaper.TakeIsMIDI(take) then return {} end
+    local item = reaper.GetMediaItemTake_Item(take)
+    if not item then return {} end
+    
+    local _, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
+    if not guid or guid == "" then return {} end
+    
+    local _, val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Presets_" .. guid, "", false)
+    local presets_map = {}
+    if val and val ~= "" then
+        for entry in val:gmatch("[^;]+") do
+            local key, preset_name = entry:match("^([^:]+):(.*)$")
+            if key and preset_name then
+                presets_map[key] = preset_name
+            end
+        end
+    end
+    return presets_map
+end
+
+-- Helper to save note presets metadata to parent item (namespaced by take GUID)
+local function save_take_note_presets(take, note_presets)
+    if not take or not reaper.TakeIsMIDI(take) then return end
+    local item = reaper.GetMediaItemTake_Item(take)
+    if not item then return end
+    
+    local _, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
+    if not guid or guid == "" then return end
+    
+    local entries = {}
+    for key, val in pairs(note_presets) do
+        if val and val ~= "" then
+            table.insert(entries, key .. ":" .. val)
+        end
+    end
+    local val_str = table.concat(entries, ";")
+    reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Presets_" .. guid, val_str, true)
+end
+
+-- Helper to save the preset name metadata to all selected targets
+local function save_preset_name_to_targets(preset_name)
+    local eff_mode = get_effective_mode()
+    if #gui_state.selected_targets == 0 then return end
+    
+    if eff_mode == MODE_MIDI_NOTES then
+        local first_target = gui_state.selected_targets[1]
+        if first_target then
+            local take = first_target.take
+            local note_presets = get_take_note_presets(take)
+            for _, info in ipairs(gui_state.selected_targets) do
+                local key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
+                if preset_name and preset_name ~= "" then
+                    note_presets[key] = preset_name
+                    info.preset_name = preset_name
+                else
+                    note_presets[key] = nil
+                    info.preset_name = ""
+                end
+            end
+            save_take_note_presets(take, note_presets)
+        end
+    elseif eff_mode == MODE_TRACK_OFFSET then
+        for _, info in ipairs(gui_state.selected_targets) do
+            info.preset_name = preset_name or ""
+            if reaper.ValidatePtr(info.track, "MediaTrack*") then
+                reaper.GetSetMediaTrackInfo_String(info.track, "P_EXT:Walter_MediaOffsetTool_preset", preset_name or "", true)
+            end
+        end
+    elseif eff_mode == MODE_TAKE_OFFSET then
+        for _, info in ipairs(gui_state.selected_targets) do
+            info.preset_name = preset_name or ""
+            if reaper.ValidatePtr(info.take, "MediaItem_Take*") then
+                local _, take_guid = reaper.GetSetMediaItemTakeInfo_String(info.take, "GUID", "", false)
+                if take_guid and take_guid ~= "" then
+                    local parent_item = reaper.GetMediaItemTake_Item(info.take)
+                    if parent_item then
+                        reaper.GetSetMediaItemInfo_String(parent_item, "P_EXT:Walter_MediaOffsetTool_take_preset_" .. take_guid, preset_name or "", true)
+                    end
+                end
+            end
+        end
+    elseif eff_mode == MODE_ITEM_POSITION then
+        for _, info in ipairs(gui_state.selected_targets) do
+            if reaper.ValidatePtr(info.item, "MediaItem*") then
+                reaper.GetSetMediaItemInfo_String(info.item, "P_EXT:Walter_MediaOffsetTool_preset", preset_name or "", true)
+                info.preset_name = preset_name or ""
+            end
+        end
+    end
+end
+
+-- Helper to clean up note offsets and presets metadata from a take
 local function cleanup_take_note_offsets(take)
     if not take or not reaper.TakeIsMIDI(take) then return end
     local _, notes_count = reaper.MIDI_CountEvts(take)
     local offsets = get_take_note_offsets(take)
+    local note_presets = get_take_note_presets(take)
     
     -- Build a quick lookup map of existing notes by pitch_chan:ppq
     local existing_notes = {}
@@ -303,6 +397,7 @@ local function cleanup_take_note_offsets(take)
     end
     
     local cleaned_offsets = {}
+    local cleaned_presets = {}
     local changed = false
     
     for key, offset_ms in pairs(offsets) do
@@ -330,6 +425,9 @@ local function cleanup_take_note_offsets(take)
             
             if found then
                 cleaned_offsets[key] = offset_ms
+                if note_presets[key] then
+                    cleaned_presets[key] = note_presets[key]
+                end
             else
                 changed = true
             end
@@ -338,6 +436,7 @@ local function cleanup_take_note_offsets(take)
     
     if changed then
         save_take_note_offsets(take, cleaned_offsets)
+        save_take_note_presets(take, cleaned_presets)
     end
 end
 
@@ -364,6 +463,7 @@ local function update_targets_list(force)
             
             -- Override: selected MIDI notes in active take
             local offsets = get_take_note_offsets(take)
+            local note_presets = get_take_note_presets(take)
             local note_idx = -1
             local safety = 0
             while safety < 10000 do
@@ -373,6 +473,7 @@ local function update_targets_list(force)
                 if retval then
                     -- Look up in offsets metadata
                     local found_offset = 0.0
+                    local found_preset = ""
                     local original_ppq = startppq
                     
                     for key, offset_ms in pairs(offsets) do
@@ -389,6 +490,7 @@ local function update_targets_list(force)
                                 
                                 if math.abs(startppq - expected_current_ppq) < 5 then
                                     found_offset = offset_ms
+                                    found_preset = note_presets[key] or ""
                                     original_ppq = o_orig_ppq
                                     break
                                 end
@@ -405,6 +507,7 @@ local function update_targets_list(force)
                         note_index = note_idx,
                         original_ppq = original_ppq,
                         offset_ms = found_offset,
+                        preset_name = found_preset,
                         start_time = start_time,
                         end_time = end_time,
                         pitch = pitch,
@@ -446,10 +549,12 @@ local function update_targets_list(force)
                         local _, name = reaper.GetTrackName(track)
                         name = name or "Unnamed Track"
                         local cur_offset = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
+                        local _, track_preset = reaper.GetSetMediaTrackInfo_String(track, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
                         table.insert(gui_state.selected_targets, {
                             track = track,
                             name = name,
-                            baseline_offset = cur_offset
+                            baseline_offset = cur_offset,
+                            preset_name = track_preset or ""
                         })
                     end
                 end
@@ -466,10 +571,12 @@ local function update_targets_list(force)
                                 local _, name = reaper.GetTrackName(track)
                                 name = name or "Unnamed Track"
                                 local cur_offset = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
+                                local _, track_preset = reaper.GetSetMediaTrackInfo_String(track, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
                                 table.insert(gui_state.selected_targets, {
                                     track = track,
                                     name = name .. " (MIDI Editor)",
-                                    baseline_offset = cur_offset
+                                    baseline_offset = cur_offset,
+                                    preset_name = track_preset or ""
                                 })
                             end
                         end
@@ -495,11 +602,17 @@ local function update_targets_list(force)
                         if take then
                             local name = reaper.GetTakeName(take) or "Unnamed Take"
                             local cur_offset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+                            local take_preset = ""
+                            local _, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
+                            if take_guid and take_guid ~= "" then
+                                _, take_preset = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_take_preset_" .. take_guid, "", false)
+                            end
                             table.insert(gui_state.selected_targets, {
                                 item = item,
                                 take = take,
                                 name = name,
-                                baseline_offset = cur_offset
+                                baseline_offset = cur_offset,
+                                preset_name = take_preset or ""
                             })
                         end
                     end
@@ -514,11 +627,17 @@ local function update_targets_list(force)
                         if item then
                             local name = reaper.GetTakeName(take) or "Unnamed Take"
                             local cur_offset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+                            local take_preset = ""
+                            local _, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
+                            if take_guid and take_guid ~= "" then
+                                _, take_preset = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_take_preset_" .. take_guid, "", false)
+                            end
                             table.insert(gui_state.selected_targets, {
                                 item = item,
                                 take = take,
                                 name = name .. " (MIDI Editor)",
-                                baseline_offset = cur_offset
+                                baseline_offset = cur_offset,
+                                preset_name = take_preset or ""
                             })
                         end
                     end
@@ -552,12 +671,14 @@ local function update_targets_list(force)
                         
                         -- The original zero position is current position minus saved offset
                         local zero_pos = cur_pos - saved_offset_sec
+                        local _, item_preset = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
                         
                         table.insert(gui_state.selected_targets, {
                             item = item,
                             name = name,
                             zero_position = zero_pos,
-                            baseline_offset = cur_pos
+                            baseline_offset = cur_pos,
+                            preset_name = item_preset or ""
                         })
                     end
                 end
@@ -580,12 +701,14 @@ local function update_targets_list(force)
                             end
                             
                             local zero_pos = cur_pos - saved_offset_sec
+                            local _, item_preset = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
                             
                             table.insert(gui_state.selected_targets, {
                                 item = item,
                                 name = name .. " (MIDI Editor)",
                                 zero_position = zero_pos,
-                                baseline_offset = cur_pos
+                                baseline_offset = cur_pos,
+                                preset_name = item_preset or ""
                             })
                         end
                     end
@@ -612,6 +735,7 @@ local function update_targets_list(force)
             local eff_mode, take = get_effective_mode()
             if eff_mode == MODE_MIDI_NOTES then
                 local offsets = get_take_note_offsets(take)
+                local note_presets = get_take_note_presets(take)
                 local any_drifted = false
                 local note_idx = -1
                 
@@ -628,19 +752,25 @@ local function update_targets_list(force)
                             -- Note has drifted (manually moved). Clean up old metadata entry
                             local old_key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
                             offsets[old_key] = nil
+                            note_presets[old_key] = nil
                             
                             -- Reset baseline to new position
                             info.original_ppq = startppq
                             info.offset_ms = 0.0
+                            info.preset_name = ""
                             info.start_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, startppq)
                             info.end_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, endppq)
                             any_drifted = true
+                        else
+                            local old_key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
+                            info.preset_name = note_presets[old_key] or ""
                         end
                     end
                 end
                 
                 if any_drifted then
                     save_take_note_offsets(take, offsets)
+                    save_take_note_presets(take, note_presets)
                     
                     local first_offset = gui_state.selected_targets[1].offset_ms
                     local all_same = true
@@ -665,6 +795,8 @@ local function update_targets_list(force)
                 for _, info in ipairs(gui_state.selected_targets) do
                     if reaper.ValidatePtr(info.track, "MediaTrack*") then
                         info.baseline_offset = reaper.GetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET")
+                        local _, track_preset = reaper.GetSetMediaTrackInfo_String(info.track, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
+                        info.preset_name = track_preset or ""
                     end
                 end
             elseif eff_mode == MODE_TAKE_OFFSET then
@@ -676,6 +808,15 @@ local function update_targets_list(force)
                 for _, info in ipairs(gui_state.selected_targets) do
                     if reaper.ValidatePtr(info.take, "MediaItem_Take*") then
                         info.baseline_offset = reaper.GetMediaItemTakeInfo_Value(info.take, "D_STARTOFFS")
+                        local take_preset = ""
+                        local _, take_guid = reaper.GetSetMediaItemTakeInfo_String(info.take, "GUID", "", false)
+                        if take_guid and take_guid ~= "" then
+                            local parent_item = reaper.GetMediaItemTake_Item(info.take)
+                            if parent_item then
+                                _, take_preset = reaper.GetSetMediaItemInfo_String(parent_item, "P_EXT:Walter_MediaOffsetTool_take_preset_" .. take_guid, "", false)
+                            end
+                        end
+                        info.preset_name = take_preset or ""
                     end
                 end
             elseif eff_mode == MODE_ITEM_POSITION then
@@ -701,10 +842,31 @@ local function update_targets_list(force)
                             saved_offset_ms = tonumber(saved_val) or 0.0
                         end
                         info.zero_position = cur_pos - (saved_offset_ms / 1000.0)
+                        local _, item_preset = reaper.GetSetMediaItemInfo_String(info.item, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
+                        info.preset_name = item_preset or ""
                     end
                 end
             end
         end
+    end
+    
+    -- Determine common preset name
+    if #gui_state.selected_targets > 0 then
+        local first_preset = gui_state.selected_targets[1].preset_name or ""
+        local all_same = true
+        for i = 2, #gui_state.selected_targets do
+            if (gui_state.selected_targets[i].preset_name or "") ~= first_preset then
+                all_same = false
+                break
+            end
+        end
+        if all_same then
+            current_preset_name = first_preset
+        else
+            current_preset_name = ""
+        end
+    else
+        current_preset_name = ""
     end
 end
 
@@ -770,7 +932,7 @@ local function apply_offset_to_targets(value)
 end
 
 -- Helper to set absolute offset value (with undo registration)
-local function adjust_offset_to_value(target_ms)
+local function adjust_offset_to_value(target_ms, preset_name)
     if #gui_state.selected_targets == 0 then return end
     
     local eff_mode = get_effective_mode()
@@ -820,6 +982,17 @@ local function adjust_offset_to_value(target_ms)
         end
         gui_state.slider_value = target_ms
     end
+    
+    -- Persist/Clear preset association
+    local active_preset = ""
+    if preset_name and preset_name ~= "" then
+        active_preset = preset_name
+    elseif current_preset_name ~= "" and presets[current_preset_name] ~= nil then
+        if math.abs(presets[current_preset_name] - target_ms) < 0.01 then
+            active_preset = current_preset_name
+        end
+    end
+    save_preset_name_to_targets(active_preset)
 end
 
 -- Helper to apply delta relative to current value
@@ -1334,6 +1507,16 @@ local function render_ui()
                 end
             end
         end
+        
+        -- Persist/Clear preset association on slider commit
+        local active_preset = ""
+        if current_preset_name ~= "" and presets[current_preset_name] ~= nil then
+            if math.abs(presets[current_preset_name] - gui_state.slider_value) < 0.01 then
+                active_preset = current_preset_name
+            end
+        end
+        save_preset_name_to_targets(active_preset)
+        
         gui_state.is_dragging = false
     end
 
@@ -1587,7 +1770,7 @@ local function render_ui()
                     local button_id = string.format("%s##btn_%d_%d", button_label, col, row)
                     if reaper.ImGui_Button(ctx, button_id, cell_w, 20) then
                         current_preset_name = cell_data.name
-                        adjust_offset_to_value(cell_data.offset)
+                        adjust_offset_to_value(cell_data.offset, cell_data.name)
                     end
                     
                     if is_current then
