@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.1.2
+-- @version 1.1.3
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.1.2"
+local script_name = "Media Offset Tool v1.1.3"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -172,8 +172,101 @@ local function get_selection_signature()
     return table.concat(sig, ";")
 end
 
+-- Helper to parse note offsets metadata from a take
+local function get_take_note_offsets(take)
+    if not take or not reaper.TakeIsMIDI(take) then return {} end
+    local retval, val = reaper.GetSetMediaItemTakeInfo_String(take, "P_EXT:Walter_MIDI_Note_Offsets", "", false)
+    local offsets = {}
+    if retval and val ~= "" then
+        for entry in val:gmatch("[^;]+") do
+            local key, offset_str = entry:match("^([^:]+):([^:]+)$")
+            if key and offset_str then
+                offsets[key] = tonumber(offset_str) or 0.0
+            end
+        end
+    end
+    return offsets
+end
+
+-- Helper to save note offsets metadata to a take
+local function save_take_note_offsets(take, offsets)
+    if not take or not reaper.TakeIsMIDI(take) then return end
+    local entries = {}
+    for key, val in pairs(offsets) do
+        if math.abs(val) > 0.001 then
+            table.insert(entries, key .. ":" .. tostring(val))
+        end
+    end
+    local val_str = table.concat(entries, ";")
+    reaper.GetSetMediaItemTakeInfo_String(take, "P_EXT:Walter_MIDI_Note_Offsets", val_str, true)
+end
+
+-- Helper to clean up note offsets metadata from a take
+local function cleanup_take_note_offsets(take)
+    if not take or not reaper.TakeIsMIDI(take) then return end
+    local _, _, _, notes_count = reaper.MIDI_CountEvts(take)
+    local offsets = get_take_note_offsets(take)
+    
+    -- Build a quick lookup map of existing notes by pitch_chan:ppq
+    local existing_notes = {}
+    for idx = 0, notes_count - 1 do
+        local retval, _, _, startppq, _, chan, pitch = reaper.MIDI_GetNote(take, idx)
+        if retval then
+            local lookup_key = string.format("%d_%d", pitch, chan)
+            if not existing_notes[lookup_key] then
+                existing_notes[lookup_key] = {}
+            end
+            table.insert(existing_notes[lookup_key], startppq)
+        end
+    end
+    
+    local cleaned_offsets = {}
+    local changed = false
+    
+    for key, offset_ms in pairs(offsets) do
+        local o_pitch, o_chan, o_orig_ppq = key:match("^(%d+)_(%d+)_(%d+)$")
+        if o_pitch and o_chan and o_orig_ppq then
+            o_pitch = tonumber(o_pitch)
+            o_chan = tonumber(o_chan)
+            o_orig_ppq = tonumber(o_orig_ppq)
+            
+            local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(take, o_orig_ppq)
+            local current_time_expected = orig_time + (offset_ms / 1000.0)
+            local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, current_time_expected)
+            
+            local lookup_key = string.format("%d_%d", o_pitch, o_chan)
+            local found = false
+            local ppqs = existing_notes[lookup_key]
+            if ppqs then
+                for _, startppq in ipairs(ppqs) do
+                    if math.abs(startppq - expected_current_ppq) < 5 then
+                        found = true
+                        break
+                    end
+                end
+            end
+            
+            if found then
+                cleaned_offsets[key] = offset_ms
+            else
+                changed = true
+            end
+        end
+    end
+    
+    if changed then
+        save_take_note_offsets(take, cleaned_offsets)
+    end
+end
+
 -- Populate selection info
-local function update_targets_list()
+local function update_targets_list(force)
+    -- Skip rebuilding selection while the user is actively interacting with the GUI,
+    -- unless forced (e.g. on mode change).
+    if not force and reaper.ImGui_IsAnyItemActive(ctx) then
+        return
+    end
+    
     local current_sig = get_selection_signature()
     local selection_changed = current_sig ~= gui_state.last_selection_state
     
@@ -184,7 +277,11 @@ local function update_targets_list()
         local eff_mode, take = get_effective_mode()
         
         if eff_mode == MODE_MIDI_NOTES then
+            -- Clean up stale offsets
+            cleanup_take_note_offsets(take)
+            
             -- Override: selected MIDI notes in active take
+            local offsets = get_take_note_offsets(take)
             local note_idx = -1
             local safety = 0
             while safety < 10000 do
@@ -192,11 +289,40 @@ local function update_targets_list()
                 if note_idx == -1 then break end
                 local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, note_idx)
                 if retval then
-                    local start_time = reaper.MIDI_GetProjTimeFromPPQPos(take, startppq)
-                    local end_time = reaper.MIDI_GetProjTimeFromPPQPos(take, endppq)
+                    -- Look up in offsets metadata
+                    local found_offset = 0.0
+                    local original_ppq = startppq
+                    
+                    for key, offset_ms in pairs(offsets) do
+                        local o_pitch, o_chan, o_orig_ppq = key:match("^(%d+)_(%d+)_(%d+)$")
+                        if o_pitch and o_chan and o_orig_ppq then
+                            o_pitch = tonumber(o_pitch)
+                            o_chan = tonumber(o_chan)
+                            o_orig_ppq = tonumber(o_orig_ppq)
+                            
+                            if o_pitch == pitch and o_chan == chan then
+                                local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(take, o_orig_ppq)
+                                local current_time_expected = orig_time + (offset_ms / 1000.0)
+                                local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, current_time_expected)
+                                
+                                if math.abs(startppq - expected_current_ppq) < 5 then
+                                    found_offset = offset_ms
+                                    original_ppq = o_orig_ppq
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    
+                    -- Original unshifted positions
+                    local start_time = reaper.MIDI_GetProjTimeFromPPQPos(take, original_ppq)
+                    local end_time = reaper.MIDI_GetProjTimeFromPPQPos(take, original_ppq + (endppq - startppq))
+                    
                     table.insert(gui_state.selected_targets, {
                         take = take,
                         note_index = note_idx,
+                        original_ppq = original_ppq,
+                        offset_ms = found_offset,
                         start_time = start_time,
                         end_time = end_time,
                         pitch = pitch,
@@ -207,7 +333,25 @@ local function update_targets_list()
                 end
                 safety = safety + 1
             end
-            gui_state.slider_value = 0.0
+            
+            -- Initialize slider_value
+            if #gui_state.selected_targets > 0 then
+                local first_offset = gui_state.selected_targets[1].offset_ms
+                local all_same = true
+                for i = 2, #gui_state.selected_targets do
+                    if math.abs(gui_state.selected_targets[i].offset_ms - first_offset) > 0.01 then
+                        all_same = false
+                        break
+                    end
+                end
+                if all_same then
+                    gui_state.slider_value = first_offset
+                else
+                    gui_state.slider_value = 0.0
+                end
+            else
+                gui_state.slider_value = 0.0
+            end
             
         elseif eff_mode == MODE_TRACK_OFFSET then
             -- Mode B: Track Playback Offset
@@ -385,14 +529,51 @@ local function update_targets_list()
         if not is_slider_active and #gui_state.selected_targets > 0 then
             local eff_mode, take = get_effective_mode()
             if eff_mode == MODE_MIDI_NOTES then
+                local offsets = get_take_note_offsets(take)
+                local any_drifted = false
+                local note_idx = -1
+                
                 for _, info in ipairs(gui_state.selected_targets) do
-                    local retval, selected, muted, startppq, endppq = reaper.MIDI_GetNote(info.take, info.note_index)
+                    note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
+                    if note_idx == -1 then break end
+                    local retval, selected, muted, startppq, endppq = reaper.MIDI_GetNote(info.take, note_idx)
                     if retval then
-                        info.start_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, startppq)
-                        info.end_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, endppq)
+                        local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, info.original_ppq)
+                        local current_time_expected = orig_time + (info.offset_ms / 1000.0)
+                        local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(info.take, current_time_expected)
+                        
+                        if math.abs(startppq - expected_current_ppq) >= 5 then
+                            -- Note has drifted (manually moved). Clean up old metadata entry
+                            local old_key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
+                            offsets[old_key] = nil
+                            
+                            -- Reset baseline to new position
+                            info.original_ppq = startppq
+                            info.offset_ms = 0.0
+                            info.start_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, startppq)
+                            info.end_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, endppq)
+                            any_drifted = true
+                        end
                     end
                 end
-                gui_state.slider_value = 0.0
+                
+                if any_drifted then
+                    save_take_note_offsets(take, offsets)
+                    
+                    local first_offset = gui_state.selected_targets[1].offset_ms
+                    local all_same = true
+                    for i = 2, #gui_state.selected_targets do
+                        if math.abs(gui_state.selected_targets[i].offset_ms - first_offset) > 0.01 then
+                            all_same = false
+                            break
+                        end
+                    end
+                    if all_same then
+                        gui_state.slider_value = first_offset
+                    else
+                        gui_state.slider_value = 0.0
+                    end
+                end
             elseif eff_mode == MODE_TRACK_OFFSET then
                 local first_info = gui_state.selected_targets[1]
                 if reaper.ValidatePtr(first_info.track, "MediaTrack*") then
@@ -453,12 +634,15 @@ local function apply_offset_to_targets(value)
         local first_target = gui_state.selected_targets[1]
         if first_target then
             local take = first_target.take
+            local note_idx = -1
             for _, info in ipairs(gui_state.selected_targets) do
+                note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
+                if note_idx == -1 then break end
                 local new_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + shift_sec)
                 local new_end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.end_time + shift_sec)
                 reaper.MIDI_SetNote(
                     take,
-                    info.note_index,
+                    note_idx,
                     nil,  -- selected
                     nil,  -- muted
                     new_start_ppq,
@@ -528,11 +712,18 @@ local function adjust_offset_to_value(target_ms)
     end
     
     if eff_mode == MODE_MIDI_NOTES then
-        for _, info in ipairs(gui_state.selected_targets) do
-            info.start_time = info.start_time + target_ms / 1000.0
-            info.end_time = info.end_time + target_ms / 1000.0
+        local first_target = gui_state.selected_targets[1]
+        if first_target then
+            local take = first_target.take
+            local offsets = get_take_note_offsets(take)
+            for _, info in ipairs(gui_state.selected_targets) do
+                local key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
+                offsets[key] = target_ms
+                info.offset_ms = target_ms
+            end
+            save_take_note_offsets(take, offsets)
         end
-        gui_state.slider_value = 0.0
+        gui_state.slider_value = target_ms
     elseif eff_mode == MODE_TRACK_OFFSET or eff_mode == MODE_TAKE_OFFSET then
         for _, info in ipairs(gui_state.selected_targets) do
             info.baseline_offset = target_ms / 1000.0
@@ -682,7 +873,7 @@ local function render_ui()
         reaper.SetProjExtState(0, "Walter_MediaOffsetTool", "selected_mode", tostring(gui_state.adjust_mode))
         
         gui_state.last_selection_state = ""
-        update_targets_list()
+        update_targets_list(true)
         return
     end
 
@@ -710,12 +901,15 @@ local function render_ui()
         -- Restore baseline offsets temporarily
         if eff_mode == MODE_MIDI_NOTES then
             if take then
+                local note_idx = -1
                 for _, info in ipairs(gui_state.selected_targets) do
+                    note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
+                    if note_idx == -1 then break end
                     local orig_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time)
                     local orig_end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.end_time)
                     reaper.MIDI_SetNote(
                         take,
-                        info.note_index,
+                        note_idx,
                         nil,
                         nil,
                         orig_start_ppq,
@@ -777,12 +971,17 @@ local function render_ui()
         
         -- Update baselines
         if eff_mode == MODE_MIDI_NOTES then
-            local final_val_sec = gui_state.slider_value / 1000.0
-            for _, info in ipairs(gui_state.selected_targets) do
-                info.start_time = info.start_time + final_val_sec
-                info.end_time = info.end_time + final_val_sec
+            local first_target = gui_state.selected_targets[1]
+            if first_target then
+                local take = first_target.take
+                local offsets = get_take_note_offsets(take)
+                for _, info in ipairs(gui_state.selected_targets) do
+                    local key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
+                    offsets[key] = gui_state.slider_value
+                    info.offset_ms = gui_state.slider_value
+                end
+                save_take_note_offsets(take, offsets)
             end
-            gui_state.slider_value = 0.0
         elseif eff_mode == MODE_TRACK_OFFSET or eff_mode == MODE_TAKE_OFFSET then
             local final_val_sec = gui_state.slider_value / 1000.0
             for _, info in ipairs(gui_state.selected_targets) do
@@ -922,11 +1121,40 @@ local function render_ui()
         reaper.ImGui_Text(ctx, "No item selected")
     end
 
-    -- 4. Dynamic Mode Details (selected MIDI notes or Move Item position)
-    if eff_mode == MODE_MIDI_NOTES then
-        reaper.ImGui_Spacing(ctx)
-        reaper.ImGui_Text(ctx, string.format("Selected MIDI Notes: %d", num_targets))
-    elseif eff_mode == MODE_ITEM_POSITION then
+    -- 4. MIDI Note Offset (Always visible)
+    local has_notes, active_take = has_selected_midi_notes()
+    if has_notes and active_take then
+        local num_selected = #gui_state.selected_targets
+        local display_str = "0.0 ms"
+        if num_selected > 0 then
+            local first_offset = gui_state.selected_targets[1].offset_ms or 0.0
+            local all_same = true
+            for i = 2, num_selected do
+                local offset = gui_state.selected_targets[i].offset_ms or 0.0
+                if math.abs(offset - first_offset) > 0.01 then
+                    all_same = false
+                    break
+                end
+            end
+            if all_same then
+                display_str = string.format("%.1f ms", first_offset)
+            else
+                display_str = "Multiple values"
+            end
+        end
+        
+        local label = string.format("MIDI Notes (%d selected)", num_selected)
+        reaper.ImGui_Text(ctx, label .. " Offset:")
+        reaper.ImGui_SameLine(ctx, 240)
+        reaper.ImGui_Text(ctx, display_str)
+    else
+        reaper.ImGui_Text(ctx, "MIDI Note Offset:")
+        reaper.ImGui_SameLine(ctx, 240)
+        reaper.ImGui_Text(ctx, "No notes selected")
+    end
+
+    -- 5. Dynamic Mode Details (Move Item position)
+    if eff_mode == MODE_ITEM_POSITION then
         local first_info = gui_state.selected_targets[1]
         if first_info and reaper.ValidatePtr(first_info.item, "MediaItem*") then
             local cur_pos_sec = reaper.GetMediaItemInfo_Value(first_info.item, "D_POSITION")
@@ -950,14 +1178,14 @@ local function handle_keyboard_shortcuts()
     -- Undo (Ctrl+Z or Cmd+Z)
     if (is_ctrl_down or is_super_down) and not is_shift_down and reaper.ImGui_IsKeyPressed(ctx, imgui.Key_Z, false) then
         reaper.Undo_DoUndo2(0)
-        update_targets_list()
+        update_targets_list(true)
     end
 
     -- Redo (Ctrl+Y or Cmd+Shift+Z)
     if (is_ctrl_down and not is_shift_down and reaper.ImGui_IsKeyPressed(ctx, imgui.Key_Y, false)) or
        (is_super_down and is_shift_down and reaper.ImGui_IsKeyPressed(ctx, imgui.Key_Z, false)) then
         reaper.Undo_DoRedo2(0)
-        update_targets_list()
+        update_targets_list(true)
     end
 
     -- Escape key handling
