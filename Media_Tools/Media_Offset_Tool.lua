@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.4.7
+-- @version 1.4.8
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.4.7"
+local script_name = "Media Offset Tool v1.4.8"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -463,9 +463,11 @@ local function save_preset_name_to_targets(preset_name)
                     info.preset_name = ""
                 end
                 
-                -- Write preset name to MIDI Text Event
-                local current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + (info.offset_ms / 1000.0))
-                write_note_preset_text_event(take, current_ppq, preset_name)
+                -- Write preset name to MIDI Text Event (only when keyswitch writing is enabled)
+                if gui_state.write_keyswitches then
+                    local current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + (info.offset_ms / 1000.0))
+                    write_note_preset_text_event(take, current_ppq, preset_name)
+                end
             end
             save_take_note_presets(take, note_presets)
         end
@@ -1285,8 +1287,8 @@ local function apply_offset_to_targets(value, preset_name)
                 reaper.MIDI_DeleteNote(take, idx)
             end
 
-            -- 5. Write MIDI Text Events (safe to do after note deletion)
-            if preset_name then
+            -- 5. Write MIDI Text Events (safe to do after note deletion, only when keyswitch writing is enabled)
+            if gui_state.write_keyswitches and preset_name then
                 for i, info in ipairs(gui_state.selected_targets) do
                     local note_info = selected_notes[i]
                     if not note_info then break end
