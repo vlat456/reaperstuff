@@ -227,7 +227,7 @@ gui_state = {
     adjust_mode = MODE_TRACK_OFFSET, -- Default to Mode B (Track Playback Offset)
     last_selection_state = "",
     is_dragging = false,
-    write_keyswitches = true, -- Default to true
+    write_keyswitches = false, -- Default to false
 }
 
 -- Load persisted mode from project metadata
