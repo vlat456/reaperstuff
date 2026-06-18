@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.5.3
+-- @version 1.5.4
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.5.3"
+local script_name = "Media Offset Tool v1.5.4"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -1316,7 +1316,40 @@ local function apply_offset_to_targets(value, preset_name)
                 end
             end
 
-            -- 3. Modify the target notes' positions and queue new keyswitch insertions
+            -- 3. Delete old keyswitches in descending index order first (while the take is still sorted)
+            local deletions_list = {}
+            for idx in pairs(deletions_map) do
+                table.insert(deletions_list, idx)
+            end
+            table.sort(deletions_list, function(a, b) return a > b end)
+            for _, idx in ipairs(deletions_list) do
+                reaper.MIDI_DeleteNote(take, idx)
+            end
+
+            -- 4. Re-sort the take and re-gather selected notes so we have correct, stable indices for shifting
+            reaper.MIDI_Sort(take)
+            
+            selected_notes = {}
+            note_idx = -1
+            while true do
+                note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
+                if note_idx == -1 then break end
+                local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, note_idx)
+                if retval then
+                    table.insert(selected_notes, {
+                        idx = note_idx,
+                        selected = selected,
+                        muted = muted,
+                        startppq = startppq,
+                        endppq = endppq,
+                        chan = chan,
+                        pitch = pitch,
+                        vel = vel
+                    })
+                end
+            end
+
+            -- 5. Modify the target notes' positions and queue new keyswitch insertions
             local insertions = {}
             for i, info in ipairs(gui_state.selected_targets) do
                 local note_info = selected_notes[i]
@@ -1362,18 +1395,8 @@ local function apply_offset_to_targets(value, preset_name)
                     end
                 end
             end
-            
-            -- 4. Delete old keyswitches in descending index order (safe from index shifting)
-            local deletions_list = {}
-            for idx in pairs(deletions_map) do
-                table.insert(deletions_list, idx)
-            end
-            table.sort(deletions_list, function(a, b) return a > b end)
-            for _, idx in ipairs(deletions_list) do
-                reaper.MIDI_DeleteNote(take, idx)
-            end
 
-            -- 5. Write MIDI Text Events (safe to do after note deletion, only when keyswitch writing is enabled)
+            -- 6. Write MIDI Text Events (safe to do, only when keyswitch writing is enabled)
             if gui_state.write_keyswitches and preset_name then
                 for i, info in ipairs(gui_state.selected_targets) do
                     local note_info = selected_notes[i]
@@ -1387,7 +1410,7 @@ local function apply_offset_to_targets(value, preset_name)
                 end
             end
             
-            -- 6. Insert new keyswitches
+            -- 7. Insert new keyswitches
             for _, ins in ipairs(insertions) do
                 reaper.MIDI_InsertNote(
                     take,
