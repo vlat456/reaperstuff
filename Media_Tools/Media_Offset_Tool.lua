@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.3.1
+-- @version 1.4.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.3.1"
+local script_name = "Media Offset Tool v1.4.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 
@@ -62,6 +62,31 @@ local open_rename_preset_focus = false
 local open_delete_preset_modal = false
 local show_info = false
 
+local presets
+local preset_keys
+local presets_show_in_grid
+local presets_ks_pitch
+local presets_ks_vel_min
+local presets_ks_vel_max
+local presets_note_vel_min
+local presets_note_vel_max
+
+-- Helper to split a string by separator
+local function split_string(inputstr, sep)
+    local t = {}
+    local i = 1
+    while true do
+        local start_pos, end_pos = string.find(inputstr, sep, i, true)
+        if not start_pos then
+            table.insert(t, string.sub(inputstr, i))
+            break
+        end
+        table.insert(t, string.sub(inputstr, i, start_pos - 1))
+        i = end_pos + 1
+    end
+    return t
+end
+
 local function get_presets_file_path()
     local sep = package.config:sub(1,1)
     return reaper.GetResourcePath() .. sep .. "Data" .. sep .. "Walter_MediaOffset_Presets.txt"
@@ -71,6 +96,11 @@ local function load_presets()
     local path = get_presets_file_path()
     local loaded_presets = {}
     local show_in_grid = {}
+    local ks_pitch_tbl = {}
+    local ks_vel_min_tbl = {}
+    local ks_vel_max_tbl = {}
+    local note_vel_min_tbl = {}
+    local note_vel_max_tbl = {}
     local keys = {}
     local f = io.open(path, "r")
     if f then
@@ -78,24 +108,32 @@ local function load_presets()
             line = line:gsub("[\r\n]", "")
             local name, rest = line:match("^(.-)=([^=]+)$")
             if name and rest then
-                local val_str, show_str = rest:match("^(.-)|(.-)$")
-                local val = 0.0
+                local parts = split_string(rest, "|")
+                local val = tonumber(parts[1]) or 0.0
                 local show = true
-                if val_str and show_str then
-                    val = tonumber(val_str) or 0.0
-                    show = (show_str == "1")
-                else
-                    val = tonumber(rest) or 0.0
+                if parts[2] ~= nil then
+                    show = (parts[2] == "1")
                 end
+                local ks_pitch = tonumber(parts[3]) or -1
+                local ks_vel_min = tonumber(parts[4]) or -1
+                local ks_vel_max = tonumber(parts[5]) or -1
+                local note_vel_min = tonumber(parts[6]) or -1
+                local note_vel_max = tonumber(parts[7]) or -1
+
                 loaded_presets[name] = val
                 show_in_grid[name] = show
+                ks_pitch_tbl[name] = ks_pitch
+                ks_vel_min_tbl[name] = ks_vel_min
+                ks_vel_max_tbl[name] = ks_vel_max
+                note_vel_min_tbl[name] = note_vel_min
+                note_vel_max_tbl[name] = note_vel_max
                 table.insert(keys, name)
             end
         end
         f:close()
     end
     table.sort(keys)
-    return loaded_presets, keys, show_in_grid
+    return loaded_presets, keys, show_in_grid, ks_pitch_tbl, ks_vel_min_tbl, ks_vel_max_tbl, note_vel_min_tbl, note_vel_max_tbl
 end
 
 local function save_presets(presets_table, show_in_grid_table)
@@ -112,13 +150,28 @@ local function save_presets(presets_table, show_in_grid_table)
             if show_in_grid_table and show_in_grid_table[k] ~= nil then
                 show = show_in_grid_table[k]
             end
-            f:write(string.format("%s=%s|%d\n", k, tostring(presets_table[k]), show and 1 or 0))
+            local ks_pitch = (presets_ks_pitch and presets_ks_pitch[k]) or -1
+            local ks_vel_min = (presets_ks_vel_min and presets_ks_vel_min[k]) or -1
+            local ks_vel_max = (presets_ks_vel_max and presets_ks_vel_max[k]) or -1
+            local note_vel_min = (presets_note_vel_min and presets_note_vel_min[k]) or -1
+            local note_vel_max = (presets_note_vel_max and presets_note_vel_max[k]) or -1
+            
+            f:write(string.format("%s=%s|%d|%d|%d|%d|%d|%d\n", 
+                k, 
+                tostring(presets_table[k]), 
+                show and 1 or 0,
+                ks_pitch,
+                ks_vel_min,
+                ks_vel_max,
+                note_vel_min,
+                note_vel_max
+            ))
         end
         f:close()
     end
 end
 
-local presets, preset_keys, presets_show_in_grid = load_presets()
+presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -174,6 +227,7 @@ gui_state = {
     adjust_mode = MODE_TRACK_OFFSET, -- Default to Mode B (Track Playback Offset)
     last_selection_state = "",
     is_dragging = false,
+    write_keyswitches = true, -- Default to true
 }
 
 -- Load persisted mode from project metadata
@@ -183,6 +237,12 @@ if saved_mode_str and saved_mode_str ~= "" then
     if saved_mode == MODE_TAKE_OFFSET or saved_mode == MODE_TRACK_OFFSET or saved_mode == MODE_ITEM_POSITION then
         gui_state.adjust_mode = saved_mode
     end
+end
+
+-- Load persisted write_keyswitches checkbox from project metadata
+local _, saved_write_ks_str = reaper.GetProjExtState(0, "Walter_MediaOffsetTool", "write_keyswitches")
+if saved_write_ks_str and saved_write_ks_str ~= "" then
+    gui_state.write_keyswitches = (saved_write_ks_str == "1")
 end
 
 -- Check selection signature to detect change
@@ -451,11 +511,107 @@ local function cleanup_take_note_offsets(take)
             end
         end
     end
-    
     if changed then
         save_take_note_offsets(take, cleaned_offsets)
         save_take_note_presets(take, cleaned_presets)
     end
+end
+
+-- Helper to check if a pitch is used as a keyswitch in any preset
+local function is_keyswitch_pitch(pitch)
+    if not presets_ks_pitch then return false end
+    for name, ks_pitch in pairs(presets_ks_pitch) do
+        if ks_pitch == pitch then
+            return true
+        end
+    end
+    return false
+end
+
+-- Helper to auto-detect matching preset for a selected MIDI note
+local function detect_preset_for_note(take, target_idx, target_vel, target_start_ppq, target_chan)
+    -- 1. Collect candidate keyswitches
+    local candidates = {}
+    local total_notes = reaper.MIDI_CountEvts(take)
+    
+    -- Scan backwards
+    local i = target_idx - 1
+    local count = 0
+    while i >= 0 and count < 1000 do
+        local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
+        if not retval then break end
+        if target_start_ppq - startppq > 4000.0 then break end
+        if chan == target_chan and (pitch < 36 or is_keyswitch_pitch(pitch)) then
+            table.insert(candidates, { pitch = pitch, vel = vel, startppq = startppq, dist = target_start_ppq - startppq })
+        end
+        i = i - 1
+        count = count + 1
+    end
+    
+    -- Scan forwards for coincident notes
+    local j = target_idx + 1
+    count = 0
+    while j < total_notes and count < 1000 do
+        local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, j)
+        if not retval then break end
+        if startppq ~= target_start_ppq then break end
+        if chan == target_chan and (pitch < 36 or is_keyswitch_pitch(pitch)) then
+            table.insert(candidates, { pitch = pitch, vel = vel, startppq = startppq, dist = 0.0 })
+        end
+        j = j + 1
+        count = count + 1
+    end
+    
+    table.sort(candidates, function(a, b) return a.dist < b.dist end)
+    
+    local best_preset = ""
+    local best_score = -1
+    
+    for name, offset in pairs(presets) do
+        local ks_pitch = presets_ks_pitch[name] or -1
+        local ks_vel_min = presets_ks_vel_min[name] or -1
+        local ks_vel_max = presets_ks_vel_max[name] or -1
+        local note_vel_min = presets_note_vel_min[name] or -1
+        local note_vel_max = presets_note_vel_max[name] or -1
+        
+        local has_ks = (ks_pitch >= 0)
+        local has_vel = (note_vel_min >= 0 and note_vel_max >= 0)
+        
+        if has_ks or has_vel then
+            local matched = true
+            local score = 0
+            
+            if has_ks then
+                if #candidates == 0 or candidates[1].pitch ~= ks_pitch then
+                    matched = false
+                else
+                    score = score + 2
+                    if ks_vel_min >= 0 and ks_vel_max >= 0 then
+                        if candidates[1].vel < ks_vel_min or candidates[1].vel > ks_vel_max then
+                            matched = false
+                        end
+                    end
+                end
+            end
+            
+            if matched and has_vel then
+                if target_vel < note_vel_min or target_vel > note_vel_max then
+                    matched = false
+                else
+                    score = score + 1
+                end
+            end
+            
+            if matched then
+                if score > best_score then
+                    best_score = score
+                    best_preset = name
+                end
+            end
+        end
+    end
+    
+    return best_preset
 end
 
 -- Populate selection info
@@ -520,12 +676,18 @@ local function update_targets_list(force)
                     local start_time = reaper.MIDI_GetProjTimeFromPPQPos(take, original_ppq)
                     local end_time = reaper.MIDI_GetProjTimeFromPPQPos(take, original_ppq + (endppq - startppq))
                     
+                    local detected_preset = detect_preset_for_note(take, note_idx, vel, startppq, chan)
+                    local active_preset_name = detected_preset
+                    if active_preset_name == "" then
+                        active_preset_name = found_preset
+                    end
+
                     table.insert(gui_state.selected_targets, {
                         take = take,
                         note_index = note_idx,
                         original_ppq = original_ppq,
                         offset_ms = found_offset,
-                        preset_name = found_preset,
+                        preset_name = active_preset_name,
                         start_time = start_time,
                         end_time = end_time,
                         pitch = pitch,
@@ -789,8 +951,15 @@ local function update_targets_list(force)
                 for _, info in ipairs(gui_state.selected_targets) do
                     note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
                     if note_idx == -1 then break end
-                    local retval, selected, muted, startppq, endppq = reaper.MIDI_GetNote(info.take, note_idx)
+                    local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(info.take, note_idx)
                     if retval then
+                        info.vel = vel
+                        info.pitch = pitch
+                        info.chan = chan
+
+                        local detected_preset = detect_preset_for_note(info.take, note_idx, vel, startppq, chan)
+                        local found_preset = ""
+
                         local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, info.original_ppq)
                         local current_time_expected = orig_time + (info.offset_ms / 1000.0)
                         local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(info.take, current_time_expected)
@@ -804,13 +973,18 @@ local function update_targets_list(force)
                             -- Reset baseline to new position
                             info.original_ppq = startppq
                             info.offset_ms = 0.0
-                            info.preset_name = ""
                             info.start_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, startppq)
                             info.end_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, endppq)
                             any_drifted = true
                         else
                             local old_key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
-                            info.preset_name = note_presets[old_key] or ""
+                            found_preset = note_presets[old_key] or ""
+                        end
+
+                        if detected_preset ~= "" then
+                            info.preset_name = detected_preset
+                        else
+                            info.preset_name = found_preset
                         end
                     end
                 end
@@ -924,7 +1098,7 @@ local function update_targets_list(force)
 end
 
 -- Apply current slider/adjustment value to all selected targets
-local function apply_offset_to_targets(value)
+local function apply_offset_to_targets(value, preset_name)
     local eff_mode = get_effective_mode()
     if eff_mode == MODE_MIDI_NOTES then
         local shift_sec = value / 1000.0
@@ -932,11 +1106,34 @@ local function apply_offset_to_targets(value)
         if first_target then
             local take = first_target.take
             local note_idx = -1
+            
+            local write_vel = nil
+            local ks_pitch = -1
+            local ks_vel = 100
+            
+            if gui_state.write_keyswitches and preset_name and preset_name ~= "" then
+                local note_vel_min = presets_note_vel_min[preset_name] or -1
+                local note_vel_max = presets_note_vel_max[preset_name] or -1
+                if note_vel_min >= 0 and note_vel_max >= 0 then
+                    write_vel = math.floor((note_vel_min + note_vel_max) / 2)
+                end
+                
+                ks_pitch = presets_ks_pitch[preset_name] or -1
+                if ks_pitch >= 0 then
+                    local ks_vel_min = presets_ks_vel_min[preset_name] or -1
+                    local ks_vel_max = presets_ks_vel_max[preset_name] or -1
+                    if ks_vel_min >= 0 and ks_vel_max >= 0 then
+                        ks_vel = math.floor((ks_vel_min + ks_vel_max) / 2)
+                    end
+                end
+            end
+
             for _, info in ipairs(gui_state.selected_targets) do
                 note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
                 if note_idx == -1 then break end
                 local new_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + shift_sec)
                 local new_end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.end_time + shift_sec)
+                
                 reaper.MIDI_SetNote(
                     take,
                     note_idx,
@@ -946,9 +1143,37 @@ local function apply_offset_to_targets(value)
                     new_end_ppq,
                     nil,  -- chan
                     nil,  -- pitch
-                    nil,  -- vel
+                    write_vel,  -- vel
                     true  -- noSort
                 )
+                
+                if ks_pitch >= 0 then
+                    local exists = false
+                    local num_notes = reaper.MIDI_CountEvts(take)
+                    for idx = 0, num_notes - 1 do
+                        local r, sel, mut, sppq, eppq, ch, pi, ve = reaper.MIDI_GetNote(take, idx)
+                        if r and ch == info.chan and pi == ks_pitch then
+                            if sppq >= (new_start_ppq - 40) and sppq <= new_start_ppq then
+                                exists = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if not exists then
+                        reaper.MIDI_InsertNote(
+                            take,
+                            false, -- selected
+                            false, -- muted
+                            new_start_ppq - 20, -- startppq
+                            new_start_ppq - 5,  -- endppq
+                            info.chan,
+                            ks_pitch,
+                            ks_vel,
+                            true -- noSort
+                        )
+                    end
+                end
             end
             reaper.MIDI_Sort(take)
             local item = reaper.GetMediaItemTake_Item(take)
@@ -1001,7 +1226,7 @@ local function adjust_offset_to_value(target_ms, preset_name)
     end
     
     reaper.Undo_BeginBlock2(0)
-    apply_offset_to_targets(target_ms)
+    apply_offset_to_targets(target_ms, preset_name)
     reaper.Undo_EndBlock2(0, undo_msg, -1)
     
     if eff_mode == MODE_TRACK_OFFSET then
@@ -1236,7 +1461,7 @@ local function render_ui()
     if reaper.ImGui_Button(ctx, "Save") then
         presets[combo_preset_name] = gui_state.slider_value
         save_presets(presets, presets_show_in_grid)
-        presets, preset_keys, presets_show_in_grid = load_presets()
+        presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx, "Overwrite the selected preset with the current offset.")
@@ -1330,8 +1555,13 @@ local function render_ui()
             local combined_name = lib_trimmed .. " - " .. art_trimmed
             presets[combined_name] = gui_state.slider_value
             presets_show_in_grid[combined_name] = new_preset_show_in_grid
+            presets_ks_pitch[combined_name] = -1
+            presets_ks_vel_min[combined_name] = -1
+            presets_ks_vel_max[combined_name] = -1
+            presets_note_vel_min[combined_name] = -1
+            presets_note_vel_max[combined_name] = -1
             save_presets(presets, presets_show_in_grid)
-            presets, preset_keys, presets_show_in_grid = load_presets()
+            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
             save_preset_name_to_targets(combined_name)
             current_preset_name = combined_name
             combo_preset_name = combined_name
@@ -1392,13 +1622,30 @@ local function render_ui()
         end
         if reaper.ImGui_Button(ctx, "OK", 80) then
             local val = presets[combo_preset_name]
+            local ks_pitch = presets_ks_pitch[combo_preset_name] or -1
+            local ks_vel_min = presets_ks_vel_min[combo_preset_name] or -1
+            local ks_vel_max = presets_ks_vel_max[combo_preset_name] or -1
+            local note_vel_min = presets_note_vel_min[combo_preset_name] or -1
+            local note_vel_max = presets_note_vel_max[combo_preset_name] or -1
+
             presets[combo_preset_name] = nil
             presets_show_in_grid[combo_preset_name] = nil
+            presets_ks_pitch[combo_preset_name] = nil
+            presets_ks_vel_min[combo_preset_name] = nil
+            presets_ks_vel_max[combo_preset_name] = nil
+            presets_note_vel_min[combo_preset_name] = nil
+            presets_note_vel_max[combo_preset_name] = nil
             
             presets[combined_name] = val
             presets_show_in_grid[combined_name] = rename_preset_show_in_grid
+            presets_ks_pitch[combined_name] = ks_pitch
+            presets_ks_vel_min[combined_name] = ks_vel_min
+            presets_ks_vel_max[combined_name] = ks_vel_max
+            presets_note_vel_min[combined_name] = note_vel_min
+            presets_note_vel_max[combined_name] = note_vel_max
+
             save_presets(presets, presets_show_in_grid)
-            presets, preset_keys, presets_show_in_grid = load_presets()
+            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
             if current_preset_name == combo_preset_name then
                 current_preset_name = combined_name
                 save_preset_name_to_targets(combined_name)
@@ -1429,8 +1676,13 @@ local function render_ui()
         if reaper.ImGui_Button(ctx, "Yes", 80) then
             presets[combo_preset_name] = nil
             presets_show_in_grid[combo_preset_name] = nil
+            presets_ks_pitch[combo_preset_name] = nil
+            presets_ks_vel_min[combo_preset_name] = nil
+            presets_ks_vel_max[combo_preset_name] = nil
+            presets_note_vel_min[combo_preset_name] = nil
+            presets_note_vel_max[combo_preset_name] = nil
             save_presets(presets, presets_show_in_grid)
-            presets, preset_keys, presets_show_in_grid = load_presets()
+            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
             if current_preset_name == combo_preset_name then
                 current_preset_name = ""
                 save_preset_name_to_targets("")
@@ -1445,9 +1697,116 @@ local function render_ui()
         reaper.ImGui_EndPopup(ctx)
     end
 
+    -- Trigger Editor Panel (only visible when a preset is selected)
+    if combo_preset_name ~= "" and presets[combo_preset_name] ~= nil then
+        reaper.ImGui_Spacing(ctx)
+        if reaper.ImGui_CollapsingHeader(ctx, "MIDI Triggers: " .. combo_preset_name) then
+            reaper.ImGui_Spacing(ctx)
+            
+            -- human-readable MIDI note name helper
+            local function get_note_name(pitch)
+                if pitch < 0 or pitch > 127 then return "Disabled" end
+                local notes = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
+                local octave = math.floor(pitch / 12) - 1
+                local note = notes[(pitch % 12) + 1]
+                return string.format("%s%d", note, octave)
+            end
+            
+            -- Keyswitch Note Slider
+            local pitch_val = presets_ks_pitch[combo_preset_name] or -1
+            reaper.ImGui_Text(ctx, "Keyswitch Note:")
+            reaper.ImGui_SameLine(ctx, 150)
+            reaper.ImGui_SetNextItemWidth(ctx, 220)
+            local fmt = (pitch_val == -1) and "Disabled" or ("%d (" .. get_note_name(pitch_val) .. ")")
+            local changed_pitch, new_pitch = reaper.ImGui_SliderInt(ctx, "##ks_pitch", pitch_val, -1, 127, fmt)
+            if changed_pitch then
+                presets_ks_pitch[combo_preset_name] = new_pitch
+                save_presets(presets, presets_show_in_grid)
+            end
+            
+            -- Keyswitch Velocity Range
+            local ks_vel_min_val = presets_ks_vel_min[combo_preset_name] or -1
+            local ks_vel_max_val = presets_ks_vel_max[combo_preset_name] or -1
+            local has_ks_vel = (ks_vel_min_val ~= -1 or ks_vel_max_val ~= -1)
+            
+            reaper.ImGui_Text(ctx, "Keyswitch Vel:")
+            reaper.ImGui_SameLine(ctx, 150)
+            local cb_changed_ks_vel, new_has_ks_vel = reaper.ImGui_Checkbox(ctx, "Limit##limit_ks_vel", has_ks_vel)
+            if cb_changed_ks_vel then
+                if new_has_ks_vel then
+                    presets_ks_vel_min[combo_preset_name] = 1
+                    presets_ks_vel_max[combo_preset_name] = 127
+                else
+                    presets_ks_vel_min[combo_preset_name] = -1
+                    presets_ks_vel_max[combo_preset_name] = -1
+                end
+                save_presets(presets, presets_show_in_grid)
+            end
+            if new_has_ks_vel or has_ks_vel then
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_SetNextItemWidth(ctx, 180)
+                local min_val = presets_ks_vel_min[combo_preset_name] or -1
+                if min_val < 0 then min_val = 1 end
+                local max_val = presets_ks_vel_max[combo_preset_name] or -1
+                if max_val < 0 then max_val = 127 end
+                local changed_range, new_min, new_max = reaper.ImGui_DragIntRange2(ctx, "##ks_vel_range", min_val, max_val, 1.0, 1, 127, "Min: %d", "Max: %d")
+                if changed_range then
+                    presets_ks_vel_min[combo_preset_name] = new_min
+                    presets_ks_vel_max[combo_preset_name] = new_max
+                    save_presets(presets, presets_show_in_grid)
+                end
+            end
+            
+            -- Note Velocity Range
+            local note_vel_min_val = presets_note_vel_min[combo_preset_name] or -1
+            local note_vel_max_val = presets_note_vel_max[combo_preset_name] or -1
+            local has_note_vel = (note_vel_min_val ~= -1 or note_vel_max_val ~= -1)
+            
+            reaper.ImGui_Text(ctx, "Played Note Vel:")
+            reaper.ImGui_SameLine(ctx, 150)
+            local cb_changed_note_vel, new_has_note_vel = reaper.ImGui_Checkbox(ctx, "Limit##limit_note_vel", has_note_vel)
+            if cb_changed_note_vel then
+                if new_has_note_vel then
+                    presets_note_vel_min[combo_preset_name] = 1
+                    presets_note_vel_max[combo_preset_name] = 127
+                else
+                    presets_note_vel_min[combo_preset_name] = -1
+                    presets_note_vel_max[combo_preset_name] = -1
+                end
+                save_presets(presets, presets_show_in_grid)
+            end
+            if new_has_note_vel or has_note_vel then
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_SetNextItemWidth(ctx, 180)
+                local min_val = presets_note_vel_min[combo_preset_name] or -1
+                if min_val < 0 then min_val = 1 end
+                local max_val = presets_note_vel_max[combo_preset_name] or -1
+                if max_val < 0 then max_val = 127 end
+                local changed_range, new_min, new_max = reaper.ImGui_DragIntRange2(ctx, "##note_vel_range", min_val, max_val, 1.0, 1, 127, "Min: %d", "Max: %d")
+                if changed_range then
+                    presets_note_vel_min[combo_preset_name] = new_min
+                    presets_note_vel_max[combo_preset_name] = new_max
+                    save_presets(presets, presets_show_in_grid)
+                end
+            end
+            
+            reaper.ImGui_Spacing(ctx)
+        end
+    end
+
     reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
+
+    local has_notes, _ = has_selected_midi_notes()
+    if has_notes then
+        local changed_cb, new_cb = reaper.ImGui_Checkbox(ctx, "Write Keyswitches", gui_state.write_keyswitches)
+        if changed_cb then
+            gui_state.write_keyswitches = new_cb
+            reaper.SetProjExtState(0, "Walter_MediaOffsetTool", "write_keyswitches", gui_state.write_keyswitches and "1" or "0")
+        end
+        reaper.ImGui_Spacing(ctx)
+    end
 
     -- Double-click / Drag slider for absolute offset (displaying current value) and manual input box side by side
     reaper.ImGui_Text(ctx, "Offset:")
@@ -1574,8 +1933,15 @@ local function render_ui()
             undo_msg = string.format("Move items timeline position by %.1f ms", gui_state.slider_value)
         end
         
+        local active_preset = ""
+        if current_preset_name ~= "" and presets[current_preset_name] ~= nil then
+            if math.abs(presets[current_preset_name] - gui_state.slider_value) < 0.01 then
+                active_preset = current_preset_name
+            end
+        end
+
         reaper.Undo_BeginBlock2(0)
-        apply_offset_to_targets(gui_state.slider_value)
+        apply_offset_to_targets(gui_state.slider_value, active_preset)
         reaper.Undo_EndBlock2(0, undo_msg, -1)
         
         if eff_mode == MODE_TRACK_OFFSET then
@@ -1609,13 +1975,6 @@ local function render_ui()
             end
         end
         
-        -- Persist/Clear preset association on slider commit
-        local active_preset = ""
-        if current_preset_name ~= "" and presets[current_preset_name] ~= nil then
-            if math.abs(presets[current_preset_name] - gui_state.slider_value) < 0.01 then
-                active_preset = current_preset_name
-            end
-        end
         save_preset_name_to_targets(active_preset)
         
         gui_state.is_dragging = false
