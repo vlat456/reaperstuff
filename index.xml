@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="d153fcef71d6cc3bc07a5a17c11f270ebb28c5f9">
+<index version="1" name="Walter Scripts" commit="e8ee609767c8cd924e5ab168f0361d971ba97366">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -164,7 +164,7 @@
 {\pard \ql \f0 \sa180 \li0 \fi0 An ImGui-based utility for adjusting media offsets in REAPER. Supports three target modes selected via radio buttons:\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 1)\tx360\tab Take Start Offset\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 2)\tx360\tab Track Playback Offset\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 3)\tx360\tab Move Item Position If MIDI notes are selected, overrides normal modes to adjust note timing directly. Works inside the MIDI Editor for the current MIDI item, or falls back to selected items/tracks in the Arrange view. Features an absolute slider fixed at \u177 ?500ms, fine-tuning buttons, absolute offset reset, and clean status labels.\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3)\tx360\tab Move Item Position If MIDI notes are selected, overrides normal modes to adjust note timing directly. Works inside the MIDI Editor for the current MIDI item, or falls back to selected items/tracks in the Arrange view. Features an absolute slider fixed at \u177 ?500ms, fine-tuning buttons, absolute offset reset, and clean status labels. Note offsets are robustly stored directly inside the MIDI stream as Text Events at the note start position.\sa180\par}
 }
 ]]></description>
       </metadata>
@@ -332,6 +332,9 @@
       </version>
       <version name="1.8.5" author="drvlat" time="2026-06-19T04:30:54Z">
         <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/d153fcef71d6cc3bc07a5a17c11f270ebb28c5f9/Media_Tools/Media_Offset_Tool.lua</source>
+      </version>
+      <version name="1.8.6" author="drvlat" time="2026-06-19T04:39:22Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/e8ee609767c8cd924e5ab168f0361d971ba97366/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
     </reapack>
     <reapack name="Selective_Freeze_Tool.lua" type="script" desc="Selective Freeze Tool">
