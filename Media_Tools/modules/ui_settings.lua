@@ -92,16 +92,32 @@ function UISettings.draw_settings_panel(ctx, gui_state, theme_state, defaults, c
 
     reaper.ImGui_Spacing(ctx)
 
+    -- Inactive Button Color (Library, Instrument buttons)
+    reaper.ImGui_TextDisabled(ctx, "Inactive Button Color (Library/Instrument)")
+    local ib_changed, new_ib_u32 = reaper.ImGui_ColorEdit4(ctx, "##inactive_btn_color", theme_state.inactive_btn_u32)
+    if ib_changed then theme_state.inactive_btn_u32 = new_ib_u32 end
+
+    reaper.ImGui_Spacing(ctx)
+
+    -- Inactive Button Text Color
+    reaper.ImGui_TextDisabled(ctx, "Inactive Button Text Color")
+    local ibt_changed, new_ibt_u32 = reaper.ImGui_ColorEdit4(ctx, "##inactive_btn_text_color", theme_state.inactive_btn_text_u32)
+    if ibt_changed then theme_state.inactive_btn_text_u32 = new_ibt_u32 end
+
+    reaper.ImGui_Spacing(ctx)
+
     -- Live preview: unpack from uint32 once per frame → float tables for the theme
-    theme_state.theme_bg          = theme_manager.theme_unpack(theme_state.bg_u32)
-    theme_state.theme_accent      = theme_manager.theme_unpack(theme_state.accent_u32)
-    theme_state.theme_text        = theme_manager.theme_unpack(theme_state.text_u32)
-    theme_state.theme_danger      = theme_manager.theme_unpack(theme_state.danger_u32)
-    theme_state.theme_positive    = theme_manager.theme_unpack(theme_state.positive_u32)
-    theme_state.theme_slider_grab = theme_manager.theme_unpack(theme_state.slider_grab_u32)
-    theme_state.theme_apply_btn   = theme_manager.theme_unpack(theme_state.apply_btn_u32)
-    theme_state.theme_frame_bg    = theme_manager.theme_unpack(theme_state.frame_bg_u32)
-    theme_state.theme_check_mark  = theme_manager.theme_unpack(theme_state.check_mark_u32)
+    theme_state.theme_bg              = theme_manager.theme_unpack(theme_state.bg_u32)
+    theme_state.theme_accent          = theme_manager.theme_unpack(theme_state.accent_u32)
+    theme_state.theme_text            = theme_manager.theme_unpack(theme_state.text_u32)
+    theme_state.theme_danger          = theme_manager.theme_unpack(theme_state.danger_u32)
+    theme_state.theme_positive        = theme_manager.theme_unpack(theme_state.positive_u32)
+    theme_state.theme_slider_grab     = theme_manager.theme_unpack(theme_state.slider_grab_u32)
+    theme_state.theme_apply_btn       = theme_manager.theme_unpack(theme_state.apply_btn_u32)
+    theme_state.theme_frame_bg        = theme_manager.theme_unpack(theme_state.frame_bg_u32)
+    theme_state.theme_check_mark      = theme_manager.theme_unpack(theme_state.check_mark_u32)
+    theme_state.theme_inactive_btn    = theme_manager.theme_unpack(theme_state.inactive_btn_u32)
+    theme_state.theme_inactive_btn_text = theme_manager.theme_unpack(theme_state.inactive_btn_text_u32)
 
     local show_settings = true
 
@@ -117,15 +133,17 @@ function UISettings.draw_settings_panel(ctx, gui_state, theme_state, defaults, c
     reaper.ImGui_SameLine(ctx)
     theme_manager.push_danger_style(ctx, theme_state)
     if reaper.ImGui_Button(ctx, "Reset Defaults") then
-        theme_state.bg_u32          = theme_manager.theme_pack(defaults.bg)
-        theme_state.accent_u32      = theme_manager.theme_pack(defaults.accent)
-        theme_state.text_u32        = theme_manager.theme_pack(defaults.text)
-        theme_state.danger_u32      = theme_manager.theme_pack(defaults.danger)
-        theme_state.positive_u32    = theme_manager.theme_pack(defaults.positive)
-        theme_state.slider_grab_u32 = theme_manager.theme_pack(defaults.slider_grab)
-        theme_state.apply_btn_u32   = theme_manager.theme_pack(defaults.apply_btn)
-        theme_state.frame_bg_u32    = theme_manager.theme_pack(defaults.frame_bg)
-        theme_state.check_mark_u32  = theme_manager.theme_pack(defaults.check_mark)
+        theme_state.bg_u32              = theme_manager.theme_pack(defaults.bg)
+        theme_state.accent_u32          = theme_manager.theme_pack(defaults.accent)
+        theme_state.text_u32            = theme_manager.theme_pack(defaults.text)
+        theme_state.danger_u32          = theme_manager.theme_pack(defaults.danger)
+        theme_state.positive_u32        = theme_manager.theme_pack(defaults.positive)
+        theme_state.slider_grab_u32     = theme_manager.theme_pack(defaults.slider_grab)
+        theme_state.apply_btn_u32       = theme_manager.theme_pack(defaults.apply_btn)
+        theme_state.frame_bg_u32        = theme_manager.theme_pack(defaults.frame_bg)
+        theme_state.check_mark_u32      = theme_manager.theme_pack(defaults.check_mark)
+        theme_state.inactive_btn_u32    = theme_manager.theme_pack(defaults.inactive_btn)
+        theme_state.inactive_btn_text_u32 = theme_manager.theme_pack(defaults.inactive_btn_text)
     end
     theme_manager.pop_danger_style(ctx)
 
