@@ -51,6 +51,12 @@ _G.imgui = {
     StyleVar_ItemSpacing = 4
 }
 
+package.preload['imgui'] = function()
+    return function(version)
+        return _G.imgui
+    end
+end
+
 local theme_manager = require("modules.theme_manager")
 
 local function assert_eq(actual, expected, msg)

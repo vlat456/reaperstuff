@@ -1,5 +1,7 @@
 -- @noindex
 
+local reaper = reaper
+
 local ConfigManager = {}
 
 ConfigManager.DEFAULTS = {

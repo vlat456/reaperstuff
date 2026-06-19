@@ -1,5 +1,7 @@
 -- @noindex
 
+local reaper = reaper
+
 local OffsetEngine = {}
 
 -- Helper to build a lookup cache of text events in a take

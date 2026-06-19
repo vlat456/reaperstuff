@@ -1,5 +1,7 @@
 -- @noindex
 
+local reaper = reaper
+
 local PresetManager = {}
 
 function PresetManager.split_preset_name(name)

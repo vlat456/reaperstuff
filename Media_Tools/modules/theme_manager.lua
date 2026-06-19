@@ -1,5 +1,8 @@
 -- @noindex
 
+local reaper = reaper
+local imgui = require('imgui')('0.9.3')
+
 local ThemeManager = {}
 
 -- Helper: pack float {r,g,b} table to uint32 in 0xRRGGBBAA format
