@@ -345,6 +345,13 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
                     reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(a[1], a[2], a[3], 1.0))
                     reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(math.min(a[1]+0.10, 1), math.min(a[2]+0.10, 1), math.min(a[3]+0.10, 1), 1.0))
                     reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.80, a[2]*0.71, a[3]*0.88, 1.0))
+                else
+                    local ib = theme_inactive_btn
+                    local it = theme_inactive_btn_text
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(ib[1], ib[2], ib[3], 1.0))
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(math.min(ib[1]+0.08, 1), math.min(ib[2]+0.08, 1), math.min(ib[3]+0.08, 1), 1.0))
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(math.max(ib[1]-0.04, 0), math.max(ib[2]-0.04, 0), math.max(ib[3]-0.04, 0), 1.0))
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text,          reaper.ImGui_ColorConvertDouble4ToU32(it[1], it[2], it[3], 1.0))
                 end
                 
                 if reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. i, art_btn_w, art_btn_h) then
@@ -354,6 +361,8 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
                 
                 if is_current then
                     reaper.ImGui_PopStyleColor(ctx, 3)
+                else
+                    reaper.ImGui_PopStyleColor(ctx, 4)
                 end
                 
                 if reaper.ImGui_IsItemHovered(ctx) then
