@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.8.4
+-- @version 1.8.5
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,10 +26,16 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.8.4"
+local script_name = "Media Offset Tool v1.8.5"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
+
+-- Per-frame caching for has_selected_midi_notes()
+local frame_counter = 0
+local cached_frame = -1
+local cached_has_notes = false
+local cached_take = nil
 
 -- Fixed range ±500 ms
 local FIXED_RANGE = 500.0
@@ -68,8 +74,6 @@ local presets
 local preset_keys
 local presets_show_in_grid
 local presets_ks_pitch
-local presets_ks_vel_min
-local presets_ks_vel_max
 local presets_note_vel_min
 local presets_note_vel_max
 
@@ -99,8 +103,6 @@ local function load_presets()
     local loaded_presets = {}
     local show_in_grid = {}
     local ks_pitch_tbl = {}
-    local ks_vel_min_tbl = {}
-    local ks_vel_max_tbl = {}
     local note_vel_min_tbl = {}
     local note_vel_max_tbl = {}
     local keys = {}
@@ -117,16 +119,12 @@ local function load_presets()
                     show = (parts[2] == "1")
                 end
                 local ks_pitch = tonumber(parts[3]) or -1
-                local ks_vel_min = tonumber(parts[4]) or -1
-                local ks_vel_max = tonumber(parts[5]) or -1
                 local note_vel_min = tonumber(parts[6]) or -1
                 local note_vel_max = tonumber(parts[7]) or -1
 
                 loaded_presets[name] = val
                 show_in_grid[name] = show
                 ks_pitch_tbl[name] = ks_pitch
-                ks_vel_min_tbl[name] = ks_vel_min
-                ks_vel_max_tbl[name] = ks_vel_max
                 note_vel_min_tbl[name] = note_vel_min
                 note_vel_max_tbl[name] = note_vel_max
                 table.insert(keys, name)
@@ -135,7 +133,7 @@ local function load_presets()
         f:close()
     end
     table.sort(keys)
-    return loaded_presets, keys, show_in_grid, ks_pitch_tbl, ks_vel_min_tbl, ks_vel_max_tbl, note_vel_min_tbl, note_vel_max_tbl
+    return loaded_presets, keys, show_in_grid, ks_pitch_tbl, note_vel_min_tbl, note_vel_max_tbl
 end
 
 local function save_presets(presets_table, show_in_grid_table)
@@ -153,8 +151,6 @@ local function save_presets(presets_table, show_in_grid_table)
                 show = show_in_grid_table[k]
             end
             local ks_pitch = (presets_ks_pitch and presets_ks_pitch[k]) or -1
-            local ks_vel_min = (presets_ks_vel_min and presets_ks_vel_min[k]) or -1
-            local ks_vel_max = (presets_ks_vel_max and presets_ks_vel_max[k]) or -1
             local note_vel_min = (presets_note_vel_min and presets_note_vel_min[k]) or -1
             local note_vel_max = (presets_note_vel_max and presets_note_vel_max[k]) or -1
             
@@ -163,8 +159,8 @@ local function save_presets(presets_table, show_in_grid_table)
                 tostring(presets_table[k]), 
                 show and 1 or 0,
                 ks_pitch,
-                ks_vel_min,
-                ks_vel_max,
+                -1, -- ks_vel_min (removed)
+                -1, -- ks_vel_max (removed)
                 note_vel_min,
                 note_vel_max
             ))
@@ -173,7 +169,7 @@ local function save_presets(presets_table, show_in_grid_table)
     end
 end
 
-presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
+presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
 
 -- ── Settings file (load/save) ────────────────────────────────────────────
 local function get_settings_file_path()
@@ -289,16 +285,27 @@ local MODE_MIDI_NOTES = 3     -- Override Mode: Shift Selected MIDI Notes
 
 -- Helper to check if notes are selected in the active MIDI editor take
 local function has_selected_midi_notes()
+    if cached_frame == frame_counter then
+        return cached_has_notes, cached_take
+    end
+    
     local midi_editor = reaper.MIDIEditor_GetActive()
     if midi_editor then
         local take = reaper.MIDIEditor_GetTake(midi_editor)
         if take then
             local note_index = reaper.MIDI_EnumSelNotes(take, -1)
             if note_index ~= -1 then
+                cached_has_notes = true
+                cached_take = take
+                cached_frame = frame_counter
                 return true, take
             end
         end
     end
+    
+    cached_has_notes = false
+    cached_take = nil
+    cached_frame = frame_counter
     return false, nil
 end
 
@@ -721,8 +728,6 @@ local function detect_preset_for_note(take, target_idx, target_vel, target_start
     
     for name, offset in pairs(presets) do
         local ks_pitch = presets_ks_pitch[name] or -1
-        local ks_vel_min = presets_ks_vel_min[name] or -1
-        local ks_vel_max = presets_ks_vel_max[name] or -1
         local note_vel_min = presets_note_vel_min[name] or -1
         local note_vel_max = presets_note_vel_max[name] or -1
         
@@ -738,11 +743,6 @@ local function detect_preset_for_note(take, target_idx, target_vel, target_start
                     matched = false
                 else
                     score = score + 2
-                    if ks_vel_min >= 0 and ks_vel_max >= 0 then
-                        if candidates[1].vel < ks_vel_min or candidates[1].vel > ks_vel_max then
-                            matched = false
-                        end
-                    end
                 end
             end
             
@@ -1287,13 +1287,6 @@ local function apply_offset_to_targets(value, preset_name)
                 end
                 
                 ks_pitch = presets_ks_pitch[preset_name] or -1
-                if ks_pitch >= 0 then
-                    local ks_vel_min = presets_ks_vel_min[preset_name] or -1
-                    local ks_vel_max = presets_ks_vel_max[preset_name] or -1
-                    if ks_vel_min >= 0 and ks_vel_max >= 0 then
-                        ks_vel = math.floor((ks_vel_min + ks_vel_max) / 2)
-                    end
-                end
             end
 
             -- 1. Gather all selected notes and their properties from the take before making any modifications
@@ -1888,7 +1881,7 @@ local function render_ui()
     if reaper.ImGui_Button(ctx, "Save") then
         presets[combo_preset_name] = gui_state.slider_value
         save_presets(presets, presets_show_in_grid)
-        presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
+        presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx, "Overwrite the selected preset with the current offset.")
@@ -1983,12 +1976,10 @@ local function render_ui()
             presets[combined_name] = gui_state.slider_value
             presets_show_in_grid[combined_name] = new_preset_show_in_grid
             presets_ks_pitch[combined_name] = -1
-            presets_ks_vel_min[combined_name] = -1
-            presets_ks_vel_max[combined_name] = -1
             presets_note_vel_min[combined_name] = -1
             presets_note_vel_max[combined_name] = -1
             save_presets(presets, presets_show_in_grid)
-            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
+            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
             save_preset_name_to_targets(combined_name)
             current_preset_name = combined_name
             combo_preset_name = combined_name
@@ -2050,29 +2041,23 @@ local function render_ui()
         if reaper.ImGui_Button(ctx, "OK", 80) then
             local val = presets[combo_preset_name]
             local ks_pitch = presets_ks_pitch[combo_preset_name] or -1
-            local ks_vel_min = presets_ks_vel_min[combo_preset_name] or -1
-            local ks_vel_max = presets_ks_vel_max[combo_preset_name] or -1
             local note_vel_min = presets_note_vel_min[combo_preset_name] or -1
             local note_vel_max = presets_note_vel_max[combo_preset_name] or -1
 
             presets[combo_preset_name] = nil
             presets_show_in_grid[combo_preset_name] = nil
             presets_ks_pitch[combo_preset_name] = nil
-            presets_ks_vel_min[combo_preset_name] = nil
-            presets_ks_vel_max[combo_preset_name] = nil
             presets_note_vel_min[combo_preset_name] = nil
             presets_note_vel_max[combo_preset_name] = nil
             
             presets[combined_name] = val
             presets_show_in_grid[combined_name] = rename_preset_show_in_grid
             presets_ks_pitch[combined_name] = ks_pitch
-            presets_ks_vel_min[combined_name] = ks_vel_min
-            presets_ks_vel_max[combined_name] = ks_vel_max
             presets_note_vel_min[combined_name] = note_vel_min
             presets_note_vel_max[combined_name] = note_vel_max
 
             save_presets(presets, presets_show_in_grid)
-            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
+            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
             if current_preset_name == combo_preset_name then
                 current_preset_name = combined_name
                 save_preset_name_to_targets(combined_name)
@@ -2104,12 +2089,10 @@ local function render_ui()
             presets[combo_preset_name] = nil
             presets_show_in_grid[combo_preset_name] = nil
             presets_ks_pitch[combo_preset_name] = nil
-            presets_ks_vel_min[combo_preset_name] = nil
-            presets_ks_vel_max[combo_preset_name] = nil
             presets_note_vel_min[combo_preset_name] = nil
             presets_note_vel_max[combo_preset_name] = nil
             save_presets(presets, presets_show_in_grid)
-            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_ks_vel_min, presets_ks_vel_max, presets_note_vel_min, presets_note_vel_max = load_presets()
+            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
             if current_preset_name == combo_preset_name then
                 current_preset_name = ""
                 save_preset_name_to_targets("")
@@ -2918,6 +2901,8 @@ local function loop()
     if not script_running then
         return
     end
+
+    frame_counter = frame_counter + 1
 
     -- Selection management
     update_targets_list()
