@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.8.5
+-- @version 1.8.6
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -10,6 +10,7 @@
 --   If MIDI notes are selected, overrides normal modes to adjust note timing directly.
 --   Works inside the MIDI Editor for the current MIDI item, or falls back to selected items/tracks in the Arrange view.
 --   Features an absolute slider fixed at ±500ms, fine-tuning buttons, absolute offset reset, and clean status labels.
+--   Note offsets are robustly stored directly inside the MIDI stream as Text Events at the note start position.
 -- @provides
 --   [main=main,midi_editor,midi_inlineeditor,midi_eventlisteditor] Media_Offset_Tool.lua
 
@@ -26,7 +27,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.8.5"
+local script_name = "Media Offset Tool v1.8.6"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -554,6 +555,83 @@ local function read_note_preset_text_event(take, startppq)
     return ""
 end
 
+-- Helper to delete/write offset as a MIDI Text Event
+local function write_note_offset_text_event(take, startppq, offset_ms)
+    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
+    local events_to_delete = {}
+    for idx = 0, sysex_count - 1 do
+        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
+        if r and type_val == 1 then
+            if math.abs(ppqpos - startppq) < 5 and msg:sub(1, 2) == "O:" then
+                table.insert(events_to_delete, idx)
+            end
+        end
+    end
+    for d = #events_to_delete, 1, -1 do
+        reaper.MIDI_DeleteTextSysexEvt(take, events_to_delete[d])
+    end
+    if offset_ms and math.abs(offset_ms) > 0.001 then
+        reaper.MIDI_InsertTextSysexEvt(
+            take,
+            false, -- selected
+            false, -- muted
+            startppq,
+            1, -- type 1 = Text Event
+            "O:" .. tostring(offset_ms)
+        )
+    end
+end
+
+-- Helper to read offset from MIDI Text Event
+local function read_note_offset_text_event(take, startppq)
+    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
+    for idx = 0, sysex_count - 1 do
+        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
+        if r and type_val == 1 then
+            if math.abs(ppqpos - startppq) < 5 then
+                if msg:sub(1, 2) == "O:" then
+                    return tonumber(msg:sub(3)) or 0.0
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Helper to build a lookup cache of text events in a take
+local function build_take_text_events_cache(take)
+    local cache = {}
+    if not take or not reaper.TakeIsMIDI(take) then return cache end
+    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
+    for idx = 0, sysex_count - 1 do
+        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
+        if r and type_val == 1 then
+            local bucket = math.floor(ppqpos / 5)
+            if not cache[bucket] then cache[bucket] = {} end
+            table.insert(cache[bucket], { idx = idx, ppqpos = ppqpos, msg = msg })
+        end
+    end
+    return cache
+end
+
+-- Helper to query text events near a specific PPQ position using the cache
+local function find_text_events_near_ppq(cache, startppq)
+    if not cache then return {} end
+    local results = {}
+    local ks = math.floor(startppq / 5)
+    for b = ks - 1, ks + 1 do
+        local bucket_events = cache[b]
+        if bucket_events then
+            for _, ev in ipairs(bucket_events) do
+                if math.abs(ev.ppqpos - startppq) < 5 then
+                    table.insert(results, ev)
+                end
+            end
+        end
+    end
+    return results
+end
+
 -- Helper to save the preset name metadata to all selected targets
 local function save_preset_name_to_targets(preset_name)
     local eff_mode = get_effective_mode()
@@ -611,17 +689,67 @@ local function save_preset_name_to_targets(preset_name)
 end
 
 -- Helper to clean up note offsets and presets metadata from a take
+-- Helper to check if a pitch is used as a keyswitch in any preset
+local function is_keyswitch_pitch(pitch)
+    if not gui_state or not gui_state.write_keyswitches then
+        return false
+    end
+    if not presets_ks_pitch then return false end
+    for name, ks_pitch in pairs(presets_ks_pitch) do
+        if ks_pitch == pitch then
+            return true
+        end
+    end
+    return false
+end
+
+-- Helper to clean up note offsets and presets metadata from a take (both P_EXT and Text Events)
 local function cleanup_take_note_offsets(take)
     if not take or not reaper.TakeIsMIDI(take) then return end
-    local _, notes_count = reaper.MIDI_CountEvts(take)
+    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
+    
+    -- 1. Build a quick lookup list of existing note start positions (excluding keyswitches)
+    local existing_note_ppqs = {}
+    for idx = 0, notes_count - 1 do
+        local r, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, idx)
+        if r and not is_keyswitch_pitch(pitch) then
+            table.insert(existing_note_ppqs, startppq)
+        end
+    end
+    
+    -- 2. Find and delete orphaned Text Events (offset and preset events with no matching note)
+    local text_events_to_delete = {}
+    for idx = 0, sysex_count - 1 do
+        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
+        if r and type_val == 1 then
+            if msg:sub(1, 2) == "O:" or msg:sub(1, 2) == "A:" or msg:sub(1, 13) == "WalterPreset:" then
+                local note_found = false
+                for _, n_ppq in ipairs(existing_note_ppqs) do
+                    if math.abs(n_ppq - ppqpos) < 5 then
+                        note_found = true
+                        break
+                    end
+                end
+                if not note_found then
+                    table.insert(text_events_to_delete, idx)
+                end
+            end
+        end
+    end
+    for d = #text_events_to_delete, 1, -1 do
+        reaper.MIDI_DeleteTextSysexEvt(take, text_events_to_delete[d])
+    end
+    
+    -- Recount after text event deletions to keep indexes correct
+    local _, notes_count_new = reaper.MIDI_CountEvts(take)
     local offsets = get_take_note_offsets(take)
     local note_presets = get_take_note_presets(take)
     
     -- Build a quick lookup map of existing notes by pitch_chan:ppq
     local existing_notes = {}
-    for idx = 0, notes_count - 1 do
-        local retval, _, _, startppq, _, chan, pitch = reaper.MIDI_GetNote(take, idx)
-        if retval then
+    for idx = 0, notes_count_new - 1 do
+        local r, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, idx)
+        if r then
             local lookup_key = string.format("%d_%d", pitch, chan)
             if not existing_notes[lookup_key] then
                 existing_notes[lookup_key] = {}
@@ -646,6 +774,7 @@ local function cleanup_take_note_offsets(take)
             local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, current_time_expected)
             
             local lookup_key = string.format("%d_%d", o_pitch, o_chan)
+            -- Check if any note matches the expected current position
             local found = false
             local ppqs = existing_notes[lookup_key]
             if ppqs then
@@ -667,25 +796,13 @@ local function cleanup_take_note_offsets(take)
             end
         end
     end
+    
     if changed then
         save_take_note_offsets(take, cleaned_offsets)
         save_take_note_presets(take, cleaned_presets)
     end
 end
 
--- Helper to check if a pitch is used as a keyswitch in any preset
-local function is_keyswitch_pitch(pitch)
-    if not gui_state or not gui_state.write_keyswitches then
-        return false
-    end
-    if not presets_ks_pitch then return false end
-    for name, ks_pitch in pairs(presets_ks_pitch) do
-        if ks_pitch == pitch then
-            return true
-        end
-    end
-    return false
-end
 
 -- Helper to auto-detect matching preset for a selected MIDI note
 local function detect_preset_for_note(take, target_idx, target_vel, target_start_ppq, target_chan)
@@ -790,6 +907,7 @@ local function update_targets_list(force)
             -- Override: selected MIDI notes in active take
             local offsets = get_take_note_offsets(take)
             local note_presets = get_take_note_presets(take)
+            local text_cache = build_take_text_events_cache(take)
             local note_idx = -1
             local safety = 0
             while safety < 10000 do
@@ -804,31 +922,46 @@ local function update_targets_list(force)
                         local found_preset = ""
                         local original_ppq = startppq
                         
-                        -- Prioritize reading from MIDI Text Event
-                        local text_preset = read_note_preset_text_event(take, startppq)
-                        if text_preset ~= "" then
-                            found_preset = text_preset
+                        -- Prioritize reading from MIDI Text Events
+                        local text_events = find_text_events_near_ppq(text_cache, startppq)
+                        local found_offset_from_text = nil
+                        for _, ev in ipairs(text_events) do
+                            if ev.msg:sub(1, 2) == "O:" then
+                                found_offset_from_text = tonumber(ev.msg:sub(3)) or 0.0
+                            elseif ev.msg:sub(1, 2) == "A:" then
+                                found_preset = ev.msg:sub(3)
+                            elseif ev.msg:sub(1, 13) == "WalterPreset:" then
+                                found_preset = ev.msg:sub(14)
+                            end
                         end
                         
-                        for key, offset_ms in pairs(offsets) do
-                            local o_pitch, o_chan, o_orig_ppq = key:match("^(%d+)_(%d+)_(%d+)$")
-                            if o_pitch and o_chan and o_orig_ppq then
-                                o_pitch = tonumber(o_pitch)
-                                o_chan = tonumber(o_chan)
-                                o_orig_ppq = tonumber(o_orig_ppq)
-                                
-                                if o_pitch == pitch and o_chan == chan then
-                                    local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(take, o_orig_ppq)
-                                    local current_time_expected = orig_time + (offset_ms / 1000.0)
-                                    local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, current_time_expected)
+                        if found_offset_from_text then
+                            found_offset = found_offset_from_text
+                            local current_time = reaper.MIDI_GetProjTimeFromPPQPos(take, startppq)
+                            local original_time = current_time - (found_offset / 1000.0)
+                            original_ppq = math.floor(reaper.MIDI_GetPPQPosFromProjTime(take, original_time) + 0.5)
+                        else
+                            -- Fallback to the old P_EXT offsets metadata database lookup
+                            for key, offset_ms in pairs(offsets) do
+                                local o_pitch, o_chan, o_orig_ppq = key:match("^(%d+)_(%d+)_(%d+)$")
+                                if o_pitch and o_chan and o_orig_ppq then
+                                    o_pitch = tonumber(o_pitch)
+                                    o_chan = tonumber(o_chan)
+                                    o_orig_ppq = tonumber(o_orig_ppq)
                                     
-                                    if math.abs(startppq - expected_current_ppq) < 5 then
-                                        found_offset = offset_ms
-                                        if found_preset == "" then
-                                            found_preset = note_presets[key] or ""
+                                    if o_pitch == pitch and o_chan == chan then
+                                        local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(take, o_orig_ppq)
+                                        local current_time_expected = orig_time + (offset_ms / 1000.0)
+                                        local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, current_time_expected)
+                                        
+                                        if math.abs(startppq - expected_current_ppq) < 5 then
+                                            found_offset = offset_ms
+                                            if found_preset == "" then
+                                                found_preset = note_presets[key] or ""
+                                            end
+                                            original_ppq = o_orig_ppq
+                                            break
                                         end
-                                        original_ppq = o_orig_ppq
-                                        break
                                     end
                                 end
                             end
@@ -1107,6 +1240,7 @@ local function update_targets_list(force)
             if eff_mode == MODE_MIDI_NOTES then
                 local offsets = get_take_note_offsets(take)
                 local note_presets = get_take_note_presets(take)
+                local text_cache = build_take_text_events_cache(take)
                 local any_drifted = false
                 local note_idx = -1
                 
@@ -1132,6 +1266,10 @@ local function update_targets_list(force)
                             offsets[old_key] = nil
                             note_presets[old_key] = nil
                             
+                            -- Delete old offset and preset text events at the old expected position
+                            write_note_offset_text_event(info.take, expected_current_ppq, 0.0)
+                            write_note_preset_text_event(info.take, expected_current_ppq, "")
+                            
                             -- Reset baseline to new position
                             info.original_ppq = startppq
                             info.offset_ms = 0.0
@@ -1140,11 +1278,17 @@ local function update_targets_list(force)
                             any_drifted = true
                         end
 
-                        -- Prioritize reading the preset name from the MIDI Text Event at its current position
-                        local text_preset = read_note_preset_text_event(info.take, startppq)
-                        if text_preset ~= "" then
-                            found_preset = text_preset
-                        else
+                        -- Prioritize reading the preset name from the MIDI Text Events at its current position
+                        local text_events = find_text_events_near_ppq(text_cache, startppq)
+                        for _, ev in ipairs(text_events) do
+                            if ev.msg:sub(1, 2) == "A:" then
+                                found_preset = ev.msg:sub(3)
+                            elseif ev.msg:sub(1, 13) == "WalterPreset:" then
+                                found_preset = ev.msg:sub(14)
+                            end
+                        end
+                        
+                        if found_preset == "" then
                             local old_key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
                             found_preset = note_presets[old_key] or ""
                         end
@@ -1471,9 +1615,16 @@ local function apply_offset_to_targets(value, preset_name)
                     local old_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + (info.offset_ms / 1000.0))
                     local new_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time + shift_sec)
                     
+                    -- Preset text event
                     write_note_preset_text_event(take, old_start_ppq, "")
                     if preset_name ~= "" then
                         write_note_preset_text_event(take, new_start_ppq, preset_name)
+                    end
+                    
+                    -- Offset text event
+                    write_note_offset_text_event(take, old_start_ppq, 0.0)
+                    if math.abs(value) > 0.001 then
+                        write_note_offset_text_event(take, new_start_ppq, value)
                     end
                 end
             end
