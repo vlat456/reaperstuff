@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="ca2462111f5cfc63d5ac8e3820dae378f9d18657">
+<index version="1" name="Walter Scripts" commit="ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -484,6 +484,21 @@
         <source file="modules/ui_presets_dropdown.lua">https://github.com/vlat456/reaperstuff/raw/ca2462111f5cfc63d5ac8e3820dae378f9d18657/Media_Tools/modules/ui_presets_dropdown.lua</source>
         <source file="modules/ui_info_panel.lua">https://github.com/vlat456/reaperstuff/raw/ca2462111f5cfc63d5ac8e3820dae378f9d18657/Media_Tools/modules/ui_info_panel.lua</source>
         <source file="modules/ui_shortcuts.lua">https://github.com/vlat456/reaperstuff/raw/ca2462111f5cfc63d5ac8e3820dae378f9d18657/Media_Tools/modules/ui_shortcuts.lua</source>
+      </version>
+      <version name="1.11.0" author="drvlat" time="2026-06-19T20:14:39Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/Media_Offset_Tool.lua</source>
+        <source file="modules/config_manager.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/config_manager.lua</source>
+        <source file="modules/preset_manager.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/preset_manager.lua</source>
+        <source file="modules/offset_engine.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/offset_engine.lua</source>
+        <source file="modules/theme_manager.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/theme_manager.lua</source>
+        <source file="modules/target_manager.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/target_manager.lua</source>
+        <source file="modules/ui_renderer.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/ui_renderer.lua</source>
+        <source file="modules/ui_modals.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/ui_modals.lua</source>
+        <source file="modules/ui_settings.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/ui_settings.lua</source>
+        <source file="modules/ui_trigger_editor.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/ui_trigger_editor.lua</source>
+        <source file="modules/ui_presets_dropdown.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/ui_presets_dropdown.lua</source>
+        <source file="modules/ui_info_panel.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/ui_info_panel.lua</source>
+        <source file="modules/ui_shortcuts.lua">https://github.com/vlat456/reaperstuff/raw/ceedf0f1e0fff7e7fdbcbe597e4c21ea3cb84b57/Media_Tools/modules/ui_shortcuts.lua</source>
       </version>
     </reapack>
     <reapack name="Selective_Freeze_Tool.lua" type="script" desc="Selective Freeze Tool">
