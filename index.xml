@@ -237,17 +237,17 @@
       <version name="1.3.1" author="drvlat" time="2026-06-18T16:31:46Z">
         <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/2b7d2b1fd07cb6d53945f961608367127bba73a6/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
-      <version name="1.4.0" author="drvlat" time="2026-06-18T16:48:43Z">
-        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/f7d1a21991e7148de9ef7703a2cf3f1cd42dd21a/Media_Tools/Media_Offset_Tool.lua</source>
+      <version name="1.4.0" author="drvlat" time="2026-06-18T16:48:49Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/0ca06aca241c5c39fab69894d48795d33f2d104b/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
-      <version name="1.4.1" author="drvlat" time="2026-06-18T16:52:12Z">
-        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/a9175dc8cad6010b9c2c3834c62bf920d8a8952a/Media_Tools/Media_Offset_Tool.lua</source>
+      <version name="1.4.1" author="drvlat" time="2026-06-18T16:52:17Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/ce2169c86f9a80887913082a50970a1f76b9a071/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
-      <version name="1.4.2" author="drvlat" time="2026-06-18T16:54:58Z">
-        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/c7e8870586c2bbf302a1052cbf342cfbcfcf2e32/Media_Tools/Media_Offset_Tool.lua</source>
+      <version name="1.4.2" author="drvlat" time="2026-06-18T16:55:03Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/f118f3b0fbfa018fb20ede64fa2d07eebc51693e/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
-      <version name="1.4.3" author="drvlat" time="2026-06-18T16:58:10Z">
-        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/f5e0ecc5e02fbb1b868fdd9345de596309c5d465/Media_Tools/Media_Offset_Tool.lua</source>
+      <version name="1.4.3" author="drvlat" time="2026-06-18T16:58:16Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/71491ea631d5ce07c94aff01ec7c3fbca982dd0b/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
       <version name="1.4.4" author="drvlat" time="2026-06-18T17:02:29Z">
         <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/d91b51dd15032adbe5a9ff197af9922540eca2db/Media_Tools/Media_Offset_Tool.lua</source>
@@ -324,7 +324,7 @@
       <version name="1.8.0" author="drvlat" time="2026-06-18T20:02:15Z">
         <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/6f90b845963739640ca4e3520f70e2c9504ad2e2/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
-      <version name="1.8.3" author="drvlat" time="2026-06-18T20:56:00Z">
+      <version name="1.8.3" author="drvlat" time="2026-06-18T20:55:48Z">
         <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/d4ed3ba956bff1f0ed68a38ecb1fa0e4413b0c39/Media_Tools/Media_Offset_Tool.lua</source>
       </version>
       <version name="1.8.4" author="drvlat" time="2026-06-19T04:26:36Z">
