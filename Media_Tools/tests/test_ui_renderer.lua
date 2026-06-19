@@ -167,4 +167,57 @@ print("Running ui_renderer tests...")
 test_draw_mode_selector()
 test_draw_offset_slider()
 test_draw_preset_board()
+
+-- Test 3-tier preset board (Library - Instrument - Articulation)
+local function test_draw_preset_board_3tier()
+    imgui_calls = {}
+    local gui_state = { selected_library = "Spitfire" }
+    local preset_keys = {
+        "Spitfire - Strings - Long",
+        "Spitfire - Strings - Short",
+        "Spitfire - Brass - Staccato",
+        "Orchestral - Legato",          -- legacy 2-part
+    }
+    local presets_show_in_grid = {
+        ["Spitfire - Strings - Long"]  = true,
+        ["Spitfire - Strings - Short"] = true,
+        ["Spitfire - Brass - Staccato"] = true,
+        ["Orchestral - Legato"]        = true,
+    }
+    local presets = {
+        ["Spitfire - Strings - Long"]  = -20.0,
+        ["Spitfire - Strings - Short"] = -10.0,
+        ["Spitfire - Brass - Staccato"] = -5.0,
+        ["Orchestral - Legato"]        = -15.0,
+    }
+    local theme_accent = {1.0, 0.0, 1.0}
+    local theme_bg    = {0.1, 0.1, 0.1}
+
+    -- Should not crash
+    local new_preset_name = ui_renderer.draw_preset_board(
+        "fake_ctx", gui_state, preset_keys, presets_show_in_grid,
+        presets, theme_accent, theme_bg, "", function() end
+    )
+
+    -- Library buttons: Orchestral, Spitfire
+    local lib_btns = {}
+    for _, c in ipairs(imgui_calls) do
+        if c.type == "Button" and c.label:match("##lib_") then
+            table.insert(lib_btns, c.label)
+        end
+    end
+    assert_eq(#lib_btns, 2, "Two library buttons rendered")
+
+    -- Instrument headers (TextDisabled): "Brass:" and "Strings:" for Spitfire
+    local instr_headers = {}
+    for _, c in ipairs(imgui_calls) do
+        if c.type == "TextDisabled" and c.text:match(":$") and not c.text:match("Libraries") then
+            table.insert(instr_headers, c.text)
+        end
+    end
+    assert_eq(#instr_headers, 2, "Two instrument headers (Brass: and Strings:)")
+end
+
+test_draw_preset_board_3tier()
 print("All ui_renderer tests passed!")
+

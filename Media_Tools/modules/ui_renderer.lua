@@ -136,7 +136,7 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
     for _, name in ipairs(preset_keys) do
         if presets_show_in_grid[name] ~= false then
             local lib, instr, art = name:match("^(.-)%s*-%s*(.-)%s*-%s*(.-)$")
-            if not (lib and lib ~= "" and art ~= "") then
+            if not (lib and lib ~= "" and instr ~= "" and art ~= "") then
                 -- 2-part or unstructured
                 lib, art = name:match("^(.-)%s*-%s*(.-)$")
                 instr = ""
@@ -163,7 +163,7 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
         table.sort(instr_names)
         libs[lib]._instr_names = instr_names
         for instr in pairs(libs[lib]) do
-            if type(libs[lib][instr]) == "table" then
+            if instr ~= "_instr_names" and type(libs[lib][instr]) == "table" then
                 table.sort(libs[lib][instr], function(a, b) return a.art < b.art end)
             end
         end

@@ -64,8 +64,9 @@ function UIPresetsDropdown.draw_presets_dropdown(ctx, gui_state, presets_state, 
     
     -- Save As Button
     if reaper.ImGui_Button(ctx, "Save As") then
-        local lib, art = callbacks.split_preset_name(presets_state.combo_preset_name)
+        local lib, instr, art = callbacks.split_preset_name(presets_state.combo_preset_name)
         modal_state.new_preset_lib_input = lib
+        modal_state.new_preset_instr_input = instr
         modal_state.new_preset_art_input = ""
         modal_state.new_preset_show_in_grid = true
         modal_state.open_new_preset_modal = true

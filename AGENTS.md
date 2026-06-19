@@ -73,3 +73,10 @@ Non-code files in the root are project documentation, NOT part of the distribute
 3. Test ReaImGui calls with `lsp_diagnostics` is not available for Lua — run in REAPER to verify
 4. Always preserve ReaPack header comments
 5. Keep scripts self-contained (no external module dependencies beyond ReaImGui)
+6. **After every edit to `Media_Tools/`**, deploy to the REAPER working directory:
+   ```bash
+   rsync -av Media_Tools/Media_Offset_Tool.lua \
+     "/Users/vladimir/Library/Application Support/REAPER/Scripts/Walter Scripts/Media_Tools/"
+   rsync -av --delete Media_Tools/modules/ \
+     "/Users/vladimir/Library/Application Support/REAPER/Scripts/Walter Scripts/Media_Tools/modules/"
+   ```

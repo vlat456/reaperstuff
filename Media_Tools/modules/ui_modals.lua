@@ -72,6 +72,9 @@ function UIModals.draw_modals(ctx, modal_state, gui_state, presets_state, callba
             callbacks.save_preset_name_to_targets(combined_name)
             presets_state.current_preset_name = combined_name
             presets_state.combo_preset_name = combined_name
+            modal_state.new_lib = ""
+            modal_state.new_instr = ""
+            modal_state.new_art = ""
             reaper.ImGui_CloseCurrentPopup(ctx)
         end
         if not can_save then

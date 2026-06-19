@@ -78,8 +78,10 @@ local FIXED_RANGE = 500.0
 local current_preset_name = ""
 local combo_preset_name = ""
 local new_preset_lib_input = ""
+local new_preset_instr_input = ""
 local new_preset_art_input = ""
 local rename_preset_lib_input = ""
+local rename_preset_instr_input = ""
 local rename_preset_art_input = ""
 local open_new_preset_modal = false
 local new_preset_show_in_grid = true
@@ -967,6 +969,7 @@ local function render_ui()
     }
     local modal_state_dropdown = {
         new_preset_lib_input = new_preset_lib_input,
+        new_preset_instr_input = new_preset_instr_input,
         new_preset_art_input = new_preset_art_input,
         new_preset_show_in_grid = new_preset_show_in_grid,
         open_new_preset_modal = open_new_preset_modal,
@@ -988,6 +991,7 @@ local function render_ui()
         }
     )
     new_preset_lib_input = modal_state_dropdown.new_preset_lib_input
+    new_preset_instr_input = modal_state_dropdown.new_preset_instr_input
     new_preset_art_input = modal_state_dropdown.new_preset_art_input
     new_preset_show_in_grid = modal_state_dropdown.new_preset_show_in_grid
     open_new_preset_modal = modal_state_dropdown.open_new_preset_modal
@@ -1010,12 +1014,14 @@ local function render_ui()
         open_new = open_new_preset_modal,
         focus_new = open_new_preset_focus,
         new_lib = new_preset_lib_input,
+        new_instr = new_preset_instr_input,
         new_art = new_preset_art_input,
         new_show_grid = new_preset_show_in_grid,
 
         open_rename = open_rename_preset_modal,
         focus_rename = open_rename_preset_focus,
         rename_lib = rename_preset_lib_input,
+        rename_instr = rename_preset_instr_input,
         rename_art = rename_preset_art_input,
         rename_show_grid = rename_preset_show_in_grid,
 
@@ -1047,12 +1053,14 @@ local function render_ui()
     open_new_preset_modal = modal_state.open_new
     open_new_preset_focus = modal_state.focus_new
     new_preset_lib_input = modal_state.new_lib
+    new_preset_instr_input = modal_state.new_instr
     new_preset_art_input = modal_state.new_art
     new_preset_show_in_grid = modal_state.new_show_grid
 
     open_rename_preset_modal = modal_state.open_rename
     open_rename_preset_focus = modal_state.focus_rename
     rename_preset_lib_input = modal_state.rename_lib
+    rename_preset_instr_input = modal_state.rename_instr
     rename_preset_art_input = modal_state.rename_art
     rename_preset_show_in_grid = modal_state.rename_show_grid
 
