@@ -85,10 +85,15 @@ local open_new_preset_modal = false
 local new_preset_show_in_grid = true
 local rename_preset_show_in_grid = true
 
--- Helper to split a preset name into Library and Articulation
+-- Helper to split a preset name into Library, Instrument, Articulation
 local function split_preset_name(name)
     return preset_manager.split_preset_name(name)
 end
+-- Helper to build a preset name from parts (instrument optional)
+local function join_preset_name(lib, instr, art)
+    return preset_manager.join_preset_name(lib, instr, art)
+end
+
 local open_new_preset_focus = false
 local open_rename_preset_modal = false
 local open_rename_preset_focus = false
@@ -618,7 +623,7 @@ local function apply_offset_to_targets(value, preset_name)
                 end
                 
                 if preset_name ~= nil then
-                    local lib, art = split_preset_name(preset_name)
+                    local lib, instr, art = split_preset_name(preset_name)
                     local display_label = art
                     if display_label == "" then
                         display_label = lib
@@ -828,7 +833,7 @@ local function adjust_offset_to_value(target_ms, preset_name)
     current_preset_name = active_preset
     combo_preset_name = active_preset
     if active_preset ~= "" then
-        local lib, art = split_preset_name(active_preset)
+        local lib, instr, art = split_preset_name(active_preset)
         if lib ~= "" then
             gui_state.selected_library = lib
         end
@@ -1035,7 +1040,8 @@ local function render_ui()
             save_presets = save_presets,
             load_presets = load_presets,
             save_preset_name_to_targets = save_preset_name_to_targets,
-            split_preset_name = split_preset_name
+            split_preset_name = split_preset_name,
+            join_preset_name = join_preset_name
         }
     )
     open_new_preset_modal = modal_state.open_new

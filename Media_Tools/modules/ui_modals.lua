@@ -22,6 +22,12 @@ function UIModals.draw_modals(ctx, modal_state, gui_state, presets_state, callba
             modal_state.new_lib = new_lib
         end
         
+        reaper.ImGui_Text(ctx, "Instrument Name (optional):")
+        local changed_instr, new_instr = reaper.ImGui_InputText(ctx, "##new_instr", modal_state.new_instr or "")
+        if changed_instr then
+            modal_state.new_instr = new_instr
+        end
+        
         reaper.ImGui_Text(ctx, "Articulation Name:")
         local changed_art, new_art = reaper.ImGui_InputText(ctx, "##new_art", modal_state.new_art)
         if changed_art then
@@ -38,6 +44,7 @@ function UIModals.draw_modals(ctx, modal_state, gui_state, presets_state, callba
         reaper.ImGui_Spacing(ctx)
         
         local lib_trimmed = modal_state.new_lib:gsub("^%s*(.-)%s*$", "%1")
+        local instr_trimmed = (modal_state.new_instr or ""):gsub("^%s*(.-)%s*$", "%1")
         local art_trimmed = modal_state.new_art:gsub("^%s*(.-)%s*$", "%1")
         local can_save = (lib_trimmed ~= "" and art_trimmed ~= "")
         
@@ -45,7 +52,7 @@ function UIModals.draw_modals(ctx, modal_state, gui_state, presets_state, callba
             reaper.ImGui_BeginDisabled(ctx)
         end
         if reaper.ImGui_Button(ctx, "OK", 80) then
-            local combined_name = lib_trimmed .. " - " .. art_trimmed
+            local combined_name = callbacks.join_preset_name(lib_trimmed, instr_trimmed, art_trimmed)
             presets_state.presets[combined_name] = gui_state.slider_value
             presets_state.presets_show_in_grid[combined_name] = modal_state.new_show_grid
             presets_state.presets_ks_pitch[combined_name] = -1
@@ -80,8 +87,9 @@ function UIModals.draw_modals(ctx, modal_state, gui_state, presets_state, callba
 
     -- 2. Rename Preset Modal
     if modal_state.open_rename then
-        local lib, art = callbacks.split_preset_name(presets_state.combo_preset_name)
+        local lib, instr, art = callbacks.split_preset_name(presets_state.combo_preset_name)
         modal_state.rename_lib = lib
+        modal_state.rename_instr = instr
         modal_state.rename_art = art
         modal_state.rename_show_grid = (presets_state.presets_show_in_grid[presets_state.combo_preset_name] ~= false)
         reaper.ImGui_OpenPopup(ctx, "Rename Preset")
@@ -96,6 +104,12 @@ function UIModals.draw_modals(ctx, modal_state, gui_state, presets_state, callba
         local changed_lib, new_lib = reaper.ImGui_InputText(ctx, "##rename_lib", modal_state.rename_lib)
         if changed_lib then
             modal_state.rename_lib = new_lib
+        end
+        
+        reaper.ImGui_Text(ctx, "Instrument Name (optional):")
+        local changed_instr, new_instr = reaper.ImGui_InputText(ctx, "##rename_instr", modal_state.rename_instr or "")
+        if changed_instr then
+            modal_state.rename_instr = new_instr
         end
         
         reaper.ImGui_Text(ctx, "Articulation Name:")
@@ -114,8 +128,9 @@ function UIModals.draw_modals(ctx, modal_state, gui_state, presets_state, callba
         reaper.ImGui_Spacing(ctx)
         
         local lib_trimmed = modal_state.rename_lib:gsub("^%s*(.-)%s*$", "%1")
+        local instr_trimmed = (modal_state.rename_instr or ""):gsub("^%s*(.-)%s*$", "%1")
         local art_trimmed = modal_state.rename_art:gsub("^%s*(.-)%s*$", "%1")
-        local combined_name = lib_trimmed .. " - " .. art_trimmed
+        local combined_name = callbacks.join_preset_name(lib_trimmed, instr_trimmed, art_trimmed)
         local can_save = (lib_trimmed ~= "" and art_trimmed ~= "" and (combined_name ~= presets_state.combo_preset_name or modal_state.rename_show_grid ~= (presets_state.presets_show_in_grid[presets_state.combo_preset_name] ~= false)))
         
         if not can_save then

@@ -129,27 +129,44 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
     reaper.ImGui_Text(ctx, "Preset Board:")
     reaper.ImGui_Spacing(ctx)
     
-    -- Prepare grouped data
+    -- Prepare grouped data: libs[lib][instr] = list of {name, art, offset}
+    -- Instrument key "" is used for legacy 2-part presets
     local libs = {}
     local lib_names = {}
     for _, name in ipairs(preset_keys) do
         if presets_show_in_grid[name] ~= false then
-            local lib, art = name:match("^(.-)%s*-%s*(.-)$")
-            if not lib then
-                lib = "Other"
-                art = name
+            local lib, instr, art = name:match("^(.-)%s*-%s*(.-)%s*-%s*(.-)$")
+            if not (lib and lib ~= "" and art ~= "") then
+                -- 2-part or unstructured
+                lib, art = name:match("^(.-)%s*-%s*(.-)$")
+                instr = ""
+                if not lib then
+                    lib = "Other"
+                    art = name
+                end
             end
             if not libs[lib] then
                 libs[lib] = {}
                 table.insert(lib_names, lib)
             end
-            table.insert(libs[lib], { name = name, art = art, offset = presets[name] })
+            if not libs[lib][instr] then
+                libs[lib][instr] = {}
+            end
+            table.insert(libs[lib][instr], { name = name, art = art, offset = presets[name] })
         end
     end
     
     table.sort(lib_names)
     for lib in pairs(libs) do
-        table.sort(libs[lib], function(a, b) return a.art < b.art end)
+        local instr_names = {}
+        for k in pairs(libs[lib]) do table.insert(instr_names, k) end
+        table.sort(instr_names)
+        libs[lib]._instr_names = instr_names
+        for instr in pairs(libs[lib]) do
+            if type(libs[lib][instr]) == "table" then
+                table.sort(libs[lib][instr], function(a, b) return a.art < b.art end)
+            end
+        end
     end
     
     if #lib_names > 0 then
@@ -208,47 +225,60 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
         reaper.ImGui_Spacing(ctx)
         reaper.ImGui_Spacing(ctx)
         
-        -- Articulations Row
-        reaper.ImGui_TextDisabled(ctx, "Articulations (" .. gui_state.selected_library .. "):")
-        reaper.ImGui_Spacing(ctx)
+        -- Articulations section (with optional Instrument grouping)
+        local cur_lib_data = libs[gui_state.selected_library] or {}
+        local instr_names = cur_lib_data._instr_names or {}
         
-        local arts = libs[gui_state.selected_library] or {}
-        local current_art_x = 0.0
-        for i, art_data in ipairs(arts) do
-            local text_w, _ = reaper.ImGui_CalcTextSize(ctx, art_data.art)
-            local btn_w = text_w + pad_x * 2
+        local art_idx = 0
+        for _, instr in ipairs(instr_names) do
+            local arts = cur_lib_data[instr] or {}
             
-            if i > 1 then
-                if current_art_x + btn_w + space_x < wrap_w then
-                    reaper.ImGui_SameLine(ctx, nil, space_x)
-                    current_art_x = current_art_x + btn_w + space_x
+            if instr ~= "" then
+                reaper.ImGui_TextDisabled(ctx, instr .. ":")
+            else
+                reaper.ImGui_TextDisabled(ctx, "Articulations (" .. gui_state.selected_library .. "):")
+            end
+            reaper.ImGui_Spacing(ctx)
+            
+            local current_art_x = 0.0
+            for i, art_data in ipairs(arts) do
+                art_idx = art_idx + 1
+                local text_w, _ = reaper.ImGui_CalcTextSize(ctx, art_data.art)
+                local btn_w = text_w + pad_x * 2
+                
+                if i > 1 then
+                    if current_art_x + btn_w + space_x < wrap_w then
+                        reaper.ImGui_SameLine(ctx, nil, space_x)
+                        current_art_x = current_art_x + btn_w + space_x
+                    else
+                        current_art_x = btn_w
+                    end
                 else
                     current_art_x = btn_w
                 end
-            else
-                current_art_x = btn_w
+                
+                local is_current = (current_preset_name == art_data.name)
+                if is_current then
+                    local a = theme_accent
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(a[1], a[2], a[3], 1.0))
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(math.min(a[1]+0.10, 1), math.min(a[2]+0.10, 1), math.min(a[3]+0.10, 1), 1.0))
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.80, a[2]*0.71, a[3]*0.88, 1.0))
+                end
+                
+                if reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. art_idx) then
+                    current_preset_name = art_data.name
+                    adjust_offset_to_value_cb(art_data.offset, art_data.name)
+                end
+                
+                if is_current then
+                    reaper.ImGui_PopStyleColor(ctx, 3)
+                end
+                
+                if reaper.ImGui_IsItemHovered(ctx) then
+                    reaper.ImGui_SetTooltip(ctx, string.format("%s\nOffset: %.1f ms", art_data.name, art_data.offset))
+                end
             end
-            
-            local is_current = (current_preset_name == art_data.name)
-            if is_current then
-                local a = theme_accent
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(a[1], a[2], a[3], 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(math.min(a[1]+0.10, 1), math.min(a[2]+0.10, 1), math.min(a[3]+0.10, 1), 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.80, a[2]*0.71, a[3]*0.88, 1.0))
-            end
-            
-            if reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. i) then
-                current_preset_name = art_data.name
-                adjust_offset_to_value_cb(art_data.offset, art_data.name)
-            end
-            
-            if is_current then
-                reaper.ImGui_PopStyleColor(ctx, 3)
-            end
-            
-            if reaper.ImGui_IsItemHovered(ctx) then
-                reaper.ImGui_SetTooltip(ctx, string.format("%s\nOffset: %.1f ms", art_data.name, art_data.offset))
-            end
+            reaper.ImGui_Spacing(ctx)
         end
     else
         reaper.ImGui_TextDisabled(ctx, "No presets configured to show in grid.")

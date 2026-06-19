@@ -4,17 +4,40 @@ local reaper = reaper
 
 local PresetManager = {}
 
+-- Split a preset name into (lib, instr, art).
+-- Format: "Library - Instrument - Articulation"  (3-part, new)
+-- Legacy:  "Library - Articulation"              (2-part, old)
+-- Unknown: "SomeName"                            → lib=SomeName, instr="", art=""
 function PresetManager.split_preset_name(name)
     if not name or name == "" then
-        return "", ""
+        return "", "", ""
     end
-    local lib, art = name:match("^(.-)%s*-%s*(.-)$")
-    if lib and art then
-        return lib, art
+    -- Try 3-part: "A - B - C"
+    local lib, instr, art = name:match("^(.-)%s*-%s*(.-)%s*-%s*(.-)$")
+    if lib and lib ~= "" and instr and instr ~= "" and art and art ~= "" then
+        return lib, instr, art
+    end
+    -- Try 2-part legacy: "A - B"
+    local lib2, art2 = name:match("^(.-)%s*-%s*(.-)$")
+    if lib2 and lib2 ~= "" and art2 and art2 ~= "" then
+        return lib2, "", art2
+    end
+    -- Single word / unstructured
+    return name, "", ""
+end
+
+-- Build a preset name from (lib, instr, art), skipping empty instr for legacy compat
+function PresetManager.join_preset_name(lib, instr, art)
+    lib = (lib or ""):gsub("^%s*(.-)%s*$", "%1")
+    instr = (instr or ""):gsub("^%s*(.-)%s*$", "%1")
+    art = (art or ""):gsub("^%s*(.-)%s*$", "%1")
+    if instr ~= "" then
+        return lib .. " - " .. instr .. " - " .. art
     else
-        return name, ""
+        return lib .. " - " .. art
     end
 end
+
 
 function PresetManager.split_string(inputstr, sep)
     local t = {}

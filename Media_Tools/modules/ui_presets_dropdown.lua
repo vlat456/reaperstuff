@@ -21,7 +21,7 @@ function UIPresetsDropdown.draw_presets_dropdown(ctx, gui_state, presets_state, 
             if reaper.ImGui_Selectable(ctx, name, is_selected) then
                 presets_state.combo_preset_name = name
                 gui_state.slider_value = presets_state.presets[name]
-                local lib, art = callbacks.split_preset_name(name)
+                local lib, instr, art = callbacks.split_preset_name(name)
                 if lib ~= "" then
                     gui_state.selected_library = lib
                 end

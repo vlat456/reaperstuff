@@ -646,7 +646,7 @@ function TargetManager.update_targets_list(ctx, gui_state, presets_state, modes,
             if all_same then
                 common_preset = first_preset
                 if first_preset ~= "" then
-                    local lib, art = callbacks.split_preset_name(first_preset)
+                    local lib, instr, art = callbacks.split_preset_name(first_preset)
                     if lib ~= "" then
                         gui_state.selected_library = lib
                     end
@@ -762,7 +762,7 @@ function TargetManager.update_targets_list(ctx, gui_state, presets_state, modes,
                     presets_state.current_preset_name = all_same_preset and first_preset or ""
                     presets_state.combo_preset_name = presets_state.current_preset_name
                     if presets_state.current_preset_name ~= "" then
-                        local lib, art = callbacks.split_preset_name(presets_state.current_preset_name)
+                        local lib, instr, art = callbacks.split_preset_name(presets_state.current_preset_name)
                         if lib ~= "" then
                             gui_state.selected_library = lib
                         end

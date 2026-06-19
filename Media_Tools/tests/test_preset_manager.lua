@@ -16,22 +16,49 @@ end
 
 -- Test Split Preset Name
 local function test_split_preset_name()
-    local lib, art = preset_manager.split_preset_name("Library - Articulation")
-    assert_eq(lib, "Library", "Library part split correctly")
-    assert_eq(art, "Articulation", "Articulation part split correctly")
+    -- Legacy 2-part
+    local lib, instr, art = preset_manager.split_preset_name("Library - Articulation")
+    assert_eq(lib, "Library", "Legacy: lib part")
+    assert_eq(instr, "", "Legacy: instr part is empty")
+    assert_eq(art, "Articulation", "Legacy: art part")
 
-    local lib2, art2 = preset_manager.split_preset_name("SimpleName")
-    assert_eq(lib2, "SimpleName", "Single name library component")
-    assert_eq(art2, "", "Single name articulation is empty")
+    -- New 3-part
+    local lib2, instr2, art2 = preset_manager.split_preset_name("Spitfire - Strings - Long")
+    assert_eq(lib2, "Spitfire", "3-part: lib")
+    assert_eq(instr2, "Strings", "3-part: instr")
+    assert_eq(art2, "Long", "3-part: art")
 
-    local lib3, art3 = preset_manager.split_preset_name("")
-    assert_eq(lib3, "", "Empty name split")
-    assert_eq(art3, "", "Empty name split")
+    -- Single word
+    local lib3, instr3, art3 = preset_manager.split_preset_name("SimpleName")
+    assert_eq(lib3, "SimpleName", "Single name: lib")
+    assert_eq(instr3, "", "Single name: instr empty")
+    assert_eq(art3, "", "Single name: art empty")
 
-    local lib4, art4 = preset_manager.split_preset_name(nil)
-    assert_eq(lib4, "", "Nil name split")
-    assert_eq(art4, "", "Nil name split")
+    -- Empty
+    local lib4, instr4, art4 = preset_manager.split_preset_name("")
+    assert_eq(lib4, "", "Empty split: lib")
+    assert_eq(art4, "", "Empty split: art")
+
+    -- Nil
+    local lib5, instr5, art5 = preset_manager.split_preset_name(nil)
+    assert_eq(lib5, "", "Nil split: lib")
+    assert_eq(art5, "", "Nil split: art")
 end
+
+local function test_join_preset_name()
+    -- With instrument
+    local name1 = preset_manager.join_preset_name("Spitfire", "Strings", "Long")
+    assert_eq(name1, "Spitfire - Strings - Long", "join with instrument")
+
+    -- Without instrument (legacy compat)
+    local name2 = preset_manager.join_preset_name("Spitfire", "", "Long")
+    assert_eq(name2, "Spitfire - Long", "join without instrument produces 2-part name")
+
+    -- Trims spaces
+    local name3 = preset_manager.join_preset_name("  Spitfire  ", "  ", "  Long  ")
+    assert_eq(name3, "Spitfire - Long", "join trims spaces")
+end
+
 
 -- Test Split String
 local function test_split_string()
@@ -82,6 +109,8 @@ end
 
 print("Running preset_manager tests...")
 test_split_preset_name()
+test_join_preset_name()
 test_split_string()
 test_load_save_presets()
 print("All preset_manager tests passed!")
+
