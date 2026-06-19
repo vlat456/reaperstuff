@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.8.6
+-- @version 1.9.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -13,6 +13,10 @@
 --   Note offsets are robustly stored directly inside the MIDI stream as Text Events at the note start position.
 -- @provides
 --   [main=main,midi_editor,midi_inlineeditor,midi_eventlisteditor] Media_Offset_Tool.lua
+--   [nomain] modules/config_manager.lua
+--   [nomain] modules/preset_manager.lua
+--   [nomain] modules/offset_engine.lua
+--   [nomain] modules/theme_manager.lua
 
 local reaper = reaper
 
@@ -26,8 +30,19 @@ end
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
+
+
+
+-- Load modules
+local script_path = debug.getinfo(1, "S").source:match("@?(.*[\\/])")
+package.path = script_path .. "modules/?.lua;" .. package.path
+local preset_manager = require("preset_manager")
+local config_manager = require("config_manager")
+local offset_engine = require("offset_engine")
+local theme_manager = require("theme_manager")
+
 -- Script variables
-local script_name = "Media Offset Tool v1.8.6"
+local script_name = "Media Offset Tool v1.9.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -54,15 +69,7 @@ local rename_preset_show_in_grid = true
 
 -- Helper to split a preset name into Library and Articulation
 local function split_preset_name(name)
-    if not name or name == "" then
-        return "", ""
-    end
-    local lib, art = name:match("^(.-)%s*-%s*(.-)$")
-    if lib and art then
-        return lib, art
-    else
-        return name, ""
-    end
+    return preset_manager.split_preset_name(name)
 end
 local open_new_preset_focus = false
 local open_rename_preset_modal = false
@@ -80,114 +87,37 @@ local presets_note_vel_max
 
 -- Helper to split a string by separator
 local function split_string(inputstr, sep)
-    local t = {}
-    local i = 1
-    while true do
-        local start_pos, end_pos = string.find(inputstr, sep, i, true)
-        if not start_pos then
-            table.insert(t, string.sub(inputstr, i))
-            break
-        end
-        table.insert(t, string.sub(inputstr, i, start_pos - 1))
-        i = end_pos + 1
-    end
-    return t
+    return preset_manager.split_string(inputstr, sep)
 end
 
 local function get_presets_file_path()
-    local sep = package.config:sub(1,1)
-    return reaper.GetResourcePath() .. sep .. "Data" .. sep .. "Walter_MediaOffset_Presets.txt"
+    return preset_manager.get_presets_file_path()
 end
 
 local function load_presets()
-    local path = get_presets_file_path()
-    local loaded_presets = {}
-    local show_in_grid = {}
-    local ks_pitch_tbl = {}
-    local note_vel_min_tbl = {}
-    local note_vel_max_tbl = {}
-    local keys = {}
-    local f = io.open(path, "r")
-    if f then
-        for line in f:lines() do
-            line = line:gsub("[\r\n]", "")
-            local name, rest = line:match("^(.-)=([^=]+)$")
-            if name and rest then
-                local parts = split_string(rest, "|")
-                local val = tonumber(parts[1]) or 0.0
-                local show = true
-                if parts[2] ~= nil then
-                    show = (parts[2] == "1")
-                end
-                local ks_pitch = tonumber(parts[3]) or -1
-                local note_vel_min = tonumber(parts[6]) or -1
-                local note_vel_max = tonumber(parts[7]) or -1
-
-                loaded_presets[name] = val
-                show_in_grid[name] = show
-                ks_pitch_tbl[name] = ks_pitch
-                note_vel_min_tbl[name] = note_vel_min
-                note_vel_max_tbl[name] = note_vel_max
-                table.insert(keys, name)
-            end
-        end
-        f:close()
-    end
-    table.sort(keys)
-    return loaded_presets, keys, show_in_grid, ks_pitch_tbl, note_vel_min_tbl, note_vel_max_tbl
+    return preset_manager.load_presets()
 end
 
 local function save_presets(presets_table, show_in_grid_table)
-    local path = get_presets_file_path()
-    local f = io.open(path, "w")
-    if f then
-        local sorted_keys = {}
-        for k in pairs(presets_table) do
-            table.insert(sorted_keys, k)
-        end
-        table.sort(sorted_keys)
-        for _, k in ipairs(sorted_keys) do
-            local show = true
-            if show_in_grid_table and show_in_grid_table[k] ~= nil then
-                show = show_in_grid_table[k]
-            end
-            local ks_pitch = (presets_ks_pitch and presets_ks_pitch[k]) or -1
-            local note_vel_min = (presets_note_vel_min and presets_note_vel_min[k]) or -1
-            local note_vel_max = (presets_note_vel_max and presets_note_vel_max[k]) or -1
-            
-            f:write(string.format("%s=%s|%d|%d|%d|%d|%d|%d\n", 
-                k, 
-                tostring(presets_table[k]), 
-                show and 1 or 0,
-                ks_pitch,
-                -1, -- ks_vel_min (removed)
-                -1, -- ks_vel_max (removed)
-                note_vel_min,
-                note_vel_max
-            ))
-        end
-        f:close()
-    end
+    preset_manager.save_presets(presets_table, show_in_grid_table, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max)
 end
 
 presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
 
 -- ── Settings file (load/save) ────────────────────────────────────────────
 local function get_settings_file_path()
-    local sep = package.config:sub(1,1)
-    return reaper.GetResourcePath() .. sep .. "Data" .. sep .. "Walter_MediaOffset_Settings.txt"
+    return config_manager.get_settings_file_path()
 end
 
--- Default theme colors
-local DEFAULT_BG          = {0.08, 0.08, 0.10}  -- Col_WindowBg
-local DEFAULT_ACCENT      = {0.50, 0.35, 0.80}  -- Button family
-local DEFAULT_TEXT        = {0.92, 0.92, 0.95}  -- Col_Text
-local DEFAULT_DANGER      = {0.65, 0.25, 0.25}  -- Destructive actions (Reset, Delete)
-local DEFAULT_POSITIVE    = {0.25, 0.55, 0.28}  -- Positive actions (Save)
-local DEFAULT_SLIDER_GRAB = {0.50, 0.35, 0.80}  -- SliderGrab pin
-local DEFAULT_APPLY_BTN   = {0.35, 0.14, 0.88}  -- Apply button
-local DEFAULT_FRAME_BG    = {0.15, 0.15, 0.17}  -- Slider Background (FrameBg)
-local DEFAULT_CHECK_MARK  = {0.50, 0.35, 0.80}  -- Radio / Checkbox mark
+local DEFAULT_BG          = config_manager.DEFAULTS.theme_bg
+local DEFAULT_ACCENT      = config_manager.DEFAULTS.theme_accent
+local DEFAULT_TEXT        = config_manager.DEFAULTS.theme_text
+local DEFAULT_DANGER      = config_manager.DEFAULTS.theme_danger
+local DEFAULT_POSITIVE    = config_manager.DEFAULTS.theme_positive
+local DEFAULT_SLIDER_GRAB = config_manager.DEFAULTS.theme_slider_grab
+local DEFAULT_APPLY_BTN   = config_manager.DEFAULTS.theme_apply_btn
+local DEFAULT_FRAME_BG    = config_manager.DEFAULTS.theme_frame_bg
+local DEFAULT_CHECK_MARK  = config_manager.DEFAULTS.theme_check_mark
 
 local theme_bg          = {DEFAULT_BG[1],          DEFAULT_BG[2],          DEFAULT_BG[3]}
 local theme_accent      = {DEFAULT_ACCENT[1],      DEFAULT_ACCENT[2],      DEFAULT_ACCENT[3]}
@@ -202,68 +132,49 @@ local theme_check_mark  = {DEFAULT_CHECK_MARK[1],  DEFAULT_CHECK_MARK[2],  DEFAU
 local settings_write_keyswitches = false
 
 local function load_settings()
-    local path = get_settings_file_path()
-    local f = io.open(path, "r")
-    if not f then return end
-    for line in f:lines() do
-        line = line:gsub("[\r\n]", "")
-        local key, val = line:match("^([^=]+)=(.+)$")
-        if key and val then
-            local parts = {}
-            for v in val:gmatch("[^,]+") do parts[#parts+1] = tonumber(v) end
-            if key == "bg" and #parts == 3 then
-                theme_bg = {parts[1], parts[2], parts[3]}
-            elseif key == "accent" and #parts == 3 then
-                theme_accent = {parts[1], parts[2], parts[3]}
-            elseif key == "text" and #parts == 3 then
-                theme_text = {parts[1], parts[2], parts[3]}
-            elseif key == "danger" and #parts == 3 then
-                theme_danger = {parts[1], parts[2], parts[3]}
-            elseif key == "positive" and #parts == 3 then
-                theme_positive = {parts[1], parts[2], parts[3]}
-            elseif key == "slider_grab" and #parts == 3 then
-                theme_slider_grab = {parts[1], parts[2], parts[3]}
-            elseif key == "apply_btn" and #parts == 3 then
-                theme_apply_btn = {parts[1], parts[2], parts[3]}
-            elseif key == "frame_bg" and #parts == 3 then
-                theme_frame_bg = {parts[1], parts[2], parts[3]}
-            elseif key == "check_mark" and #parts == 3 then
-                theme_check_mark = {parts[1], parts[2], parts[3]}
-            elseif key == "write_keyswitches" then
-                settings_write_keyswitches = (val == "1" or val == "true")
-            end
-        end
-    end
-    f:close()
+    local themes, write_ks = config_manager.load_settings()
+    theme_bg = themes.theme_bg
+    theme_accent = themes.theme_accent
+    theme_text = themes.theme_text
+    theme_danger = themes.theme_danger
+    theme_positive = themes.theme_positive
+    theme_slider_grab = themes.theme_slider_grab
+    theme_apply_btn = themes.theme_apply_btn
+    theme_frame_bg = themes.theme_frame_bg
+    theme_check_mark = themes.theme_check_mark
+    settings_write_keyswitches = write_ks
 end
 
 local function save_settings()
-    local path = get_settings_file_path()
-    local f = io.open(path, "w")
-    if not f then return end
-    f:write(string.format("bg=%.4f,%.4f,%.4f\n",          theme_bg[1],          theme_bg[2],          theme_bg[3]))
-    f:write(string.format("accent=%.4f,%.4f,%.4f\n",      theme_accent[1],      theme_accent[2],      theme_accent[3]))
-    f:write(string.format("text=%.4f,%.4f,%.4f\n",        theme_text[1],        theme_text[2],        theme_text[3]))
-    f:write(string.format("danger=%.4f,%.4f,%.4f\n",      theme_danger[1],      theme_danger[2],      theme_danger[3]))
-    f:write(string.format("positive=%.4f,%.4f,%.4f\n",    theme_positive[1],    theme_positive[2],    theme_positive[3]))
-    f:write(string.format("slider_grab=%.4f,%.4f,%.4f\n", theme_slider_grab[1], theme_slider_grab[2], theme_slider_grab[3]))
-    f:write(string.format("apply_btn=%.4f,%.4f,%.4f\n",   theme_apply_btn[1],   theme_apply_btn[2],   theme_apply_btn[3]))
-    f:write(string.format("frame_bg=%.4f,%.4f,%.4f\n",    theme_frame_bg[1],    theme_frame_bg[2],    theme_frame_bg[3]))
-    f:write(string.format("check_mark=%.4f,%.4f,%.4f\n",  theme_check_mark[1],  theme_check_mark[2],  theme_check_mark[3]))
-    f:write(string.format("write_keyswitches=%s\n", (gui_state and gui_state.write_keyswitches) and "1" or "0"))
-    f:close()
+    local themes = {
+        theme_bg          = theme_bg,
+        theme_accent      = theme_accent,
+        theme_text        = theme_text,
+        theme_danger      = theme_danger,
+        theme_positive    = theme_positive,
+        theme_slider_grab = theme_slider_grab,
+        theme_apply_btn   = theme_apply_btn,
+        theme_frame_bg    = theme_frame_bg,
+        theme_check_mark  = theme_check_mark
+    }
+    local write_ks = false
+    if gui_state and gui_state.write_keyswitches ~= nil then
+        write_ks = gui_state.write_keyswitches
+    else
+        write_ks = settings_write_keyswitches
+    end
+    config_manager.save_settings(themes, write_ks)
 end
 
 load_settings()
 
 -- Helper: pack float {r,g,b} table to uint32 in 0xRRGGBBAA format (ColorEdit4 native format)
 local function theme_pack(t)
-    return reaper.ImGui_ColorConvertDouble4ToU32(t[1], t[2], t[3], 1.0)
+    return theme_manager.theme_pack(t)
 end
 -- Helper: unpack uint32 to float {r,g,b} table
 local function theme_unpack(u)
-    local r, g, b = reaper.ImGui_ColorConvertU32ToDouble4(u)
-    return {r, g, b}
+    return theme_manager.theme_unpack(u)
 end
 
 -- Working copies for the color pickers: stored as uint32 to avoid float→uint8→float
@@ -430,206 +341,52 @@ end
 
 -- Helper to parse note offsets metadata from parent item (namespaced by take GUID)
 local function get_take_note_offsets(take)
-    if not take or not reaper.TakeIsMIDI(take) then return {} end
-    local item = reaper.GetMediaItemTake_Item(take)
-    if not item then return {} end
-    
-    local _, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
-    if not guid or guid == "" then return {} end
-    
-    local _, val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Offsets_" .. guid, "", false)
-    local offsets = {}
-    if val and val ~= "" then
-        for entry in val:gmatch("[^;]+") do
-            local key, offset_str = entry:match("^([^:]+):([^:]+)$")
-            if key and offset_str then
-                offsets[key] = tonumber(offset_str) or 0.0
-            end
-        end
-    end
-    return offsets
+    return offset_engine.get_take_note_offsets(take)
 end
 
 -- Helper to save note offsets metadata to parent item (namespaced by take GUID)
 local function save_take_note_offsets(take, offsets)
-    if not take or not reaper.TakeIsMIDI(take) then return end
-    local item = reaper.GetMediaItemTake_Item(take)
-    if not item then return end
-    
-    local _, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
-    if not guid or guid == "" then return end
-    
-    local entries = {}
-    for key, val in pairs(offsets) do
-        if math.abs(val) > 0.001 then
-            table.insert(entries, key .. ":" .. tostring(val))
-        end
-    end
-    local val_str = table.concat(entries, ";")
-    reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Offsets_" .. guid, val_str, true)
+    return offset_engine.save_take_note_offsets(take, offsets)
 end
 
 -- Helper to parse note presets metadata from parent item (namespaced by take GUID)
 local function get_take_note_presets(take)
-    if not take or not reaper.TakeIsMIDI(take) then return {} end
-    local item = reaper.GetMediaItemTake_Item(take)
-    if not item then return {} end
-    
-    local _, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
-    if not guid or guid == "" then return {} end
-    
-    local _, val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Presets_" .. guid, "", false)
-    local presets_map = {}
-    if val and val ~= "" then
-        for entry in val:gmatch("[^;]+") do
-            local key, preset_name = entry:match("^([^:]+):(.*)$")
-            if key and preset_name then
-                presets_map[key] = preset_name
-            end
-        end
-    end
-    return presets_map
+    return offset_engine.get_take_note_presets(take)
 end
 
 -- Helper to save note presets metadata to parent item (namespaced by take GUID)
 local function save_take_note_presets(take, note_presets)
-    if not take or not reaper.TakeIsMIDI(take) then return end
-    local item = reaper.GetMediaItemTake_Item(take)
-    if not item then return end
-    
-    local _, guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
-    if not guid or guid == "" then return end
-    
-    local entries = {}
-    for key, val in pairs(note_presets) do
-        if val and val ~= "" then
-            table.insert(entries, key .. ":" .. val)
-        end
-    end
-    local val_str = table.concat(entries, ";")
-    reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MIDI_Note_Presets_" .. guid, val_str, true)
+    return offset_engine.save_take_note_presets(take, note_presets)
 end
 
 -- Helper to delete/write preset name as a MIDI Text Event
 local function write_note_preset_text_event(take, startppq, preset_name)
-    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
-    local events_to_delete = {}
-    for idx = 0, sysex_count - 1 do
-        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
-        if r and type_val == 1 then
-            if math.abs(ppqpos - startppq) < 5 and (msg:sub(1, 13) == "WalterPreset:" or msg:sub(1, 2) == "A:") then
-                table.insert(events_to_delete, idx)
-            end
-        end
-    end
-    for d = #events_to_delete, 1, -1 do
-        reaper.MIDI_DeleteTextSysexEvt(take, events_to_delete[d])
-    end
-    if preset_name and preset_name ~= "" then
-        reaper.MIDI_InsertTextSysexEvt(
-            take,
-            false, -- selected
-            false, -- muted
-            startppq,
-            1, -- type 1 = Text Event
-            "A:" .. preset_name
-        )
-    end
+    return offset_engine.write_note_preset_text_event(take, startppq, preset_name)
 end
 
 -- Helper to read preset name from MIDI Text Event
 local function read_note_preset_text_event(take, startppq)
-    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
-    for idx = 0, sysex_count - 1 do
-        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
-        if r and type_val == 1 then
-            if math.abs(ppqpos - startppq) < 5 then
-                if msg:sub(1, 2) == "A:" then
-                    return msg:sub(3)
-                elseif msg:sub(1, 13) == "WalterPreset:" then
-                    return msg:sub(14)
-                end
-            end
-        end
-    end
-    return ""
+    return offset_engine.read_note_preset_text_event(take, startppq)
 end
 
 -- Helper to delete/write offset as a MIDI Text Event
 local function write_note_offset_text_event(take, startppq, offset_ms)
-    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
-    local events_to_delete = {}
-    for idx = 0, sysex_count - 1 do
-        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
-        if r and type_val == 1 then
-            if math.abs(ppqpos - startppq) < 5 and msg:sub(1, 2) == "O:" then
-                table.insert(events_to_delete, idx)
-            end
-        end
-    end
-    for d = #events_to_delete, 1, -1 do
-        reaper.MIDI_DeleteTextSysexEvt(take, events_to_delete[d])
-    end
-    if offset_ms and math.abs(offset_ms) > 0.001 then
-        reaper.MIDI_InsertTextSysexEvt(
-            take,
-            false, -- selected
-            false, -- muted
-            startppq,
-            1, -- type 1 = Text Event
-            "O:" .. tostring(offset_ms)
-        )
-    end
+    return offset_engine.write_note_offset_text_event(take, startppq, offset_ms)
 end
 
 -- Helper to read offset from MIDI Text Event
 local function read_note_offset_text_event(take, startppq)
-    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
-    for idx = 0, sysex_count - 1 do
-        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
-        if r and type_val == 1 then
-            if math.abs(ppqpos - startppq) < 5 then
-                if msg:sub(1, 2) == "O:" then
-                    return tonumber(msg:sub(3)) or 0.0
-                end
-            end
-        end
-    end
-    return nil
+    return offset_engine.read_note_offset_text_event(take, startppq)
 end
 
 -- Helper to build a lookup cache of text events in a take
 local function build_take_text_events_cache(take)
-    local cache = {}
-    if not take or not reaper.TakeIsMIDI(take) then return cache end
-    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
-    for idx = 0, sysex_count - 1 do
-        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
-        if r and type_val == 1 then
-            local bucket = math.floor(ppqpos / 5)
-            if not cache[bucket] then cache[bucket] = {} end
-            table.insert(cache[bucket], { idx = idx, ppqpos = ppqpos, msg = msg })
-        end
-    end
-    return cache
+    return offset_engine.build_take_text_events_cache(take)
 end
 
 -- Helper to query text events near a specific PPQ position using the cache
 local function find_text_events_near_ppq(cache, startppq)
-    if not cache then return {} end
-    local results = {}
-    local ks = math.floor(startppq / 5)
-    for b = ks - 1, ks + 1 do
-        local bucket_events = cache[b]
-        if bucket_events then
-            for _, ev in ipairs(bucket_events) do
-                if math.abs(ev.ppqpos - startppq) < 5 then
-                    table.insert(results, ev)
-                end
-            end
-        end
-    end
-    return results
+    return offset_engine.find_text_events_near_ppq(cache, startppq)
 end
 
 -- Helper to save the preset name metadata to all selected targets
@@ -1822,77 +1579,38 @@ end
 
 -- Push Theme Custom Colors & Styles
 local function push_theme()
-    -- Background family: derived from theme_bg
-    local bg   = theme_bg
-    local ac   = theme_accent
-    -- Helpers: darken / lighten by a factor
-    local function dim(c, f)  return {c[1]*f, c[2]*f, c[3]*f} end
-    local function mix(c, f)  return {math.min(c[1]+f, 1), math.min(c[2]+f, 1), math.min(c[3]+f, 1)} end
-
-    local bg_title  = mix(dim(bg, 1.0), 0.10)   -- slightly lighter than bg
-    local bg_titleA = mix(dim(bg, 1.0), 0.18)
-    local bg_frame  = theme_frame_bg            -- CUSTOMIZED FRAME BG (slider background)
-    local bg_frameH = mix(dim(bg_frame, 1.0), 0.05)
-    local bg_frameA = mix(dim(bg_frame, 1.0), 0.10)
-
-    local btn      = {ac[1]*0.60, ac[2]*0.50, ac[3]*0.90}  -- muted accent
-    local btnH     = {ac[1]*0.80, ac[2]*0.70, ac[3]*1.00}
-    local btnA     = {ac[1]*1.00, ac[2]*0.90, ac[3]*1.00}
-    local sliderG  = theme_slider_grab          -- CUSTOMIZED SLIDER GRAB
-    local sliderGA = mix(sliderG, 0.10)
-    local hdr      = {ac[1]*0.40, ac[2]*0.36, ac[3]*0.60}
-    local hdrH     = {ac[1]*0.60, ac[2]*0.50, ac[3]*0.90}
-    local hdrA     = {ac[1]*0.80, ac[2]*0.70, ac[3]*1.00}
-    local border   = {bg[1]+0.17, bg[2]+0.17, bg[3]+0.20}
-
-    local function u32(c, a) return reaper.ImGui_ColorConvertDouble4ToU32(c[1], c[2], c[3], a or 1.0) end
-
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_WindowBg,         u32(bg))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_TitleBg,          u32(bg_title))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_TitleBgActive,    u32(bg_titleA))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_FrameBg,          u32(bg_frame))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_FrameBgHovered,   u32(bg_frameH))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_FrameBgActive,    u32(bg_frameA))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_SliderGrab,       u32(sliderG))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_SliderGrabActive, u32(sliderGA))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,           u32(btn))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered,    u32(btnH))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,     u32(btnA))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text,             reaper.ImGui_ColorConvertDouble4ToU32(theme_text[1], theme_text[2], theme_text[3], 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Header,           u32(hdr))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderHovered,    u32(hdrH))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_HeaderActive,     u32(hdrA))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Border,           u32(border, 0.5))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_CheckMark,        u32(theme_check_mark))
-
-    reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_FrameRounding, 6.0)
-    reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_GrabRounding, 6.0)
-    reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_WindowRounding, 8.0)
-    reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_ItemSpacing, 8.0, 6.0)
+    local themes = {
+        theme_bg          = theme_bg,
+        theme_accent      = theme_accent,
+        theme_text        = theme_text,
+        theme_frame_bg    = theme_frame_bg,
+        theme_slider_grab = theme_slider_grab,
+        theme_check_mark  = theme_check_mark
+    }
+    theme_manager.push_theme(ctx, themes)
 end
 
 -- Pop Theme Styles & Colors
 local function pop_theme()
-    reaper.ImGui_PopStyleColor(ctx, 17)
-    reaper.ImGui_PopStyleVar(ctx, 4)
+    theme_manager.pop_theme(ctx)
 end
 
 -- Push/pop helpers for semantically-colored buttons (override the theme defaults)
 local function push_danger_style()
-    local d = theme_danger
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(d[1]*0.70, d[2]*0.40, d[3]*0.40, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(d[1]*0.90, d[2]*0.50, d[3]*0.50, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(d[1]*1.00, d[2]*0.60, d[3]*0.60, 1.0))
+    local themes = { theme_danger = theme_danger }
+    theme_manager.push_danger_style(ctx, themes)
 end
-local function pop_danger_style()   reaper.ImGui_PopStyleColor(ctx, 3) end
+local function pop_danger_style()
+    theme_manager.pop_danger_style(ctx)
+end
 
 local function push_positive_style()
-    local p = theme_positive
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(p[1]*0.55, p[2]*0.85, p[3]*0.55, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(p[1]*0.70, p[2]*1.00, p[3]*0.70, 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(p[1]*0.40, p[2]*0.70, p[3]*0.40, 1.0))
+    local themes = { theme_positive = theme_positive }
+    theme_manager.push_positive_style(ctx, themes)
 end
-local function pop_positive_style() reaper.ImGui_PopStyleColor(ctx, 3) end
+local function pop_positive_style()
+    theme_manager.pop_positive_style(ctx)
+end
 
 -- Helper to get track and take from current context, independent of mode
 local function get_current_context_track_and_take()
