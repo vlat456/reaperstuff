@@ -33,6 +33,8 @@ local imgui = require('imgui')('0.9.3')
 
 
 
+
+
 -- Load modules
 local script_path = debug.getinfo(1, "S").source:match("@?(.*[\\/])")
 package.path = script_path .. "modules/?.lua;" .. package.path
@@ -40,6 +42,14 @@ local preset_manager = require("preset_manager")
 local config_manager = require("config_manager")
 local offset_engine = require("offset_engine")
 local theme_manager = require("theme_manager")
+local ui_renderer = require("ui_renderer")
+local ui_settings = require("ui_settings")
+local ui_modals = require("ui_modals")
+local ui_trigger_editor = require("ui_trigger_editor")
+local ui_presets_dropdown = require("ui_presets_dropdown")
+local ui_info_panel = require("ui_info_panel")
+local ui_shortcuts = require("ui_shortcuts")
+local target_manager = require("target_manager")
 
 -- Script variables
 local script_name = "Media Offset Tool v1.9.1"
@@ -264,80 +274,6 @@ if saved_mode_str and saved_mode_str ~= "" then
     end
 end
 
--- Check selection signature to detect change
-local function get_selection_signature()
-    local eff_mode, take = get_effective_mode()
-    local sig = {}
-    table.insert(sig, "mode:" .. tostring(eff_mode))
-    
-    if eff_mode == MODE_MIDI_NOTES then
-        table.insert(sig, get_midi_notes_signature(take))
-    elseif eff_mode == MODE_TRACK_OFFSET then
-        -- Mode B (Track Playback Offset)
-        local num_tracks = reaper.CountSelectedTracks(0)
-        if num_tracks > 0 then
-            if num_tracks > 1000 then num_tracks = 1000 end -- Safety limit
-            for i = 0, num_tracks - 1 do
-                local track = reaper.GetSelectedTrack(0, i)
-                if track then
-                    table.insert(sig, tostring(track))
-                end
-            end
-        else
-            -- Fallback to active MIDI editor track
-            local midi_editor = reaper.MIDIEditor_GetActive()
-            if midi_editor then
-                local take = reaper.MIDIEditor_GetTake(midi_editor)
-                if take then
-                    local item = reaper.GetMediaItemTake_Item(take)
-                    if item then
-                        local track = reaper.GetMediaItem_Track(item)
-                        if track then
-                            table.insert(sig, "editor:" .. tostring(track))
-                        end
-                    end
-                end
-            end
-        end
-    else
-        -- Mode A (Take Source Offset) & Mode C (Move Item Position)
-        local num_items = reaper.CountSelectedMediaItems(0)
-        if num_items > 0 then
-            if num_items > 10000 then num_items = 10000 end -- Safety limit
-            for i = 0, num_items - 1 do
-                local item = reaper.GetSelectedMediaItem(0, i)
-                if item then
-                    if gui_state.adjust_mode == MODE_TAKE_OFFSET then
-                        local take = reaper.GetActiveTake(item)
-                        if take then
-                            table.insert(sig, tostring(take))
-                        end
-                    else
-                        table.insert(sig, tostring(item))
-                    end
-                end
-            end
-        else
-            -- Fallback to active MIDI editor take / item
-            local midi_editor = reaper.MIDIEditor_GetActive()
-            if midi_editor then
-                local take = reaper.MIDIEditor_GetTake(midi_editor)
-                if take then
-                    if gui_state.adjust_mode == MODE_TAKE_OFFSET then
-                        table.insert(sig, "editor:" .. tostring(take))
-                    else
-                        local item = reaper.GetMediaItemTake_Item(take)
-                        if item then
-                            table.insert(sig, "editor:" .. tostring(item))
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    return table.concat(sig, ";")
-end
 
 -- Helper to parse note offsets metadata from parent item (namespaced by take GUID)
 local function get_take_note_offsets(take)
@@ -445,725 +381,50 @@ local function save_preset_name_to_targets(preset_name)
     end
 end
 
--- Helper to clean up note offsets and presets metadata from a take
 -- Helper to check if a pitch is used as a keyswitch in any preset
 local function is_keyswitch_pitch(pitch)
-    if not gui_state or not gui_state.write_keyswitches then
-        return false
-    end
-    if not presets_ks_pitch then return false end
-    for name, ks_pitch in pairs(presets_ks_pitch) do
-        if ks_pitch == pitch then
-            return true
-        end
-    end
-    return false
+    return target_manager.is_keyswitch_pitch(pitch, gui_state, presets_ks_pitch)
 end
 
 -- Helper to clean up note offsets and presets metadata from a take (both P_EXT and Text Events)
 local function cleanup_take_note_offsets(take)
-    if not take or not reaper.TakeIsMIDI(take) then return end
-    local retval, notes_count, ccs_count, sysex_count = reaper.MIDI_CountEvts(take)
-    
-    -- 1. Build a quick lookup list of existing note start positions (excluding keyswitches)
-    local existing_note_ppqs = {}
-    for idx = 0, notes_count - 1 do
-        local r, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, idx)
-        if r and not is_keyswitch_pitch(pitch) then
-            table.insert(existing_note_ppqs, startppq)
-        end
-    end
-    
-    -- 2. Find and delete orphaned Text Events (offset and preset events with no matching note)
-    local text_events_to_delete = {}
-    for idx = 0, sysex_count - 1 do
-        local r, selected, muted, ppqpos, type_val, msg = reaper.MIDI_GetTextSysexEvt(take, idx)
-        if r and type_val == 1 then
-            if msg:sub(1, 2) == "O:" or msg:sub(1, 2) == "A:" or msg:sub(1, 13) == "WalterPreset:" then
-                local note_found = false
-                for _, n_ppq in ipairs(existing_note_ppqs) do
-                    if math.abs(n_ppq - ppqpos) < 5 then
-                        note_found = true
-                        break
-                    end
-                end
-                if not note_found then
-                    table.insert(text_events_to_delete, idx)
-                end
-            end
-        end
-    end
-    for d = #text_events_to_delete, 1, -1 do
-        reaper.MIDI_DeleteTextSysexEvt(take, text_events_to_delete[d])
-    end
-    
-    -- Recount after text event deletions to keep indexes correct
-    local _, notes_count_new = reaper.MIDI_CountEvts(take)
-    local offsets = get_take_note_offsets(take)
-    local note_presets = get_take_note_presets(take)
-    
-    -- Build a quick lookup map of existing notes by pitch_chan:ppq
-    local existing_notes = {}
-    for idx = 0, notes_count_new - 1 do
-        local r, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, idx)
-        if r then
-            local lookup_key = string.format("%d_%d", pitch, chan)
-            if not existing_notes[lookup_key] then
-                existing_notes[lookup_key] = {}
-            end
-            table.insert(existing_notes[lookup_key], startppq)
-        end
-    end
-    
-    local cleaned_offsets = {}
-    local cleaned_presets = {}
-    local changed = false
-    
-    for key, offset_ms in pairs(offsets) do
-        local o_pitch, o_chan, o_orig_ppq = key:match("^(%d+)_(%d+)_(%d+)$")
-        if o_pitch and o_chan and o_orig_ppq then
-            o_pitch = tonumber(o_pitch)
-            o_chan = tonumber(o_chan)
-            o_orig_ppq = tonumber(o_orig_ppq)
-            
-            local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(take, o_orig_ppq)
-            local current_time_expected = orig_time + (offset_ms / 1000.0)
-            local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, current_time_expected)
-            
-            local lookup_key = string.format("%d_%d", o_pitch, o_chan)
-            -- Check if any note matches the expected current position
-            local found = false
-            local ppqs = existing_notes[lookup_key]
-            if ppqs then
-                for _, startppq in ipairs(ppqs) do
-                    if math.abs(startppq - expected_current_ppq) < 5 then
-                        found = true
-                        break
-                    end
-                end
-            end
-            
-            if found then
-                cleaned_offsets[key] = offset_ms
-                if note_presets[key] then
-                    cleaned_presets[key] = note_presets[key]
-                end
-            else
-                changed = true
-            end
-        end
-    end
-    
-    if changed then
-        save_take_note_offsets(take, cleaned_offsets)
-        save_take_note_presets(take, cleaned_presets)
-    end
+    target_manager.cleanup_take_note_offsets(take, gui_state, presets_ks_pitch)
 end
-
 
 -- Helper to auto-detect matching preset for a selected MIDI note
 local function detect_preset_for_note(take, target_idx, target_vel, target_start_ppq, target_chan)
-    -- 1. Collect candidate keyswitches
-    local candidates = {}
-    local total_notes = reaper.MIDI_CountEvts(take)
-    
-    -- Scan backwards
-    local i = target_idx - 1
-    local count = 0
-    while i >= 0 and count < 1000 do
-        local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
-        if not retval then break end
-        if target_start_ppq - startppq > 960.0 then break end -- Limit keyswitch search to 960 ticks (1 beat) to prevent inheriting previous notes' keyswitches
-        if chan == target_chan and is_keyswitch_pitch(pitch) then
-            table.insert(candidates, { pitch = pitch, vel = vel, startppq = startppq, dist = target_start_ppq - startppq })
-        end
-        i = i - 1
-        count = count + 1
-    end
-    
-    -- Scan forwards for coincident notes
-    local j = target_idx + 1
-    count = 0
-    while j < total_notes and count < 1000 do
-        local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, j)
-        if not retval then break end
-        if startppq ~= target_start_ppq then break end
-        if chan == target_chan and is_keyswitch_pitch(pitch) then
-            table.insert(candidates, { pitch = pitch, vel = vel, startppq = startppq, dist = 0.0 })
-        end
-        j = j + 1
-        count = count + 1
-    end
-    
-    table.sort(candidates, function(a, b) return a.dist < b.dist end)
-    
-    local best_preset = ""
-    local best_score = -1
-    
-    for name, offset in pairs(presets) do
-        local ks_pitch = presets_ks_pitch[name] or -1
-        local note_vel_min = presets_note_vel_min[name] or -1
-        local note_vel_max = presets_note_vel_max[name] or -1
-        
-        local has_ks = (ks_pitch >= 0)
-        local has_vel = (note_vel_min >= 0 and note_vel_max >= 0)
-        
-        if has_ks or has_vel then
-            local matched = true
-            local score = 0
-            
-            if has_ks then
-                if #candidates == 0 or candidates[1].pitch ~= ks_pitch then
-                    matched = false
-                else
-                    score = score + 2
-                end
-            end
-            
-            if matched and has_vel then
-                if target_vel < note_vel_min or target_vel > note_vel_max then
-                    matched = false
-                else
-                    score = score + 1
-                end
-            end
-            
-            if matched then
-                if score > best_score then
-                    best_score = score
-                    best_preset = name
-                end
-            end
-        end
-    end
-    
-    return best_preset
+    return target_manager.detect_preset_for_note(
+        take, target_idx, target_vel, target_start_ppq, target_chan, gui_state,
+        presets_ks_pitch, presets, presets_note_vel_min, presets_note_vel_max
+    )
 end
 
 -- Populate selection info
 local function update_targets_list(force)
-    -- Skip rebuilding selection while the user is actively interacting with the GUI,
-    -- unless forced (e.g. on mode change).
-    if not force and (reaper.ImGui_IsAnyItemActive(ctx) or gui_state.is_dragging) then
-        return
-    end
+    local callbacks = {
+        get_effective_mode = get_effective_mode,
+        has_selected_midi_notes = has_selected_midi_notes,
+        get_midi_notes_signature = get_midi_notes_signature,
+        split_preset_name = split_preset_name
+    }
+    local modes = {
+        MODE_MIDI_NOTES = MODE_MIDI_NOTES,
+        MODE_TRACK_OFFSET = MODE_TRACK_OFFSET,
+        MODE_TAKE_OFFSET = MODE_TAKE_OFFSET,
+        MODE_ITEM_POSITION = MODE_ITEM_POSITION
+    }
+    local presets_state = {
+        presets = presets,
+        presets_ks_pitch = presets_ks_pitch,
+        presets_note_vel_min = presets_note_vel_min,
+        presets_note_vel_max = presets_note_vel_max,
+        current_preset_name = current_preset_name,
+        combo_preset_name = combo_preset_name
+    }
+    target_manager.update_targets_list(ctx, gui_state, presets_state, modes, force, callbacks)
     
-    local current_sig = get_selection_signature()
-    local selection_changed = current_sig ~= gui_state.last_selection_state
-    
-    if selection_changed then
-        gui_state.last_selection_state = current_sig
-        gui_state.selected_targets = {}
-        
-        local eff_mode, take = get_effective_mode()
-        
-        if eff_mode == MODE_MIDI_NOTES then
-            -- Clean up stale offsets
-            cleanup_take_note_offsets(take)
-            
-            -- Override: selected MIDI notes in active take
-            local offsets = get_take_note_offsets(take)
-            local note_presets = get_take_note_presets(take)
-            local text_cache = build_take_text_events_cache(take)
-            local note_idx = -1
-            local safety = 0
-            while safety < 10000 do
-                note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
-                if note_idx == -1 then break end
-                local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, note_idx)
-                if retval then
-                    -- Ignore keyswitches from being shifted as target notes
-                    if not is_keyswitch_pitch(pitch) then
-                        -- Look up in offsets metadata
-                        local found_offset = 0.0
-                        local found_preset = ""
-                        local original_ppq = startppq
-                        
-                        -- Prioritize reading from MIDI Text Events
-                        local text_events = find_text_events_near_ppq(text_cache, startppq)
-                        local found_offset_from_text = nil
-                        for _, ev in ipairs(text_events) do
-                            if ev.msg:sub(1, 2) == "O:" then
-                                found_offset_from_text = tonumber(ev.msg:sub(3)) or 0.0
-                            elseif ev.msg:sub(1, 2) == "A:" then
-                                found_preset = ev.msg:sub(3)
-                            elseif ev.msg:sub(1, 13) == "WalterPreset:" then
-                                found_preset = ev.msg:sub(14)
-                            end
-                        end
-                        
-                        if found_offset_from_text then
-                            found_offset = found_offset_from_text
-                            local current_time = reaper.MIDI_GetProjTimeFromPPQPos(take, startppq)
-                            local original_time = current_time - (found_offset / 1000.0)
-                            original_ppq = math.floor(reaper.MIDI_GetPPQPosFromProjTime(take, original_time) + 0.5)
-                        else
-                            -- Fallback to the old P_EXT offsets metadata database lookup
-                            for key, offset_ms in pairs(offsets) do
-                                local o_pitch, o_chan, o_orig_ppq = key:match("^(%d+)_(%d+)_(%d+)$")
-                                if o_pitch and o_chan and o_orig_ppq then
-                                    o_pitch = tonumber(o_pitch)
-                                    o_chan = tonumber(o_chan)
-                                    o_orig_ppq = tonumber(o_orig_ppq)
-                                    
-                                    if o_pitch == pitch and o_chan == chan then
-                                        local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(take, o_orig_ppq)
-                                        local current_time_expected = orig_time + (offset_ms / 1000.0)
-                                        local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, current_time_expected)
-                                        
-                                        if math.abs(startppq - expected_current_ppq) < 5 then
-                                            found_offset = offset_ms
-                                            if found_preset == "" then
-                                                found_preset = note_presets[key] or ""
-                                            end
-                                            original_ppq = o_orig_ppq
-                                            break
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                        
-                        -- Original unshifted positions
-                        local start_time = reaper.MIDI_GetProjTimeFromPPQPos(take, original_ppq)
-                        local end_time = reaper.MIDI_GetProjTimeFromPPQPos(take, original_ppq + (endppq - startppq))
-                        
-                        local active_preset_name = found_preset
-                        if active_preset_name == "" then
-                            active_preset_name = detect_preset_for_note(take, note_idx, vel, startppq, chan)
-                        end
-    
-                        table.insert(gui_state.selected_targets, {
-                            take = take,
-                            note_index = note_idx,
-                            original_ppq = original_ppq,
-                            offset_ms = found_offset,
-                            preset_name = active_preset_name,
-                            start_time = start_time,
-                            end_time = end_time,
-                            pitch = pitch,
-                            chan = chan,
-                            vel = vel,
-                            muted = muted
-                        })
-                    end
-                end
-                safety = safety + 1
-            end
-            
-            -- Initialize slider_value
-            if #gui_state.selected_targets > 0 then
-                local first_offset = gui_state.selected_targets[1].offset_ms
-                local all_same = true
-                for i = 2, #gui_state.selected_targets do
-                    if math.abs(gui_state.selected_targets[i].offset_ms - first_offset) > 0.01 then
-                        all_same = false
-                        break
-                    end
-                end
-                if all_same then
-                    gui_state.slider_value = first_offset
-                else
-                    gui_state.slider_value = 0.0
-                end
-            else
-                gui_state.slider_value = 0.0
-            end
-            
-        elseif eff_mode == MODE_TRACK_OFFSET then
-            -- Mode B: Track Playback Offset
-            local num_tracks = reaper.CountSelectedTracks(0)
-            if num_tracks > 0 then
-                if num_tracks > 1000 then num_tracks = 1000 end
-                for i = 0, num_tracks - 1 do
-                    local track = reaper.GetSelectedTrack(0, i)
-                    if track then
-                        local _, name = reaper.GetTrackName(track)
-                        name = name or "Unnamed Track"
-                        local cur_offset = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
-                        local _, track_preset = reaper.GetSetMediaTrackInfo_String(track, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
-                        table.insert(gui_state.selected_targets, {
-                            track = track,
-                            name = name,
-                            baseline_offset = cur_offset,
-                            preset_name = track_preset or ""
-                        })
-                    end
-                end
-            else
-                -- Fallback to active MIDI editor track
-                local midi_editor = reaper.MIDIEditor_GetActive()
-                if midi_editor then
-                    local take = reaper.MIDIEditor_GetTake(midi_editor)
-                    if take then
-                        local item = reaper.GetMediaItemTake_Item(take)
-                        if item then
-                            local track = reaper.GetMediaItem_Track(item)
-                            if track then
-                                local _, name = reaper.GetTrackName(track)
-                                name = name or "Unnamed Track"
-                                local cur_offset = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
-                                local _, track_preset = reaper.GetSetMediaTrackInfo_String(track, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
-                                table.insert(gui_state.selected_targets, {
-                                    track = track,
-                                    name = name .. " (MIDI Editor)",
-                                    baseline_offset = cur_offset,
-                                    preset_name = track_preset or ""
-                                })
-                            end
-                        end
-                    end
-                end
-            end
-            
-            if #gui_state.selected_targets > 0 then
-                gui_state.slider_value = gui_state.selected_targets[1].baseline_offset * 1000.0
-            else
-                gui_state.slider_value = 0.0
-            end
-            
-        elseif eff_mode == MODE_TAKE_OFFSET then
-            -- Mode A: Media Take Source Start Offset
-            local num_items = reaper.CountSelectedMediaItems(0)
-            if num_items > 0 then
-                if num_items > 10000 then num_items = 10000 end
-                for i = 0, num_items - 1 do
-                    local item = reaper.GetSelectedMediaItem(0, i)
-                    if item then
-                        local take = reaper.GetActiveTake(item)
-                        if take then
-                            local name = reaper.GetTakeName(take) or "Unnamed Take"
-                            local cur_offset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
-                            local take_preset = ""
-                            local _, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
-                            if take_guid and take_guid ~= "" then
-                                _, take_preset = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_take_preset_" .. take_guid, "", false)
-                            end
-                            table.insert(gui_state.selected_targets, {
-                                item = item,
-                                take = take,
-                                name = name,
-                                baseline_offset = cur_offset,
-                                preset_name = take_preset or ""
-                            })
-                        end
-                    end
-                end
-            else
-                -- Fallback to active MIDI editor take
-                local midi_editor = reaper.MIDIEditor_GetActive()
-                if midi_editor then
-                    local take = reaper.MIDIEditor_GetTake(midi_editor)
-                    if take then
-                        local item = reaper.GetMediaItemTake_Item(take)
-                        if item then
-                            local name = reaper.GetTakeName(take) or "Unnamed Take"
-                            local cur_offset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
-                            local take_preset = ""
-                            local _, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, "GUID", "", false)
-                            if take_guid and take_guid ~= "" then
-                                _, take_preset = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_take_preset_" .. take_guid, "", false)
-                            end
-                            table.insert(gui_state.selected_targets, {
-                                item = item,
-                                take = take,
-                                name = name .. " (MIDI Editor)",
-                                baseline_offset = cur_offset,
-                                preset_name = take_preset or ""
-                            })
-                        end
-                    end
-                end
-            end
-            
-            if #gui_state.selected_targets > 0 then
-                gui_state.slider_value = gui_state.selected_targets[1].baseline_offset * 1000.0
-            else
-                gui_state.slider_value = 0.0
-            end
-            
-        elseif eff_mode == MODE_ITEM_POSITION then
-            -- Mode C: Move Item Timeline Position
-            local num_items = reaper.CountSelectedMediaItems(0)
-            if num_items > 0 then
-                if num_items > 10000 then num_items = 10000 end
-                for i = 0, num_items - 1 do
-                    local item = reaper.GetSelectedMediaItem(0, i)
-                    if item then
-                        local take = reaper.GetActiveTake(item)
-                        local name = take and reaper.GetTakeName(take) or "Empty Item"
-                        local cur_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-                        
-                        -- Read saved offset from item metadata
-                        local retval, saved_val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
-                        local saved_offset_sec = 0.0
-                        if retval and saved_val ~= "" then
-                            saved_offset_sec = (tonumber(saved_val) or 0.0) / 1000.0
-                        end
-                        
-                        -- The original zero position is current position minus saved offset
-                        local zero_pos = cur_pos - saved_offset_sec
-                        local _, item_preset = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
-                        
-                        table.insert(gui_state.selected_targets, {
-                            item = item,
-                            name = name,
-                            zero_position = zero_pos,
-                            baseline_offset = cur_pos,
-                            preset_name = item_preset or ""
-                        })
-                    end
-                end
-            else
-                -- Fallback to active MIDI editor item
-                local midi_editor = reaper.MIDIEditor_GetActive()
-                if midi_editor then
-                    local take = reaper.MIDIEditor_GetTake(midi_editor)
-                    if take then
-                        local item = reaper.GetMediaItemTake_Item(take)
-                        if item then
-                            local name = reaper.GetTakeName(take) or "Unnamed Take"
-                            local cur_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-                            
-                            -- Read saved offset from item metadata
-                            local retval, saved_val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
-                            local saved_offset_sec = 0.0
-                            if retval and saved_val ~= "" then
-                                saved_offset_sec = (tonumber(saved_val) or 0.0) / 1000.0
-                            end
-                            
-                            local zero_pos = cur_pos - saved_offset_sec
-                            local _, item_preset = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
-                            
-                            table.insert(gui_state.selected_targets, {
-                                item = item,
-                                name = name .. " (MIDI Editor)",
-                                zero_position = zero_pos,
-                                baseline_offset = cur_pos,
-                                preset_name = item_preset or ""
-                            })
-                        end
-                    end
-                end
-            end
-            
-            -- Initialize slider value with the saved offset of the first item
-            if #gui_state.selected_targets > 0 then
-                local first_item = gui_state.selected_targets[1].item
-                local retval, saved_val = reaper.GetSetMediaItemInfo_String(first_item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
-                if retval and saved_val ~= "" then
-                    gui_state.slider_value = tonumber(saved_val) or 0.0
-                else
-                    gui_state.slider_value = 0.0
-                end
-            else
-                gui_state.slider_value = 0.0
-            end
-        end
-        
-        -- Determine common preset name on selection change
-        if #gui_state.selected_targets > 0 then
-            local first_preset = gui_state.selected_targets[1].preset_name or ""
-            local all_same = true
-            for i = 2, #gui_state.selected_targets do
-                if (gui_state.selected_targets[i].preset_name or "") ~= first_preset then
-                    all_same = false
-                    break
-                end
-            end
-            if all_same then
-                current_preset_name = first_preset
-                combo_preset_name = first_preset
-                if first_preset ~= "" then
-                    local lib, art = split_preset_name(first_preset)
-                    if lib ~= "" then
-                        gui_state.selected_library = lib
-                    end
-                end
-            else
-                current_preset_name = ""
-                combo_preset_name = ""
-            end
-        else
-            current_preset_name = ""
-            combo_preset_name = ""
-        end
-    else
-        -- Sync baselines and values if NOT dragging
-        local is_slider_active = reaper.ImGui_IsAnyItemActive(ctx) or gui_state.is_dragging
-        local is_previewing = (combo_preset_name ~= "" and combo_preset_name ~= current_preset_name)
-        if not is_slider_active and #gui_state.selected_targets > 0 then
-            local eff_mode, take = get_effective_mode()
-            if eff_mode == MODE_MIDI_NOTES then
-                local offsets = get_take_note_offsets(take)
-                local note_presets = get_take_note_presets(take)
-                local text_cache = build_take_text_events_cache(take)
-                local any_drifted = false
-                local note_idx = -1
-                
-                for _, info in ipairs(gui_state.selected_targets) do
-                    note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
-                    if note_idx == -1 then break end
-                    local retval, selected, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(info.take, note_idx)
-                    if retval then
-                        info.vel = vel
-                        info.pitch = pitch
-                        info.chan = chan
-
-                        local detected_preset = detect_preset_for_note(info.take, note_idx, vel, startppq, chan)
-                        local found_preset = ""
-
-                        local orig_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, info.original_ppq)
-                        local current_time_expected = orig_time + (info.offset_ms / 1000.0)
-                        local expected_current_ppq = reaper.MIDI_GetPPQPosFromProjTime(info.take, current_time_expected)
-                        
-                        if math.abs(startppq - expected_current_ppq) >= 5 then
-                            -- Note has drifted (manually moved). Clean up old metadata entry
-                            local old_key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
-                            offsets[old_key] = nil
-                            note_presets[old_key] = nil
-                            
-                            -- Delete old offset and preset text events at the old expected position
-                            write_note_offset_text_event(info.take, expected_current_ppq, 0.0)
-                            write_note_preset_text_event(info.take, expected_current_ppq, "")
-                            
-                            -- Reset baseline to new position
-                            info.original_ppq = startppq
-                            info.offset_ms = 0.0
-                            info.start_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, startppq)
-                            info.end_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, endppq)
-                            any_drifted = true
-                        end
-
-                        -- Prioritize reading the preset name from the MIDI Text Events at its current position
-                        local text_events = find_text_events_near_ppq(text_cache, startppq)
-                        for _, ev in ipairs(text_events) do
-                            if ev.msg:sub(1, 2) == "A:" then
-                                found_preset = ev.msg:sub(3)
-                            elseif ev.msg:sub(1, 13) == "WalterPreset:" then
-                                found_preset = ev.msg:sub(14)
-                            end
-                        end
-                        
-                        if found_preset == "" then
-                            local old_key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
-                            found_preset = note_presets[old_key] or ""
-                        end
-
-                        if detected_preset ~= "" then
-                            info.preset_name = detected_preset
-                        else
-                            info.preset_name = found_preset
-                        end
-                    end
-                end
-                
-                if any_drifted then
-                    save_take_note_offsets(take, offsets)
-                    save_take_note_presets(take, note_presets)
-                    
-                    local first_offset = gui_state.selected_targets[1].offset_ms
-                    local all_same = true
-                    for i = 2, #gui_state.selected_targets do
-                        if math.abs(gui_state.selected_targets[i].offset_ms - first_offset) > 0.01 then
-                            all_same = false
-                            break
-                        end
-                    end
-                    if all_same then
-                        gui_state.slider_value = first_offset
-                    else
-                        gui_state.slider_value = 0.0
-                    end
-                    
-                    local first_preset = gui_state.selected_targets[1].preset_name or ""
-                    local all_same_preset = true
-                    for i = 2, #gui_state.selected_targets do
-                        if (gui_state.selected_targets[i].preset_name or "") ~= first_preset then
-                            all_same_preset = false
-                            break
-                        end
-                    end
-                    current_preset_name = all_same_preset and first_preset or ""
-                    combo_preset_name = current_preset_name
-                    if current_preset_name ~= "" then
-                        local lib, art = split_preset_name(current_preset_name)
-                        if lib ~= "" then
-                            gui_state.selected_library = lib
-                        end
-                    end
-                end
-            elseif eff_mode == MODE_TRACK_OFFSET then
-                if not is_previewing then
-                    local first_info = gui_state.selected_targets[1]
-                    if reaper.ValidatePtr(first_info.track, "MediaTrack*") then
-                        local actual_offset = reaper.GetMediaTrackInfo_Value(first_info.track, "D_PLAY_OFFSET")
-                        gui_state.slider_value = actual_offset * 1000.0
-                    end
-                end
-                for _, info in ipairs(gui_state.selected_targets) do
-                    if reaper.ValidatePtr(info.track, "MediaTrack*") then
-                        info.baseline_offset = reaper.GetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET")
-                        local _, track_preset = reaper.GetSetMediaTrackInfo_String(info.track, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
-                        info.preset_name = track_preset or ""
-                    end
-                end
-            elseif eff_mode == MODE_TAKE_OFFSET then
-                if not is_previewing then
-                    local first_info = gui_state.selected_targets[1]
-                    if reaper.ValidatePtr(first_info.take, "MediaItem_Take*") then
-                        local actual_offset = reaper.GetMediaItemTakeInfo_Value(first_info.take, "D_STARTOFFS")
-                        gui_state.slider_value = actual_offset * 1000.0
-                    end
-                end
-                for _, info in ipairs(gui_state.selected_targets) do
-                    if reaper.ValidatePtr(info.take, "MediaItem_Take*") then
-                        info.baseline_offset = reaper.GetMediaItemTakeInfo_Value(info.take, "D_STARTOFFS")
-                        local take_preset = ""
-                        local _, take_guid = reaper.GetSetMediaItemTakeInfo_String(info.take, "GUID", "", false)
-                        if take_guid and take_guid ~= "" then
-                            local parent_item = reaper.GetMediaItemTake_Item(info.take)
-                            if parent_item then
-                                _, take_preset = reaper.GetSetMediaItemInfo_String(parent_item, "P_EXT:Walter_MediaOffsetTool_take_preset_" .. take_guid, "", false)
-                            end
-                        end
-                        info.preset_name = take_preset or ""
-                    end
-                end
-            elseif eff_mode == MODE_ITEM_POSITION then
-                if not is_previewing then
-                    local first_info = gui_state.selected_targets[1]
-                    if first_info and reaper.ValidatePtr(first_info.item, "MediaItem*") then
-                        local cur_pos = reaper.GetMediaItemInfo_Value(first_info.item, "D_POSITION")
-                        local retval, saved_val = reaper.GetSetMediaItemInfo_String(first_info.item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
-                        local saved_offset_ms = 0.0
-                        if retval and saved_val ~= "" then
-                            saved_offset_ms = tonumber(saved_val) or 0.0
-                        end
-                        gui_state.slider_value = saved_offset_ms
-                        first_info.zero_position = cur_pos - (saved_offset_ms / 1000.0)
-                    end
-                end
-                
-                for _, info in ipairs(gui_state.selected_targets) do
-                    if reaper.ValidatePtr(info.item, "MediaItem*") then
-                        local cur_pos = reaper.GetMediaItemInfo_Value(info.item, "D_POSITION")
-                        info.baseline_offset = cur_pos
-                        local retval, saved_val = reaper.GetSetMediaItemInfo_String(info.item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
-                        local saved_offset_ms = 0.0
-                        if retval and saved_val ~= "" then
-                            saved_offset_ms = tonumber(saved_val) or 0.0
-                        end
-                        info.zero_position = cur_pos - (saved_offset_ms / 1000.0)
-                        local _, item_preset = reaper.GetSetMediaItemInfo_String(info.item, "P_EXT:Walter_MediaOffsetTool_preset", "", false)
-                        info.preset_name = item_preset or ""
-                    end
-                end
-            end
-        end
-    end
-    
-
+    current_preset_name = presets_state.current_preset_name
+    combo_preset_name = presets_state.combo_preset_name
 end
 
 -- Apply current slider/adjustment value to all selected targets
@@ -1665,38 +926,7 @@ local function render_ui()
 
     -- Target Mode Radio Buttons
     local has_notes, _ = has_selected_midi_notes()
-    if has_notes then
-        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.8, 0.5, 1.0))
-        reaper.ImGui_Text(ctx, "Offsetting selected MIDI notes (modes disabled):")
-        reaper.ImGui_PopStyleColor(ctx)
-    else
-        reaper.ImGui_Text(ctx, "Offset Mode:")
-    end
-    
-    local mode_changed = false
-    reaper.ImGui_BeginDisabled(ctx, has_notes)
-    
-    local rb_a = reaper.ImGui_RadioButton(ctx, "Take Start Offset", gui_state.adjust_mode == MODE_TAKE_OFFSET)
-    if rb_a then
-        gui_state.adjust_mode = MODE_TAKE_OFFSET
-        mode_changed = true
-    end
-    
-    reaper.ImGui_SameLine(ctx)
-    local rb_b = reaper.ImGui_RadioButton(ctx, "Track Playback Offset", gui_state.adjust_mode == MODE_TRACK_OFFSET)
-    if rb_b then
-        gui_state.adjust_mode = MODE_TRACK_OFFSET
-        mode_changed = true
-    end
-    
-    reaper.ImGui_SameLine(ctx)
-    local rb_c = reaper.ImGui_RadioButton(ctx, "Move Item Position", gui_state.adjust_mode == MODE_ITEM_POSITION)
-    if rb_c then
-        gui_state.adjust_mode = MODE_ITEM_POSITION
-        mode_changed = true
-    end
-    
-    reaper.ImGui_EndDisabled(ctx)
+    local mode_changed = ui_renderer.draw_mode_selector(ctx, gui_state, has_notes)
     
     if mode_changed then
         -- Persist the selected mode in project metadata
@@ -1712,391 +942,136 @@ local function render_ui()
     reaper.ImGui_Spacing(ctx)
 
     -- Articulation presets dropdown and controls row
-    reaper.ImGui_Text(ctx, "Preset:")
-    reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_SetNextItemWidth(ctx, 220)
-    
-    local combo_preview = combo_preset_name
-    if combo_preview == "" then
-        combo_preview = "-- Select Preset --"
-    end
-    
-    if reaper.ImGui_BeginCombo(ctx, "##presets_combo", combo_preview) then
-        for _, name in ipairs(preset_keys) do
-            local is_selected = (name == combo_preset_name)
-            if reaper.ImGui_Selectable(ctx, name, is_selected) then
-                combo_preset_name = name
-                gui_state.slider_value = presets[name]
-                local lib, art = split_preset_name(name)
-                if lib ~= "" then
-                    gui_state.selected_library = lib
-                end
-                adjust_offset_to_value(presets[name], name)
-            end
-            if is_selected then
-                reaper.ImGui_SetItemDefaultFocus(ctx)
-            end
-        end
-        reaper.ImGui_EndCombo(ctx)
-    end
-    
-    reaper.ImGui_SameLine(ctx)
-    
-    -- Save Button
-    local has_selected_preset = (combo_preset_name ~= "" and presets[combo_preset_name] ~= nil)
-    if not has_selected_preset then
-        reaper.ImGui_BeginDisabled(ctx)
-    end
-    if reaper.ImGui_Button(ctx, "Save") then
-        presets[combo_preset_name] = gui_state.slider_value
-        save_presets(presets, presets_show_in_grid)
-        presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Overwrite the selected preset with the current offset.")
-    end
-    if not has_selected_preset then
-        reaper.ImGui_EndDisabled(ctx)
-    end
-    
-    reaper.ImGui_SameLine(ctx)
-    
-    -- Save As Button
-    if reaper.ImGui_Button(ctx, "Save As") then
-        local lib, art = split_preset_name(combo_preset_name)
-        new_preset_lib_input = lib
-        new_preset_art_input = ""
-        new_preset_show_in_grid = true
-        open_new_preset_modal = true
-        open_new_preset_focus = true
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Save the current offset as a new preset.")
-    end
-    
-    reaper.ImGui_SameLine(ctx)
-    
-    -- Rename Button (Rn)
-    if not has_selected_preset then
-        reaper.ImGui_BeginDisabled(ctx)
-    end
-    if reaper.ImGui_Button(ctx, "Rn") then
-        open_rename_preset_modal = true
-        open_rename_preset_focus = true
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Rename selected preset.")
-    end
-    
-    reaper.ImGui_SameLine(ctx)
-    
-    -- Delete Button (Dl)
-    if reaper.ImGui_Button(ctx, "Dl") then
-        open_delete_preset_modal = true
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Delete selected preset.")
-    end
-    
-    if not has_selected_preset then
-        reaper.ImGui_EndDisabled(ctx)
-    end
+    local presets_state_dropdown = {
+        presets = presets,
+        preset_keys = preset_keys,
+        presets_show_in_grid = presets_show_in_grid,
+        presets_ks_pitch = presets_ks_pitch,
+        presets_note_vel_min = presets_note_vel_min,
+        presets_note_vel_max = presets_note_vel_max,
+        current_preset_name = current_preset_name,
+        combo_preset_name = combo_preset_name
+    }
+    local modal_state_dropdown = {
+        new_preset_lib_input = new_preset_lib_input,
+        new_preset_art_input = new_preset_art_input,
+        new_preset_show_in_grid = new_preset_show_in_grid,
+        open_new_preset_modal = open_new_preset_modal,
+        open_new_preset_focus = open_new_preset_focus,
+        open_rename_preset_modal = open_rename_preset_modal,
+        open_rename_preset_focus = open_rename_preset_focus,
+        open_delete_preset_modal = open_delete_preset_modal
+    }
+    ui_presets_dropdown.draw_presets_dropdown(
+        ctx,
+        gui_state,
+        presets_state_dropdown,
+        modal_state_dropdown,
+        {
+            save_presets = save_presets,
+            load_presets = load_presets,
+            adjust_offset_to_value = adjust_offset_to_value,
+            split_preset_name = split_preset_name
+        }
+    )
+    new_preset_lib_input = modal_state_dropdown.new_preset_lib_input
+    new_preset_art_input = modal_state_dropdown.new_preset_art_input
+    new_preset_show_in_grid = modal_state_dropdown.new_preset_show_in_grid
+    open_new_preset_modal = modal_state_dropdown.open_new_preset_modal
+    open_new_preset_focus = modal_state_dropdown.open_new_preset_focus
+    open_rename_preset_modal = modal_state_dropdown.open_rename_preset_modal
+    open_rename_preset_focus = modal_state_dropdown.open_rename_preset_focus
+    open_delete_preset_modal = modal_state_dropdown.open_delete_preset_modal
+
+    presets = presets_state_dropdown.presets
+    preset_keys = presets_state_dropdown.preset_keys
+    presets_show_in_grid = presets_state_dropdown.presets_show_in_grid
+    presets_ks_pitch = presets_state_dropdown.presets_ks_pitch
+    presets_note_vel_min = presets_state_dropdown.presets_note_vel_min
+    presets_note_vel_max = presets_state_dropdown.presets_note_vel_max
+    current_preset_name = presets_state_dropdown.current_preset_name
+    combo_preset_name = presets_state_dropdown.combo_preset_name
 
     -- Modals rendering
-    if open_new_preset_modal then
-        reaper.ImGui_OpenPopup(ctx, "New Preset")
-        open_new_preset_modal = false
-    end
-    if reaper.ImGui_BeginPopupModal(ctx, "New Preset", nil, imgui.WindowFlags_AlwaysAutoResize) then
-        reaper.ImGui_Text(ctx, "Library Name:")
-        if open_new_preset_focus then
-            reaper.ImGui_SetKeyboardFocusHere(ctx, 0)
-            open_new_preset_focus = false
-        end
-        local changed_lib, new_lib = reaper.ImGui_InputText(ctx, "##new_lib", new_preset_lib_input)
-        if changed_lib then
-            new_preset_lib_input = new_lib
-        end
-        
-        reaper.ImGui_Text(ctx, "Articulation Name:")
-        local changed_art, new_art = reaper.ImGui_InputText(ctx, "##new_art", new_preset_art_input)
-        if changed_art then
-            new_preset_art_input = new_art
-        end
-        
-        reaper.ImGui_Spacing(ctx)
-        
-        local cb_changed, new_cb_val = reaper.ImGui_Checkbox(ctx, "Show in Preset Grid", new_preset_show_in_grid)
-        if cb_changed then
-            new_preset_show_in_grid = new_cb_val
-        end
-        
-        reaper.ImGui_Spacing(ctx)
-        
-        local lib_trimmed = new_preset_lib_input:gsub("^%s*(.-)%s*$", "%1")
-        local art_trimmed = new_preset_art_input:gsub("^%s*(.-)%s*$", "%1")
-        local can_save = (lib_trimmed ~= "" and art_trimmed ~= "")
-        
-        if not can_save then
-            reaper.ImGui_BeginDisabled(ctx)
-        end
-        if reaper.ImGui_Button(ctx, "OK", 80) then
-            local combined_name = lib_trimmed .. " - " .. art_trimmed
-            presets[combined_name] = gui_state.slider_value
-            presets_show_in_grid[combined_name] = new_preset_show_in_grid
-            presets_ks_pitch[combined_name] = -1
-            presets_note_vel_min[combined_name] = -1
-            presets_note_vel_max[combined_name] = -1
-            save_presets(presets, presets_show_in_grid)
-            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
-            save_preset_name_to_targets(combined_name)
-            current_preset_name = combined_name
-            combo_preset_name = combined_name
-            reaper.ImGui_CloseCurrentPopup(ctx)
-        end
-        if not can_save then
-            reaper.ImGui_EndDisabled(ctx)
-        end
-        
-        reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, "Cancel", 80) then
-            reaper.ImGui_CloseCurrentPopup(ctx)
-        end
-        reaper.ImGui_EndPopup(ctx)
-    end
+    local modal_state = {
+        open_new = open_new_preset_modal,
+        focus_new = open_new_preset_focus,
+        new_lib = new_preset_lib_input,
+        new_art = new_preset_art_input,
+        new_show_grid = new_preset_show_in_grid,
 
-    if open_rename_preset_modal then
-        local lib, art = split_preset_name(combo_preset_name)
-        rename_preset_lib_input = lib
-        rename_preset_art_input = art
-        rename_preset_show_in_grid = (presets_show_in_grid[combo_preset_name] ~= false)
-        reaper.ImGui_OpenPopup(ctx, "Rename Preset")
-        open_rename_preset_modal = false
-    end
-    if reaper.ImGui_BeginPopupModal(ctx, "Rename Preset", nil, imgui.WindowFlags_AlwaysAutoResize) then
-        reaper.ImGui_Text(ctx, "Library Name:")
-        if open_rename_preset_focus then
-            reaper.ImGui_SetKeyboardFocusHere(ctx, 0)
-            open_rename_preset_focus = false
-        end
-        local changed_lib, new_lib = reaper.ImGui_InputText(ctx, "##rename_lib", rename_preset_lib_input)
-        if changed_lib then
-            rename_preset_lib_input = new_lib
-        end
-        
-        reaper.ImGui_Text(ctx, "Articulation Name:")
-        local changed_art, new_art = reaper.ImGui_InputText(ctx, "##rename_art", rename_preset_art_input)
-        if changed_art then
-            rename_preset_art_input = new_art
-        end
-        
-        reaper.ImGui_Spacing(ctx)
-        
-        local cb_changed, new_cb_val = reaper.ImGui_Checkbox(ctx, "Show in Preset Grid", rename_preset_show_in_grid)
-        if cb_changed then
-            rename_preset_show_in_grid = new_cb_val
-        end
-        
-        reaper.ImGui_Spacing(ctx)
-        
-        local lib_trimmed = rename_preset_lib_input:gsub("^%s*(.-)%s*$", "%1")
-        local art_trimmed = rename_preset_art_input:gsub("^%s*(.-)%s*$", "%1")
-        local combined_name = lib_trimmed .. " - " .. art_trimmed
-        local can_save = (lib_trimmed ~= "" and art_trimmed ~= "" and (combined_name ~= combo_preset_name or rename_preset_show_in_grid ~= (presets_show_in_grid[combo_preset_name] ~= false)))
-        
-        if not can_save then
-            reaper.ImGui_BeginDisabled(ctx)
-        end
-        if reaper.ImGui_Button(ctx, "OK", 80) then
-            local val = presets[combo_preset_name]
-            local ks_pitch = presets_ks_pitch[combo_preset_name] or -1
-            local note_vel_min = presets_note_vel_min[combo_preset_name] or -1
-            local note_vel_max = presets_note_vel_max[combo_preset_name] or -1
+        open_rename = open_rename_preset_modal,
+        focus_rename = open_rename_preset_focus,
+        rename_lib = rename_preset_lib_input,
+        rename_art = rename_preset_art_input,
+        rename_show_grid = rename_preset_show_in_grid,
 
-            presets[combo_preset_name] = nil
-            presets_show_in_grid[combo_preset_name] = nil
-            presets_ks_pitch[combo_preset_name] = nil
-            presets_note_vel_min[combo_preset_name] = nil
-            presets_note_vel_max[combo_preset_name] = nil
-            
-            presets[combined_name] = val
-            presets_show_in_grid[combined_name] = rename_preset_show_in_grid
-            presets_ks_pitch[combined_name] = ks_pitch
-            presets_note_vel_min[combined_name] = note_vel_min
-            presets_note_vel_max[combined_name] = note_vel_max
+        open_delete = open_delete_preset_modal,
+    }
+    local presets_state = {
+        presets = presets,
+        preset_keys = preset_keys,
+        presets_show_in_grid = presets_show_in_grid,
+        presets_ks_pitch = presets_ks_pitch,
+        presets_note_vel_min = presets_note_vel_min,
+        presets_note_vel_max = presets_note_vel_max,
+        current_preset_name = current_preset_name,
+        combo_preset_name = combo_preset_name
+    }
+    ui_modals.draw_modals(
+        ctx,
+        modal_state,
+        gui_state,
+        presets_state,
+        {
+            save_presets = save_presets,
+            load_presets = load_presets,
+            save_preset_name_to_targets = save_preset_name_to_targets,
+            split_preset_name = split_preset_name
+        }
+    )
+    open_new_preset_modal = modal_state.open_new
+    open_new_preset_focus = modal_state.focus_new
+    new_preset_lib_input = modal_state.new_lib
+    new_preset_art_input = modal_state.new_art
+    new_preset_show_in_grid = modal_state.new_show_grid
 
-            save_presets(presets, presets_show_in_grid)
-            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
-            if current_preset_name == combo_preset_name then
-                current_preset_name = combined_name
-                save_preset_name_to_targets(combined_name)
-            end
-            combo_preset_name = combined_name
-            reaper.ImGui_CloseCurrentPopup(ctx)
-        end
-        if not can_save then
-            reaper.ImGui_EndDisabled(ctx)
-        end
-        
-        reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, "Cancel", 80) then
-            reaper.ImGui_CloseCurrentPopup(ctx)
-        end
-        reaper.ImGui_EndPopup(ctx)
-    end
+    open_rename_preset_modal = modal_state.open_rename
+    open_rename_preset_focus = modal_state.focus_rename
+    rename_preset_lib_input = modal_state.rename_lib
+    rename_preset_art_input = modal_state.rename_art
+    rename_preset_show_in_grid = modal_state.rename_show_grid
 
-    if open_delete_preset_modal then
-        reaper.ImGui_OpenPopup(ctx, "Delete Preset?")
-        open_delete_preset_modal = false
-    end
-    if reaper.ImGui_BeginPopupModal(ctx, "Delete Preset?", nil, imgui.WindowFlags_AlwaysAutoResize) then
-        reaper.ImGui_Text(ctx, string.format("Are you sure you want to delete '%s'?", combo_preset_name))
-        
-        reaper.ImGui_Spacing(ctx)
-        
-        if reaper.ImGui_Button(ctx, "Yes", 80) then
-            presets[combo_preset_name] = nil
-            presets_show_in_grid[combo_preset_name] = nil
-            presets_ks_pitch[combo_preset_name] = nil
-            presets_note_vel_min[combo_preset_name] = nil
-            presets_note_vel_max[combo_preset_name] = nil
-            save_presets(presets, presets_show_in_grid)
-            presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
-            if current_preset_name == combo_preset_name then
-                current_preset_name = ""
-                save_preset_name_to_targets("")
-            end
-            combo_preset_name = ""
-            reaper.ImGui_CloseCurrentPopup(ctx)
-        end
-        reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, "No", 80) then
-            reaper.ImGui_CloseCurrentPopup(ctx)
-        end
-        reaper.ImGui_EndPopup(ctx)
-    end
+    open_delete_preset_modal = modal_state.open_delete
+
+    presets = presets_state.presets
+    preset_keys = presets_state.preset_keys
+    presets_show_in_grid = presets_state.presets_show_in_grid
+    presets_ks_pitch = presets_state.presets_ks_pitch
+    presets_note_vel_min = presets_state.presets_note_vel_min
+    presets_note_vel_max = presets_state.presets_note_vel_max
+    current_preset_name = presets_state.current_preset_name
+    combo_preset_name = presets_state.combo_preset_name
 
     -- Trigger Editor Panel (only visible when a preset is selected)
-    if combo_preset_name ~= "" and presets[combo_preset_name] ~= nil then
-        reaper.ImGui_Spacing(ctx)
-        if reaper.ImGui_CollapsingHeader(ctx, "MIDI Triggers: " .. combo_preset_name) then
-            reaper.ImGui_Spacing(ctx)
-            
-            -- human-readable MIDI note name helper
-            local function get_note_name(pitch)
-                if pitch < 0 or pitch > 127 then return "Disabled" end
-                local notes = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
-                local octave = math.floor(pitch / 12) - 1
-                local note = notes[(pitch % 12) + 1]
-                return string.format("%s%d", note, octave)
-            end
-            
-            -- Helper to determine Trigger Mode from trigger values
-            local function get_preset_trigger_mode(name)
-                local ks_pitch = presets_ks_pitch[name] or -1
-                local note_vel_min = presets_note_vel_min[name] or -1
-                local note_vel_max = presets_note_vel_max[name] or -1
-                
-                if ks_pitch >= 0 and note_vel_min >= 0 and note_vel_max >= 0 then
-                    return "Note + Velocity"
-                elseif ks_pitch >= 0 then
-                    return "Note"
-                elseif note_vel_min >= 0 and note_vel_max >= 0 then
-                    return "Velocity"
-                else
-                    return "None"
-                end
-            end
-            
-            local current_mode = get_preset_trigger_mode(combo_preset_name)
-            
-            reaper.ImGui_Text(ctx, "Trigger Mode:")
-            reaper.ImGui_SameLine(ctx, 150)
-            reaper.ImGui_SetNextItemWidth(ctx, 180)
-            if reaper.ImGui_BeginCombo(ctx, "##trigger_mode", current_mode) then
-                local modes = {"None", "Note", "Velocity", "Note + Velocity"}
-                for _, m in ipairs(modes) do
-                    local is_sel = (m == current_mode)
-                    if reaper.ImGui_Selectable(ctx, m, is_sel) then
-                        if m == "None" then
-                            presets_ks_pitch[combo_preset_name] = -1
-                            presets_note_vel_min[combo_preset_name] = -1
-                            presets_note_vel_max[combo_preset_name] = -1
-                        elseif m == "Note" then
-                            if (presets_ks_pitch[combo_preset_name] or -1) < 0 then
-                                presets_ks_pitch[combo_preset_name] = 24 -- default C0
-                            end
-                            presets_note_vel_min[combo_preset_name] = -1
-                            presets_note_vel_max[combo_preset_name] = -1
-                        elseif m == "Velocity" then
-                            presets_ks_pitch[combo_preset_name] = -1
-                            if (presets_note_vel_min[combo_preset_name] or -1) < 0 then
-                                presets_note_vel_min[combo_preset_name] = 1
-                                presets_note_vel_max[combo_preset_name] = 127
-                            end
-                        elseif m == "Note + Velocity" then
-                            if (presets_ks_pitch[combo_preset_name] or -1) < 0 then
-                                presets_ks_pitch[combo_preset_name] = 24
-                            end
-                            if (presets_note_vel_min[combo_preset_name] or -1) < 0 then
-                                presets_note_vel_min[combo_preset_name] = 1
-                                presets_note_vel_max[combo_preset_name] = 127
-                            end
-                        end
-                        save_presets(presets, presets_show_in_grid)
-                    end
-                end
-                reaper.ImGui_EndCombo(ctx)
-            end
-            
-            reaper.ImGui_Spacing(ctx)
-            
-            -- Render Note dropdown if mode is Note or Note + Velocity
-            if current_mode == "Note" or current_mode == "Note + Velocity" then
-                local pitch_val = presets_ks_pitch[combo_preset_name] or 24
-                if pitch_val < 0 then pitch_val = 24 end
-                reaper.ImGui_Text(ctx, "Keyswitch Note:")
-                reaper.ImGui_SameLine(ctx, 150)
-                reaper.ImGui_SetNextItemWidth(ctx, 180)
-                
-                local ks_preview = get_note_name(pitch_val) .. " (" .. tostring(pitch_val) .. ")"
-                if reaper.ImGui_BeginCombo(ctx, "##ks_pitch_combo", ks_preview) then
-                    for p = 0, 127 do
-                        local is_sel = (p == pitch_val)
-                        local label = get_note_name(p) .. " (" .. tostring(p) .. ")"
-                        if reaper.ImGui_Selectable(ctx, label, is_sel) then
-                            presets_ks_pitch[combo_preset_name] = p
-                            save_presets(presets, presets_show_in_grid)
-                        end
-                        if is_sel then
-                            reaper.ImGui_SetItemDefaultFocus(ctx)
-                        end
-                    end
-                    reaper.ImGui_EndCombo(ctx)
-                end
-            end
-            
-            -- Render Played Note Velocity Range drag if mode is Velocity or Note + Velocity
-            if current_mode == "Velocity" or current_mode == "Note + Velocity" then
-                local min_val = presets_note_vel_min[combo_preset_name] or 1
-                local max_val = presets_note_vel_max[combo_preset_name] or 127
-                if min_val < 0 then min_val = 1 end
-                if max_val < 0 then max_val = 127 end
-                
-                reaper.ImGui_Text(ctx, "Played Note Vel:")
-                reaper.ImGui_SameLine(ctx, 150)
-                reaper.ImGui_SetNextItemWidth(ctx, 180)
-                local changed_range, new_min, new_max = reaper.ImGui_DragIntRange2(ctx, "##note_vel_range", min_val, max_val, 1.0, 1, 127, "Min: %d", "Max: %d")
-                if changed_range then
-                    presets_note_vel_min[combo_preset_name] = new_min
-                    presets_note_vel_max[combo_preset_name] = new_max
-                    save_presets(presets, presets_show_in_grid)
-                end
-            end
-            
-            reaper.ImGui_Spacing(ctx)
-        end
-    end
+    local presets_state_te = {
+        presets = presets,
+        presets_show_in_grid = presets_show_in_grid,
+        presets_ks_pitch = presets_ks_pitch,
+        presets_note_vel_min = presets_note_vel_min,
+        presets_note_vel_max = presets_note_vel_max
+    }
+    ui_trigger_editor.draw_trigger_editor(
+        ctx,
+        combo_preset_name,
+        presets_state_te,
+        {
+            save_presets = save_presets
+        }
+    )
+    presets_ks_pitch = presets_state_te.presets_ks_pitch
+    presets_note_vel_min = presets_state_te.presets_note_vel_min
+    presets_note_vel_max = presets_state_te.presets_note_vel_max
 
     reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Separator(ctx)
@@ -2105,91 +1080,39 @@ local function render_ui()
     -- Write Keyswitches has been moved to Settings
 
     -- Double-click / Drag slider for absolute offset (displaying current value) and manual input box side by side
-    reaper.ImGui_Text(ctx, "Offset:")
-    reaper.ImGui_SameLine(ctx, 90)
-    
-    reaper.ImGui_SetNextItemWidth(ctx, 220)
-    local slider_changed, new_slider_val = reaper.ImGui_SliderDouble(ctx, "##slider", gui_state.slider_value, -FIXED_RANGE, FIXED_RANGE, "%.1f ms")
-    local is_slider_active = reaper.ImGui_IsItemActive(ctx)
-    local is_slider_activated = reaper.ImGui_IsItemActivated(ctx)
-    local is_slider_deactivated = reaper.ImGui_IsItemDeactivatedAfterEdit(ctx)
-
-    if is_slider_activated or is_slider_active then
-        gui_state.is_dragging = true
-    end
-
-    if slider_changed then
-        local eff_mode = get_effective_mode()
-        gui_state.slider_value = new_slider_val
-        apply_offset_to_targets(new_slider_val)
-        current_preset_name = "" -- clear committed association, but keep combo selection for Save
-        if eff_mode == MODE_TRACK_OFFSET then
-            reaper.TrackList_AdjustWindows(false)
-        end
-    end
-
-    reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_SetNextItemWidth(ctx, 80)
-    local input_changed, new_input_val = reaper.ImGui_InputDouble(ctx, "ms", gui_state.slider_value, 0.0, 0.0, "%.1f")
-    if input_changed then
-        gui_state.slider_value = new_input_val
-        current_preset_name = "" -- clear committed association, but keep combo selection for Save
-    end
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        adjust_offset_to_value(gui_state.slider_value)
-    end
-
-    -- Explicit Apply Button
-    reaper.ImGui_SameLine(ctx)
-    local ap = theme_apply_btn
-    local apH = {math.min(ap[1] + 0.15, 1.0), math.min(ap[2] + 0.15, 1.0), math.min(ap[3] + 0.15, 1.0)}
-    local apA = {ap[1] * 0.80, ap[2] * 0.80, ap[3] * 0.80}
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(ap[1], ap[2], ap[3], 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(apH[1], apH[2], apH[3], 1.0))
-    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(apA[1], apA[2], apA[3], 1.0))
-    if reaper.ImGui_Button(ctx, "Apply") then
-        adjust_offset_to_value(gui_state.slider_value)
-    end
-    reaper.ImGui_PopStyleColor(ctx, 3)
-
-    -- Information Button
-    reaper.ImGui_SameLine(ctx)
-    local info_active = show_info
-    if info_active then
-        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button, reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.3, 0.6, 1.0))
-        reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.4, 0.75, 1.0))
-    end
-    if reaper.ImGui_Button(ctx, "Information") then
-        show_info = not show_info
-    end
-    if info_active then
-        reaper.ImGui_PopStyleColor(ctx, 2)
-    end
-
-    -- Settings Button
-    reaper.ImGui_SameLine(ctx)
-    local settings_active = show_settings
-    if settings_active then
-        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.3, 0.6, 1.0))
-        reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.4, 0.75, 1.0))
-    end
-    if reaper.ImGui_Button(ctx, "Settings") then
-        show_settings = not show_settings
-        if show_settings then
-            -- Snapshot current theme as uint32 (one-time float→u32, no further round-trip)
-            settings_edit_bg_u32          = theme_pack(theme_bg)
-            settings_edit_accent_u32      = theme_pack(theme_accent)
-            settings_edit_text_u32        = theme_pack(theme_text)
-            settings_edit_danger_u32      = theme_pack(theme_danger)
-            settings_edit_positive_u32    = theme_pack(theme_positive)
-            settings_edit_slider_grab_u32 = theme_pack(theme_slider_grab)
-            settings_edit_apply_btn_u32   = theme_pack(theme_apply_btn)
-            settings_edit_frame_bg_u32    = theme_pack(theme_frame_bg)
-            settings_edit_check_mark_u32  = theme_pack(theme_check_mark)
-        end
-    end
-    if settings_active then
-        reaper.ImGui_PopStyleColor(ctx, 2)
+    local is_slider_deactivated
+    show_info, show_settings, is_slider_deactivated = ui_renderer.draw_offset_slider(
+        ctx,
+        gui_state,
+        FIXED_RANGE,
+        {
+            apply_offset_to_targets = function(val)
+                apply_offset_to_targets(val)
+                current_preset_name = "" -- clear committed association, but keep combo selection for Save
+            end,
+            get_effective_mode = get_effective_mode,
+            adjust_offset_to_value = function(val)
+                adjust_offset_to_value(val)
+            end,
+            on_input_changed = function(val)
+                current_preset_name = "" -- clear committed association, but keep combo selection for Save
+            end
+        },
+        theme_apply_btn,
+        show_info,
+        show_settings
+    )
+    if show_settings then
+        -- Snapshot current theme as uint32 (one-time float→u32, no further round-trip)
+        settings_edit_bg_u32          = theme_pack(theme_bg)
+        settings_edit_accent_u32      = theme_pack(theme_accent)
+        settings_edit_text_u32        = theme_pack(theme_text)
+        settings_edit_danger_u32      = theme_pack(theme_danger)
+        settings_edit_positive_u32    = theme_pack(theme_positive)
+        settings_edit_slider_grab_u32 = theme_pack(theme_slider_grab)
+        settings_edit_apply_btn_u32   = theme_pack(theme_apply_btn)
+        settings_edit_frame_bg_u32    = theme_pack(theme_frame_bg)
+        settings_edit_check_mark_u32  = theme_pack(theme_check_mark)
     end
 
     if is_slider_deactivated then
@@ -2353,257 +1276,91 @@ local function render_ui()
     end
 
     if show_info then
-        reaper.ImGui_Spacing(ctx)
-        reaper.ImGui_Separator(ctx)
-        reaper.ImGui_Spacing(ctx)
-
-        -- Display details section
         local track, take = get_current_context_track_and_take()
         local eff_mode = get_effective_mode()
-        
-        -- 1. Track Playback Offset (Always visible)
-        if track and reaper.ValidatePtr(track, "MediaTrack*") then
-            local cur_offset_sec = reaper.GetMediaTrackInfo_Value(track, "D_PLAY_OFFSET")
-            local _, name = reaper.GetTrackName(track)
-            name = name or "Unnamed Track"
-            
-            local label = "Track (" .. name .. ")"
-            if eff_mode == MODE_TRACK_OFFSET and num_targets > 1 then
-                label = string.format("Track (%s + %d others)", name, num_targets - 1)
-            end
-            reaper.ImGui_Text(ctx, label .. " Playback Offset:")
-            reaper.ImGui_SameLine(ctx, 240)
-            reaper.ImGui_Text(ctx, string.format("%.1f ms (%.4fs)", cur_offset_sec * 1000.0, cur_offset_sec))
-        else
-            reaper.ImGui_Text(ctx, "Track Playback Offset:")
-            reaper.ImGui_SameLine(ctx, 240)
-            reaper.ImGui_Text(ctx, "No track selected")
-        end
-        
-        -- 2. Take Start Offset (Always visible)
-        if take and reaper.ValidatePtr(take, "MediaItem_Take*") then
-            local cur_offset_sec = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
-            local name = reaper.GetTakeName(take) or "Unnamed Take"
-            
-            local label = "Take (" .. name .. ")"
-            if eff_mode == MODE_TAKE_OFFSET and num_targets > 1 then
-                label = string.format("Take (%s + %d others)", name, num_targets - 1)
-            end
-            reaper.ImGui_Text(ctx, label .. " Start Offset:")
-            reaper.ImGui_SameLine(ctx, 240)
-            reaper.ImGui_Text(ctx, string.format("%.1f ms (%.4fs)", cur_offset_sec * 1000.0, cur_offset_sec))
-        else
-            reaper.ImGui_Text(ctx, "Take Start Offset:")
-            reaper.ImGui_SameLine(ctx, 240)
-            reaper.ImGui_Text(ctx, "No take selected")
-        end
-
-        -- 3. Item Position Offset (Always visible, stored in item extension metadata)
-        local item
-        if take and reaper.ValidatePtr(take, "MediaItem_Take*") then
-            item = reaper.GetMediaItemTake_Item(take)
-        else
-            local num_items = reaper.CountSelectedMediaItems(0)
-            if num_items > 0 then
-                item = reaper.GetSelectedMediaItem(0, 0)
-            end
-        end
-        
-        if item and reaper.ValidatePtr(item, "MediaItem*") then
-            local retval, saved_val = reaper.GetSetMediaItemInfo_String(item, "P_EXT:Walter_MediaOffsetTool_offset", "", false)
-            local saved_ms = 0.0
-            if retval and saved_val ~= "" then
-                saved_ms = tonumber(saved_val) or 0.0
-            end
-            
-            local display_name = "Unnamed Item"
-            local active_take = reaper.GetActiveTake(item)
-            if active_take then
-                display_name = reaper.GetTakeName(active_take) or "Unnamed Take"
-            end
-            
-            local label = "Item (" .. display_name .. ")"
-            if eff_mode == MODE_ITEM_POSITION and num_targets > 1 then
-                label = string.format("Item (%s + %d others)", display_name, num_targets - 1)
-            end
-            reaper.ImGui_Text(ctx, label .. " Position Offset:")
-            reaper.ImGui_SameLine(ctx, 240)
-            reaper.ImGui_Text(ctx, string.format("%.1f ms", saved_ms))
-        else
-            reaper.ImGui_Text(ctx, "Item Position Offset:")
-            reaper.ImGui_SameLine(ctx, 240)
-            reaper.ImGui_Text(ctx, "No item selected")
-        end
-
-        -- 4. MIDI Note Offset (Always visible)
         local has_notes, active_take = has_selected_midi_notes()
-        if has_notes and active_take then
-            local num_selected = #gui_state.selected_targets
-            local display_str = "0.0 ms"
-            if num_selected > 0 then
-                local first_offset = gui_state.selected_targets[1].offset_ms or 0.0
-                local all_same = true
-                for i = 2, num_selected do
-                    local offset = gui_state.selected_targets[i].offset_ms or 0.0
-                    if math.abs(offset - first_offset) > 0.01 then
-                        all_same = false
-                        break
-                    end
-                end
-                if all_same then
-                    display_str = string.format("%.1f ms", first_offset)
-                else
-                    display_str = "Multiple values"
-                end
-            end
-            
-            local label = string.format("MIDI Notes (%d selected)", num_selected)
-            reaper.ImGui_Text(ctx, label .. " Offset:")
-            reaper.ImGui_SameLine(ctx, 240)
-            reaper.ImGui_Text(ctx, display_str)
-        else
-            reaper.ImGui_Text(ctx, "MIDI Note Offset:")
-            reaper.ImGui_SameLine(ctx, 240)
-            reaper.ImGui_Text(ctx, "No notes selected")
-        end
-
-        -- 5. Dynamic Mode Details (Move Item position)
-        if eff_mode == MODE_ITEM_POSITION then
-            local first_info = gui_state.selected_targets[1]
-            if first_info and reaper.ValidatePtr(first_info.item, "MediaItem*") then
-                local cur_pos_sec = reaper.GetMediaItemInfo_Value(first_info.item, "D_POSITION")
-                local display_name = first_info.name
-                if num_targets > 1 then
-                    display_name = string.format("%s (+ %d others)", first_info.name, num_targets - 1)
-                end
-                reaper.ImGui_Text(ctx, "Move Item (" .. display_name .. ") Pos:")
-                reaper.ImGui_SameLine(ctx, 240)
-                reaper.ImGui_Text(ctx, string.format("%.3f s", cur_pos_sec))
-            end
-        end
+        local modes_struct = {
+            MODE_TRACK_OFFSET = MODE_TRACK_OFFSET,
+            MODE_TAKE_OFFSET = MODE_TAKE_OFFSET,
+            MODE_ITEM_POSITION = MODE_ITEM_POSITION,
+            MODE_MIDI_NOTES = MODE_MIDI_NOTES
+        }
+        ui_info_panel.draw_info_panel(
+            ctx,
+            gui_state,
+            num_targets,
+            eff_mode,
+            track,
+            take,
+            has_notes,
+            active_take,
+            modes_struct
+        )
     end
 
     -- Settings Panel
     if show_settings then
-        reaper.ImGui_Spacing(ctx)
-        reaper.ImGui_Separator(ctx)
-        reaper.ImGui_Spacing(ctx)
-        reaper.ImGui_Text(ctx, "Settings")
-        reaper.ImGui_Spacing(ctx)
+        local defaults = {
+            bg = DEFAULT_BG,
+            accent = DEFAULT_ACCENT,
+            text = DEFAULT_TEXT,
+            danger = DEFAULT_DANGER,
+            positive = DEFAULT_POSITIVE,
+            slider_grab = DEFAULT_SLIDER_GRAB,
+            apply_btn = DEFAULT_APPLY_BTN,
+            frame_bg = DEFAULT_FRAME_BG,
+            check_mark = DEFAULT_CHECK_MARK
+        }
+        local theme_state = {
+            bg_u32 = settings_edit_bg_u32,
+            accent_u32 = settings_edit_accent_u32,
+            text_u32 = settings_edit_text_u32,
+            danger_u32 = settings_edit_danger_u32,
+            positive_u32 = settings_edit_positive_u32,
+            slider_grab_u32 = settings_edit_slider_grab_u32,
+            apply_btn_u32 = settings_edit_apply_btn_u32,
+            frame_bg_u32 = settings_edit_frame_bg_u32,
+            check_mark_u32 = settings_edit_check_mark_u32,
 
-        -- Write Keyswitches Option
-        local changed_cb, new_cb = reaper.ImGui_Checkbox(ctx, "Write Keyswitches (MIDI notes)", gui_state.write_keyswitches)
-        if changed_cb then
-            gui_state.write_keyswitches = new_cb
-            save_settings()
-            update_targets_list(true)
-        end
+            theme_bg = theme_bg,
+            theme_accent = theme_accent,
+            theme_text = theme_text,
+            theme_danger = theme_danger,
+            theme_positive = theme_positive,
+            theme_slider_grab = theme_slider_grab,
+            theme_apply_btn = theme_apply_btn,
+            theme_frame_bg = theme_frame_bg,
+            theme_check_mark = theme_check_mark
+        }
+        show_settings = ui_settings.draw_settings_panel(
+            ctx,
+            gui_state,
+            theme_state,
+            defaults,
+            {
+                save_settings = save_settings,
+                update_targets_list = update_targets_list
+            }
+        )
+        settings_edit_bg_u32 = theme_state.bg_u32
+        settings_edit_accent_u32 = theme_state.accent_u32
+        settings_edit_text_u32 = theme_state.text_u32
+        settings_edit_danger_u32 = theme_state.danger_u32
+        settings_edit_positive_u32 = theme_state.positive_u32
+        settings_edit_slider_grab_u32 = theme_state.slider_grab_u32
+        settings_edit_apply_btn_u32 = theme_state.apply_btn_u32
+        settings_edit_frame_bg_u32 = theme_state.frame_bg_u32
+        settings_edit_check_mark_u32 = theme_state.check_mark_u32
 
-        reaper.ImGui_Spacing(ctx)
-        reaper.ImGui_Separator(ctx)
-        reaper.ImGui_Spacing(ctx)
-
-        -- Colors Header
-        reaper.ImGui_Text(ctx, "Custom Colors")
-        reaper.ImGui_Spacing(ctx)
-
-        -- Background Color
-        reaper.ImGui_TextDisabled(ctx, "Background Color")
-        local bg_changed, new_bg_u32 = reaper.ImGui_ColorEdit4(ctx, "##bg_color", settings_edit_bg_u32)
-        if bg_changed then settings_edit_bg_u32 = new_bg_u32 end
-
-        reaper.ImGui_Spacing(ctx)
-
-        -- Accent Color
-        reaper.ImGui_TextDisabled(ctx, "Accent Color (General Buttons & Headers)")
-        local ac_changed, new_ac_u32 = reaper.ImGui_ColorEdit4(ctx, "##accent_color", settings_edit_accent_u32)
-        if ac_changed then settings_edit_accent_u32 = new_ac_u32 end
-
-        reaper.ImGui_Spacing(ctx)
-
-        -- Slider Pin Color
-        reaper.ImGui_TextDisabled(ctx, "Slider Pin Color")
-        local sg_changed, new_sg_u32 = reaper.ImGui_ColorEdit4(ctx, "##slider_grab_color", settings_edit_slider_grab_u32)
-        if sg_changed then settings_edit_slider_grab_u32 = new_sg_u32 end
-
-        reaper.ImGui_Spacing(ctx)
-
-        -- Slider Background Color
-        reaper.ImGui_TextDisabled(ctx, "Slider Background Color")
-        local fb_changed, new_fb_u32 = reaper.ImGui_ColorEdit4(ctx, "##frame_bg_color", settings_edit_frame_bg_u32)
-        if fb_changed then settings_edit_frame_bg_u32 = new_fb_u32 end
-
-        reaper.ImGui_Spacing(ctx)
-
-        -- Apply Button Color
-        reaper.ImGui_TextDisabled(ctx, "Apply Button Color")
-        local ap_changed, new_ap_u32 = reaper.ImGui_ColorEdit4(ctx, "##apply_btn_color", settings_edit_apply_btn_u32)
-        if ap_changed then settings_edit_apply_btn_u32 = new_ap_u32 end
-
-        reaper.ImGui_Spacing(ctx)
-
-        -- Radio Button Pin Color
-        reaper.ImGui_TextDisabled(ctx, "Radio Button Pin Color")
-        local cm_changed, new_cm_u32 = reaper.ImGui_ColorEdit4(ctx, "##check_mark_color", settings_edit_check_mark_u32)
-        if cm_changed then settings_edit_check_mark_u32 = new_cm_u32 end
-
-        reaper.ImGui_Spacing(ctx)
-
-        -- Text Color
-        reaper.ImGui_TextDisabled(ctx, "Text Color")
-        local tx_changed, new_tx_u32 = reaper.ImGui_ColorEdit4(ctx, "##text_color", settings_edit_text_u32)
-        if tx_changed then settings_edit_text_u32 = new_tx_u32 end
-
-        reaper.ImGui_Spacing(ctx)
-
-        -- Danger Color
-        reaper.ImGui_TextDisabled(ctx, "Danger Color  (Reset, Delete buttons)")
-        local dg_changed, new_dg_u32 = reaper.ImGui_ColorEdit4(ctx, "##danger_color", settings_edit_danger_u32)
-        if dg_changed then settings_edit_danger_u32 = new_dg_u32 end
-
-        reaper.ImGui_Spacing(ctx)
-
-        -- Positive Color
-        reaper.ImGui_TextDisabled(ctx, "Positive Color  (Save buttons)")
-        local pos_changed, new_pos_u32 = reaper.ImGui_ColorEdit4(ctx, "##positive_color", settings_edit_positive_u32)
-        if pos_changed then settings_edit_positive_u32 = new_pos_u32 end
-
-        reaper.ImGui_Spacing(ctx)
-
-        -- Live preview: unpack from uint32 once per frame → float tables for the theme
-        theme_bg          = theme_unpack(settings_edit_bg_u32)
-        theme_accent      = theme_unpack(settings_edit_accent_u32)
-        theme_text        = theme_unpack(settings_edit_text_u32)
-        theme_danger      = theme_unpack(settings_edit_danger_u32)
-        theme_positive    = theme_unpack(settings_edit_positive_u32)
-        theme_slider_grab = theme_unpack(settings_edit_slider_grab_u32)
-        theme_apply_btn   = theme_unpack(settings_edit_apply_btn_u32)
-        theme_frame_bg    = theme_unpack(settings_edit_frame_bg_u32)
-        theme_check_mark  = theme_unpack(settings_edit_check_mark_u32)
-
-        -- Save button
-        push_positive_style()
-        if reaper.ImGui_Button(ctx, "Save Settings") then
-            save_settings()
-            show_settings = false
-        end
-        pop_positive_style()
-
-        -- Reset to defaults
-        reaper.ImGui_SameLine(ctx)
-        push_danger_style()
-        if reaper.ImGui_Button(ctx, "Reset Defaults") then
-            settings_edit_bg_u32          = theme_pack(DEFAULT_BG)
-            settings_edit_accent_u32      = theme_pack(DEFAULT_ACCENT)
-            settings_edit_text_u32        = theme_pack(DEFAULT_TEXT)
-            settings_edit_danger_u32      = theme_pack(DEFAULT_DANGER)
-            settings_edit_positive_u32    = theme_pack(DEFAULT_POSITIVE)
-            settings_edit_slider_grab_u32 = theme_pack(DEFAULT_SLIDER_GRAB)
-            settings_edit_apply_btn_u32   = theme_pack(DEFAULT_APPLY_BTN)
-            settings_edit_frame_bg_u32    = theme_pack(DEFAULT_FRAME_BG)
-            settings_edit_check_mark_u32  = theme_pack(DEFAULT_CHECK_MARK)
-        end
-        pop_danger_style()
+        theme_bg = theme_state.theme_bg
+        theme_accent = theme_state.theme_accent
+        theme_text = theme_state.theme_text
+        theme_danger = theme_state.theme_danger
+        theme_positive = theme_state.theme_positive
+        theme_slider_grab = theme_state.theme_slider_grab
+        theme_apply_btn = theme_state.theme_apply_btn
+        theme_frame_bg = theme_state.theme_frame_bg
+        theme_check_mark = theme_state.theme_check_mark
     end
 
     -- Preset Board (2-Row wrapped buttons)
@@ -2611,158 +1368,36 @@ local function render_ui()
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
     
-    reaper.ImGui_Text(ctx, "Preset Board:")
-    reaper.ImGui_Spacing(ctx)
-    
-    -- Prepare grouped data
-    local libs = {}
-    local lib_names = {}
-    for _, name in ipairs(preset_keys) do
-        if presets_show_in_grid[name] ~= false then
-            local lib, art = name:match("^(.-)%s*-%s*(.-)$")
-            if not lib then
-                lib = "Other"
-                art = name
-            end
-            if not libs[lib] then
-                libs[lib] = {}
-                table.insert(lib_names, lib)
-            end
-            table.insert(libs[lib], { name = name, art = art, offset = presets[name] })
+    current_preset_name = ui_renderer.draw_preset_board(
+        ctx,
+        gui_state,
+        preset_keys,
+        presets_show_in_grid,
+        presets,
+        theme_accent,
+        theme_bg,
+        current_preset_name,
+        function(offset, name)
+            adjust_offset_to_value(offset, name)
         end
-    end
-    
-    table.sort(lib_names)
-    for lib in pairs(libs) do
-        table.sort(libs[lib], function(a, b) return a.art < b.art end)
-    end
-    
-    if #lib_names > 0 then
-        -- Keep selected library valid
-        if not gui_state.selected_library or not libs[gui_state.selected_library] then
-            gui_state.selected_library = lib_names[1]
-        end
-        
-        -- Libraries Row
-        reaper.ImGui_TextDisabled(ctx, "Libraries:")
-        reaper.ImGui_Spacing(ctx)
-        
-        local window_w = reaper.ImGui_GetWindowWidth(ctx)
-        local wrap_w = window_w - 24.0
-        if wrap_w < 400.0 then wrap_w = 400.0 end
-        
-        local pad_x, _ = reaper.ImGui_GetStyleVar(ctx, imgui.StyleVar_FramePadding)
-        local space_x, _ = reaper.ImGui_GetStyleVar(ctx, imgui.StyleVar_ItemSpacing)
-        
-        local current_x = 0.0
-        for i, lib_name in ipairs(lib_names) do
-            local text_w, _ = reaper.ImGui_CalcTextSize(ctx, lib_name)
-            local btn_w = text_w + pad_x * 2
-            
-            if i > 1 then
-                if current_x + btn_w + space_x < wrap_w then
-                    reaper.ImGui_SameLine(ctx, nil, space_x)
-                    current_x = current_x + btn_w + space_x
-                else
-                    current_x = btn_w
-                end
-            else
-                current_x = btn_w
-            end
-            
-            local is_active = (gui_state.selected_library == lib_name)
-            if is_active then
-                local a = theme_accent
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.90, a[2]*0.50, a[3]*0.82, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(a[1]*1.10 > 1 and 1 or a[1]*1.10, a[2]*0.70, a[3]*0.94, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.70, a[2]*0.30, a[3]*0.69, 1.0))
-            else
-                local bg = theme_bg
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.12, bg[2]+0.10, bg[3]+0.16, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.20, bg[2]+0.17, bg[3]+0.26, 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.07, bg[2]+0.05, bg[3]+0.10, 1.0))
-            end
-            
-            if reaper.ImGui_Button(ctx, lib_name .. "##lib_" .. i) then
-                gui_state.selected_library = lib_name
-            end
-            
-            reaper.ImGui_PopStyleColor(ctx, 3)
-        end
-        
-        reaper.ImGui_Spacing(ctx)
-        reaper.ImGui_Spacing(ctx)
-        
-        -- Articulations Row
-        reaper.ImGui_TextDisabled(ctx, "Articulations (" .. gui_state.selected_library .. "):")
-        reaper.ImGui_Spacing(ctx)
-        
-        local arts = libs[gui_state.selected_library] or {}
-        local current_art_x = 0.0
-        for i, art_data in ipairs(arts) do
-            local text_w, _ = reaper.ImGui_CalcTextSize(ctx, art_data.art)
-            local btn_w = text_w + pad_x * 2
-            
-            if i > 1 then
-                if current_art_x + btn_w + space_x < wrap_w then
-                    reaper.ImGui_SameLine(ctx, nil, space_x)
-                    current_art_x = current_art_x + btn_w + space_x
-                else
-                    current_art_x = btn_w
-                end
-            else
-                current_art_x = btn_w
-            end
-            
-            local is_current = (current_preset_name == art_data.name)
-            if is_current then
-                local a = theme_accent
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(a[1], a[2], a[3], 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(math.min(a[1]+0.10, 1), math.min(a[2]+0.10, 1), math.min(a[3]+0.10, 1), 1.0))
-                reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.80, a[2]*0.71, a[3]*0.88, 1.0))
-            end
-            
-            if reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. i) then
-                current_preset_name = art_data.name
-                adjust_offset_to_value(art_data.offset, art_data.name)
-            end
-            
-            if is_current then
-                reaper.ImGui_PopStyleColor(ctx, 3)
-            end
-            
-            if reaper.ImGui_IsItemHovered(ctx) then
-                reaper.ImGui_SetTooltip(ctx, string.format("%s\nOffset: %.1f ms", art_data.name, art_data.offset))
-            end
-        end
-    else
-        reaper.ImGui_TextDisabled(ctx, "No presets configured to show in grid.")
-    end
+    )
 end
 
 -- Key shortcuts
 local function handle_keyboard_shortcuts()
-    local is_ctrl_down = reaper.ImGui_IsKeyDown(ctx, imgui.Key_LeftCtrl) or reaper.ImGui_IsKeyDown(ctx, imgui.Key_RightCtrl)
-    local is_super_down = reaper.ImGui_IsKeyDown(ctx, imgui.Key_LeftSuper) or reaper.ImGui_IsKeyDown(ctx, imgui.Key_RightSuper)
-    local is_shift_down = reaper.ImGui_IsKeyDown(ctx, imgui.Key_LeftShift) or reaper.ImGui_IsKeyDown(ctx, imgui.Key_RightShift)
-
-    -- Undo (Ctrl+Z or Cmd+Z)
-    if (is_ctrl_down or is_super_down) and not is_shift_down and reaper.ImGui_IsKeyPressed(ctx, imgui.Key_Z, false) then
-        reaper.Undo_DoUndo2(0)
-        update_targets_list(true)
-    end
-
-    -- Redo (Ctrl+Y or Cmd+Shift+Z)
-    if (is_ctrl_down and not is_shift_down and reaper.ImGui_IsKeyPressed(ctx, imgui.Key_Y, false)) or
-       (is_super_down and is_shift_down and reaper.ImGui_IsKeyPressed(ctx, imgui.Key_Z, false)) then
-        reaper.Undo_DoRedo2(0)
-        update_targets_list(true)
-    end
-
-    -- Escape key handling
-    if reaper.ImGui_IsKeyPressed(ctx, imgui.Key_Escape, false) then
-        script_running = false
-    end
+    ui_shortcuts.handle_shortcuts(ctx, {
+        undo = function()
+            reaper.Undo_DoUndo2(0)
+            update_targets_list(true)
+        end,
+        redo = function()
+            reaper.Undo_DoRedo2(0)
+            update_targets_list(true)
+        end,
+        exit = function()
+            script_running = false
+        end
+    })
 end
 
 -- Main Loop
