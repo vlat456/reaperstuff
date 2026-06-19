@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.9.9
+-- @version 1.10.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -34,6 +34,16 @@ if not reaper.ImGui_GetBuiltinPath then
   return
 end
 
+-- Toggle action state behavior (terminate on repeat run, set state checkmark)
+if reaper.set_action_options then
+  reaper.set_action_options(1)
+end
+local _, _, section_id, cmd_id = reaper.get_action_context()
+if section_id and cmd_id and section_id ~= -1 and cmd_id ~= -1 then
+  reaper.SetToggleCommandState(section_id, cmd_id, 1)
+  reaper.RefreshToolbar2(section_id, cmd_id)
+end
+
 -- Load the ReaImGui library
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
@@ -60,7 +70,7 @@ local ui_shortcuts = require("ui_shortcuts")
 local target_manager = require("target_manager")
 
 -- Script variables
-local script_name = "Media Offset Tool v1.9.9"
+local script_name = "Media Offset Tool v1.10.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -1428,6 +1438,12 @@ local function loop()
 
     if script_running then
         reaper.defer(loop)
+    else
+        -- Clean up toggle state on exit
+        if section_id and cmd_id and section_id ~= -1 and cmd_id ~= -1 then
+            reaper.SetToggleCommandState(section_id, cmd_id, 0)
+            reaper.RefreshToolbar2(section_id, cmd_id)
+        end
     end
 end
 
