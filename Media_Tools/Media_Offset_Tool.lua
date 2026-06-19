@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.11.0
+-- @version 1.12.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -70,7 +70,7 @@ local ui_shortcuts = require("ui_shortcuts")
 local target_manager = require("target_manager")
 
 -- Script variables
-local script_name = "Media Offset Tool v1.11.0"
+local script_name = "Media Offset Tool v1.12.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -303,6 +303,7 @@ gui_state = {
     last_selection_state = "",
     is_dragging = false,
     write_keyswitches = settings_write_keyswitches, -- Default to loaded settings
+    move_envelopes = false, -- Default to false (disabled) per instance
 }
 
 -- Load persisted mode from project metadata
@@ -718,56 +719,58 @@ local function apply_offset_to_targets(value, preset_name)
                 local delta = new_pos - old_pos
                 
                 if math.abs(delta) > 0.0001 then
-                    -- 1. Track Envelopes (Points & Automation Items)
-                    local track = reaper.GetMediaItem_Track(info.item)
-                    if track then
-                        local env_count = reaper.CountTrackEnvelopes(track)
-                        for e = 0, env_count - 1 do
-                            local env = reaper.GetTrackEnvelope(track, e)
-                            if env then
-                                -- A. Move standard envelope points
-                                local pt_count = reaper.CountEnvelopePoints(env)
-                                for p = 0, pt_count - 1 do
-                                    local retval, time, val, shape, tension, sel = reaper.GetEnvelopePoint(env, p)
-                                    if retval and time >= old_pos and time <= (old_pos + length) then
-                                        reaper.SetEnvelopePoint(env, p, time + delta, val, shape, tension, sel, true)
-                                    end
-                                end
-                                
-                                -- B. Move Automation Items
-                                if reaper.CountAutomationItems then
-                                    local ai_count = reaper.CountAutomationItems(env)
-                                    for ai = 0, ai_count - 1 do
-                                        local ai_pos = reaper.GetSetAutomationItemInfo(env, ai, "D_POSITION", 0, false)
-                                        if ai_pos >= old_pos and ai_pos <= (old_pos + length) then
-                                            reaper.GetSetAutomationItemInfo(env, ai, "D_POSITION", ai_pos + delta, true)
-                                        end
-                                    end
-                                end
-                                
-                                reaper.Envelope_SortPoints(env)
-                            end
-                        end
-                    end
-
-                    -- 2. Take Envelopes (attached directly to takes within this item)
-                    local take_count = reaper.CountTakes(info.item)
-                    for t = 0, take_count - 1 do
-                        local take = reaper.GetTake(info.item, t)
-                        if take then
-                            local take_env_count = reaper.CountTakeEnvelopes(take)
-                            for e = 0, take_env_count - 1 do
-                                local env = reaper.GetTakeEnvelope(take, e)
+                    if gui_state.move_envelopes then
+                        -- 1. Track Envelopes (Points & Automation Items)
+                        local track = reaper.GetMediaItem_Track(info.item)
+                        if track then
+                            local env_count = reaper.CountTrackEnvelopes(track)
+                            for e = 0, env_count - 1 do
+                                local env = reaper.GetTrackEnvelope(track, e)
                                 if env then
+                                    -- A. Move standard envelope points
                                     local pt_count = reaper.CountEnvelopePoints(env)
                                     for p = 0, pt_count - 1 do
                                         local retval, time, val, shape, tension, sel = reaper.GetEnvelopePoint(env, p)
-                                        if retval then
-                                            -- Take envelope point times are relative to take source time, but let's shift them
+                                        if retval and time >= old_pos and time <= (old_pos + length) then
                                             reaper.SetEnvelopePoint(env, p, time + delta, val, shape, tension, sel, true)
                                         end
                                     end
+                                    
+                                    -- B. Move Automation Items
+                                    if reaper.CountAutomationItems then
+                                        local ai_count = reaper.CountAutomationItems(env)
+                                        for ai = 0, ai_count - 1 do
+                                            local ai_pos = reaper.GetSetAutomationItemInfo(env, ai, "D_POSITION", 0, false)
+                                            if ai_pos >= old_pos and ai_pos <= (old_pos + length) then
+                                                reaper.GetSetAutomationItemInfo(env, ai, "D_POSITION", ai_pos + delta, true)
+                                            end
+                                        end
+                                    end
+                                    
                                     reaper.Envelope_SortPoints(env)
+                                end
+                            end
+                        end
+
+                        -- 2. Take Envelopes (attached directly to takes within this item)
+                        local take_count = reaper.CountTakes(info.item)
+                        for t = 0, take_count - 1 do
+                            local take = reaper.GetTake(info.item, t)
+                            if take then
+                                local take_env_count = reaper.CountTakeEnvelopes(take)
+                                for e = 0, take_env_count - 1 do
+                                    local env = reaper.GetTakeEnvelope(take, e)
+                                    if env then
+                                        local pt_count = reaper.CountEnvelopePoints(env)
+                                        for p = 0, pt_count - 1 do
+                                            local retval, time, val, shape, tension, sel = reaper.GetEnvelopePoint(env, p)
+                                            if retval then
+                                                -- Take envelope point times are relative to take source time, but let's shift them
+                                                reaper.SetEnvelopePoint(env, p, time + delta, val, shape, tension, sel, true)
+                                            end
+                                        end
+                                        reaper.Envelope_SortPoints(env)
+                                    end
                                 end
                             end
                         end
@@ -1209,51 +1212,53 @@ local function render_ui()
                         local delta = new_pos - old_pos
                         
                         if math.abs(delta) > 0.0001 then
-                            -- Restore Track Envelopes
-                            local track = reaper.GetMediaItem_Track(info.item)
-                            if track then
-                                local env_count = reaper.CountTrackEnvelopes(track)
-                                for e = 0, env_count - 1 do
-                                    local env = reaper.GetTrackEnvelope(track, e)
-                                    if env then
-                                        local pt_count = reaper.CountEnvelopePoints(env)
-                                        for p = 0, pt_count - 1 do
-                                            local retval, time, val, shape, tension, sel = reaper.GetEnvelopePoint(env, p)
-                                            if retval and time >= old_pos and time <= (old_pos + length) then
-                                                reaper.SetEnvelopePoint(env, p, time + delta, val, shape, tension, sel, true)
-                                            end
-                                        end
-                                        if reaper.CountAutomationItems then
-                                            local ai_count = reaper.CountAutomationItems(env)
-                                            for ai = 0, ai_count - 1 do
-                                                local ai_pos = reaper.GetSetAutomationItemInfo(env, ai, "D_POSITION", 0, false)
-                                                if ai_pos >= old_pos and ai_pos <= (old_pos + length) then
-                                                    reaper.GetSetAutomationItemInfo(env, ai, "D_POSITION", ai_pos + delta, true)
-                                                end
-                                            end
-                                        end
-                                        reaper.Envelope_SortPoints(env)
-                                    end
-                                end
-                            end
-
-                            -- Restore Take Envelopes
-                            local take_count = reaper.CountTakes(info.item)
-                            for t = 0, take_count - 1 do
-                                local take = reaper.GetTake(info.item, t)
-                                if take then
-                                    local take_env_count = reaper.CountTakeEnvelopes(take)
-                                    for e = 0, take_env_count - 1 do
-                                        local env = reaper.GetTakeEnvelope(take, e)
+                            if gui_state.move_envelopes then
+                                -- Restore Track Envelopes
+                                local track = reaper.GetMediaItem_Track(info.item)
+                                if track then
+                                    local env_count = reaper.CountTrackEnvelopes(track)
+                                    for e = 0, env_count - 1 do
+                                        local env = reaper.GetTrackEnvelope(track, e)
                                         if env then
                                             local pt_count = reaper.CountEnvelopePoints(env)
                                             for p = 0, pt_count - 1 do
                                                 local retval, time, val, shape, tension, sel = reaper.GetEnvelopePoint(env, p)
-                                                if retval then
+                                                if retval and time >= old_pos and time <= (old_pos + length) then
                                                     reaper.SetEnvelopePoint(env, p, time + delta, val, shape, tension, sel, true)
                                                 end
                                             end
+                                            if reaper.CountAutomationItems then
+                                                local ai_count = reaper.CountAutomationItems(env)
+                                                for ai = 0, ai_count - 1 do
+                                                    local ai_pos = reaper.GetSetAutomationItemInfo(env, ai, "D_POSITION", 0, false)
+                                                    if ai_pos >= old_pos and ai_pos <= (old_pos + length) then
+                                                        reaper.GetSetAutomationItemInfo(env, ai, "D_POSITION", ai_pos + delta, true)
+                                                    end
+                                                end
+                                            end
                                             reaper.Envelope_SortPoints(env)
+                                        end
+                                    end
+                                end
+
+                                -- Restore Take Envelopes
+                                local take_count = reaper.CountTakes(info.item)
+                                for t = 0, take_count - 1 do
+                                    local take = reaper.GetTake(info.item, t)
+                                    if take then
+                                        local take_env_count = reaper.CountTakeEnvelopes(take)
+                                        for e = 0, take_env_count - 1 do
+                                            local env = reaper.GetTakeEnvelope(take, e)
+                                            if env then
+                                                local pt_count = reaper.CountEnvelopePoints(env)
+                                                for p = 0, pt_count - 1 do
+                                                    local retval, time, val, shape, tension, sel = reaper.GetEnvelopePoint(env, p)
+                                                    if retval then
+                                                        reaper.SetEnvelopePoint(env, p, time + delta, val, shape, tension, sel, true)
+                                                    end
+                                                end
+                                                reaper.Envelope_SortPoints(env)
+                                            end
                                         end
                                     end
                                 end

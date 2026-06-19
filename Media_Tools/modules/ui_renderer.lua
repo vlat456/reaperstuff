@@ -42,6 +42,17 @@ function UIRenderer.draw_mode_selector(ctx, gui_state, has_notes)
     end
     
     reaper.ImGui_EndDisabled(ctx)
+
+    if gui_state.adjust_mode == UIRenderer.MODE_ITEM_POSITION then
+        reaper.ImGui_Spacing(ctx)
+        reaper.ImGui_BeginDisabled(ctx, has_notes)
+        local changed_env, new_env = reaper.ImGui_Checkbox(ctx, "Move envelopes with item", gui_state.move_envelopes == true)
+        if changed_env then
+            gui_state.move_envelopes = new_env
+        end
+        reaper.ImGui_EndDisabled(ctx)
+    end
+
     return mode_changed
 end
 
