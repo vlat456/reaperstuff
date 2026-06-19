@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.9.3
+-- @version 1.9.4
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -134,25 +134,29 @@ local function get_settings_file_path()
     return config_manager.get_settings_file_path()
 end
 
-local DEFAULT_BG          = config_manager.DEFAULTS.theme_bg
-local DEFAULT_ACCENT      = config_manager.DEFAULTS.theme_accent
-local DEFAULT_TEXT        = config_manager.DEFAULTS.theme_text
-local DEFAULT_DANGER      = config_manager.DEFAULTS.theme_danger
-local DEFAULT_POSITIVE    = config_manager.DEFAULTS.theme_positive
-local DEFAULT_SLIDER_GRAB = config_manager.DEFAULTS.theme_slider_grab
-local DEFAULT_APPLY_BTN   = config_manager.DEFAULTS.theme_apply_btn
-local DEFAULT_FRAME_BG    = config_manager.DEFAULTS.theme_frame_bg
-local DEFAULT_CHECK_MARK  = config_manager.DEFAULTS.theme_check_mark
+local DEFAULT_BG              = config_manager.DEFAULTS.theme_bg
+local DEFAULT_ACCENT          = config_manager.DEFAULTS.theme_accent
+local DEFAULT_TEXT            = config_manager.DEFAULTS.theme_text
+local DEFAULT_DANGER          = config_manager.DEFAULTS.theme_danger
+local DEFAULT_POSITIVE        = config_manager.DEFAULTS.theme_positive
+local DEFAULT_SLIDER_GRAB     = config_manager.DEFAULTS.theme_slider_grab
+local DEFAULT_APPLY_BTN       = config_manager.DEFAULTS.theme_apply_btn
+local DEFAULT_FRAME_BG        = config_manager.DEFAULTS.theme_frame_bg
+local DEFAULT_CHECK_MARK      = config_manager.DEFAULTS.theme_check_mark
+local DEFAULT_INACTIVE_BTN    = config_manager.DEFAULTS.theme_inactive_btn
+local DEFAULT_INACTIVE_BTN_TEXT = config_manager.DEFAULTS.theme_inactive_btn_text
 
-local theme_bg          = {DEFAULT_BG[1],          DEFAULT_BG[2],          DEFAULT_BG[3]}
-local theme_accent      = {DEFAULT_ACCENT[1],      DEFAULT_ACCENT[2],      DEFAULT_ACCENT[3]}
-local theme_text        = {DEFAULT_TEXT[1],        DEFAULT_TEXT[2],        DEFAULT_TEXT[3]}
-local theme_danger      = {DEFAULT_DANGER[1],      DEFAULT_DANGER[2],      DEFAULT_DANGER[3]}
-local theme_positive    = {DEFAULT_POSITIVE[1],    DEFAULT_POSITIVE[2],    DEFAULT_POSITIVE[3]}
-local theme_slider_grab = {DEFAULT_SLIDER_GRAB[1], DEFAULT_SLIDER_GRAB[2], DEFAULT_SLIDER_GRAB[3]}
-local theme_apply_btn   = {DEFAULT_APPLY_BTN[1],   DEFAULT_APPLY_BTN[2],   DEFAULT_APPLY_BTN[3]}
-local theme_frame_bg    = {DEFAULT_FRAME_BG[1],    DEFAULT_FRAME_BG[2],    DEFAULT_FRAME_BG[3]}
-local theme_check_mark  = {DEFAULT_CHECK_MARK[1],  DEFAULT_CHECK_MARK[2],  DEFAULT_CHECK_MARK[3]}
+local theme_bg              = {DEFAULT_BG[1],              DEFAULT_BG[2],              DEFAULT_BG[3]}
+local theme_accent          = {DEFAULT_ACCENT[1],          DEFAULT_ACCENT[2],          DEFAULT_ACCENT[3]}
+local theme_text            = {DEFAULT_TEXT[1],            DEFAULT_TEXT[2],            DEFAULT_TEXT[3]}
+local theme_danger          = {DEFAULT_DANGER[1],          DEFAULT_DANGER[2],          DEFAULT_DANGER[3]}
+local theme_positive        = {DEFAULT_POSITIVE[1],        DEFAULT_POSITIVE[2],        DEFAULT_POSITIVE[3]}
+local theme_slider_grab     = {DEFAULT_SLIDER_GRAB[1],     DEFAULT_SLIDER_GRAB[2],     DEFAULT_SLIDER_GRAB[3]}
+local theme_apply_btn       = {DEFAULT_APPLY_BTN[1],       DEFAULT_APPLY_BTN[2],       DEFAULT_APPLY_BTN[3]}
+local theme_frame_bg        = {DEFAULT_FRAME_BG[1],        DEFAULT_FRAME_BG[2],        DEFAULT_FRAME_BG[3]}
+local theme_check_mark      = {DEFAULT_CHECK_MARK[1],      DEFAULT_CHECK_MARK[2],      DEFAULT_CHECK_MARK[3]}
+local theme_inactive_btn    = {DEFAULT_INACTIVE_BTN[1],    DEFAULT_INACTIVE_BTN[2],    DEFAULT_INACTIVE_BTN[3]}
+local theme_inactive_btn_text = {DEFAULT_INACTIVE_BTN_TEXT[1], DEFAULT_INACTIVE_BTN_TEXT[2], DEFAULT_INACTIVE_BTN_TEXT[3]}
 
 local settings_write_keyswitches = false
 
@@ -167,20 +171,24 @@ local function load_settings()
     theme_apply_btn = themes.theme_apply_btn
     theme_frame_bg = themes.theme_frame_bg
     theme_check_mark = themes.theme_check_mark
+    theme_inactive_btn = themes.theme_inactive_btn
+    theme_inactive_btn_text = themes.theme_inactive_btn_text
     settings_write_keyswitches = write_ks
 end
 
 local function save_settings()
     local themes = {
-        theme_bg          = theme_bg,
-        theme_accent      = theme_accent,
-        theme_text        = theme_text,
-        theme_danger      = theme_danger,
-        theme_positive    = theme_positive,
-        theme_slider_grab = theme_slider_grab,
-        theme_apply_btn   = theme_apply_btn,
-        theme_frame_bg    = theme_frame_bg,
-        theme_check_mark  = theme_check_mark
+        theme_bg              = theme_bg,
+        theme_accent          = theme_accent,
+        theme_text            = theme_text,
+        theme_danger          = theme_danger,
+        theme_positive        = theme_positive,
+        theme_slider_grab     = theme_slider_grab,
+        theme_apply_btn       = theme_apply_btn,
+        theme_frame_bg        = theme_frame_bg,
+        theme_check_mark      = theme_check_mark,
+        theme_inactive_btn    = theme_inactive_btn,
+        theme_inactive_btn_text = theme_inactive_btn_text
     }
     local write_ks = false
     if gui_state and gui_state.write_keyswitches ~= nil then
@@ -204,15 +212,17 @@ end
 
 -- Working copies for the color pickers: stored as uint32 to avoid float→uint8→float
 -- precision drift inside the picker loop (which causes HUE/saturation self-movement).
-local settings_edit_bg_u32          = theme_pack(theme_bg)
-local settings_edit_accent_u32      = theme_pack(theme_accent)
-local settings_edit_text_u32        = theme_pack(theme_text)
-local settings_edit_danger_u32      = theme_pack(theme_danger)
-local settings_edit_positive_u32    = theme_pack(theme_positive)
-local settings_edit_slider_grab_u32 = theme_pack(theme_slider_grab)
-local settings_edit_apply_btn_u32   = theme_pack(theme_apply_btn)
-local settings_edit_frame_bg_u32    = theme_pack(theme_frame_bg)
-local settings_edit_check_mark_u32  = theme_pack(theme_check_mark)
+local settings_edit_bg_u32              = theme_pack(theme_bg)
+local settings_edit_accent_u32          = theme_pack(theme_accent)
+local settings_edit_text_u32            = theme_pack(theme_text)
+local settings_edit_danger_u32          = theme_pack(theme_danger)
+local settings_edit_positive_u32        = theme_pack(theme_positive)
+local settings_edit_slider_grab_u32     = theme_pack(theme_slider_grab)
+local settings_edit_apply_btn_u32       = theme_pack(theme_apply_btn)
+local settings_edit_frame_bg_u32        = theme_pack(theme_frame_bg)
+local settings_edit_check_mark_u32      = theme_pack(theme_check_mark)
+local settings_edit_inactive_btn_u32    = theme_pack(theme_inactive_btn)
+local settings_edit_inactive_btn_text_u32 = theme_pack(theme_inactive_btn_text)
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -1331,7 +1341,9 @@ local function render_ui()
             slider_grab = DEFAULT_SLIDER_GRAB,
             apply_btn = DEFAULT_APPLY_BTN,
             frame_bg = DEFAULT_FRAME_BG,
-            check_mark = DEFAULT_CHECK_MARK
+            check_mark = DEFAULT_CHECK_MARK,
+            inactive_btn = DEFAULT_INACTIVE_BTN,
+            inactive_btn_text = DEFAULT_INACTIVE_BTN_TEXT
         }
         local theme_state = {
             bg_u32 = settings_edit_bg_u32,
@@ -1343,6 +1355,8 @@ local function render_ui()
             apply_btn_u32 = settings_edit_apply_btn_u32,
             frame_bg_u32 = settings_edit_frame_bg_u32,
             check_mark_u32 = settings_edit_check_mark_u32,
+            inactive_btn_u32 = settings_edit_inactive_btn_u32,
+            inactive_btn_text_u32 = settings_edit_inactive_btn_text_u32,
 
             theme_bg = theme_bg,
             theme_accent = theme_accent,
@@ -1352,7 +1366,9 @@ local function render_ui()
             theme_slider_grab = theme_slider_grab,
             theme_apply_btn = theme_apply_btn,
             theme_frame_bg = theme_frame_bg,
-            theme_check_mark = theme_check_mark
+            theme_check_mark = theme_check_mark,
+            theme_inactive_btn = theme_inactive_btn,
+            theme_inactive_btn_text = theme_inactive_btn_text
         }
         show_settings = ui_settings.draw_settings_panel(
             ctx,
@@ -1373,6 +1389,8 @@ local function render_ui()
         settings_edit_apply_btn_u32 = theme_state.apply_btn_u32
         settings_edit_frame_bg_u32 = theme_state.frame_bg_u32
         settings_edit_check_mark_u32 = theme_state.check_mark_u32
+        settings_edit_inactive_btn_u32 = theme_state.inactive_btn_u32
+        settings_edit_inactive_btn_text_u32 = theme_state.inactive_btn_text_u32
 
         theme_bg = theme_state.theme_bg
         theme_accent = theme_state.theme_accent
@@ -1383,6 +1401,8 @@ local function render_ui()
         theme_apply_btn = theme_state.theme_apply_btn
         theme_frame_bg = theme_state.theme_frame_bg
         theme_check_mark = theme_state.theme_check_mark
+        theme_inactive_btn = theme_state.theme_inactive_btn
+        theme_inactive_btn_text = theme_state.theme_inactive_btn_text
     end
 
     -- Preset Board (2-Row wrapped buttons)
@@ -1398,6 +1418,8 @@ local function render_ui()
         presets,
         theme_accent,
         theme_bg,
+        theme_inactive_btn,
+        theme_inactive_btn_text,
         current_preset_name,
         function(offset, name)
             adjust_offset_to_value(offset, name)
