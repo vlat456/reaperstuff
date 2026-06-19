@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.12.0
+-- @version 1.13.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -70,7 +70,7 @@ local ui_shortcuts = require("ui_shortcuts")
 local target_manager = require("target_manager")
 
 -- Script variables
-local script_name = "Media Offset Tool v1.12.0"
+local script_name = "Media Offset Tool v1.13.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -303,7 +303,7 @@ gui_state = {
     last_selection_state = "",
     is_dragging = false,
     write_keyswitches = settings_write_keyswitches, -- Default to loaded settings
-    move_envelopes = false, -- Default to false (disabled) per instance
+    move_envelopes = (reaper.GetToggleCommandState(40070) == 1), -- Initialize from REAPER's global "move envelopes with items" option
 }
 
 -- Load persisted mode from project metadata
@@ -1094,7 +1094,8 @@ local function render_ui()
     current_preset_name = presets_state.current_preset_name
     combo_preset_name = presets_state.combo_preset_name
 
-    -- Trigger Editor Panel (only visible when a preset is selected)
+    -- Trigger Editor Panel (hidden from UI)
+    --[[
     local presets_state_te = {
         presets = presets,
         presets_show_in_grid = presets_show_in_grid,
@@ -1113,10 +1114,7 @@ local function render_ui()
     presets_ks_pitch = presets_state_te.presets_ks_pitch
     presets_note_vel_min = presets_state_te.presets_note_vel_min
     presets_note_vel_max = presets_state_te.presets_note_vel_max
-
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Separator(ctx)
-    reaper.ImGui_Spacing(ctx)
+    ]]
 
     -- Write Keyswitches has been moved to Settings
 
@@ -1486,6 +1484,36 @@ local function render_ui()
     reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Spacing(ctx)
+
+    -- Right-aligned checkbox "Move envelopes with item" when MODE_ITEM_POSITION is active,
+    -- placed vertically between the Preset Board and the Offset controls/slider, below the separator.
+    if gui_state.adjust_mode == MODE_ITEM_POSITION then
+        local has_notes, _ = has_selected_midi_notes()
+        local label = "Move envelopes with item"
+        local checkbox_w = 20 -- Typical checkbox square size
+        local pad_x, _ = reaper.ImGui_GetStyleVar(ctx, imgui.StyleVar_FramePadding)
+        local item_spacing_x, _ = reaper.ImGui_GetStyleVar(ctx, imgui.StyleVar_ItemSpacing)
+        local text_w, _ = reaper.ImGui_CalcTextSize(ctx, label)
+        local total_w = checkbox_w + item_spacing_x + text_w + pad_x * 2
+        
+        local avail_w, _ = reaper.ImGui_GetContentRegionAvail(ctx)
+        if avail_w > total_w then
+            reaper.ImGui_SameLine(ctx, avail_w - total_w + pad_x * 2)
+        end
+        
+        reaper.ImGui_BeginDisabled(ctx, has_notes)
+        local changed_env, new_env = reaper.ImGui_Checkbox(ctx, label, gui_state.move_envelopes == true)
+        if changed_env then
+            gui_state.move_envelopes = new_env
+            -- Synchronize with REAPER's global setting
+            local reaper_state = (reaper.GetToggleCommandState(40070) == 1)
+            if reaper_state ~= new_env then
+                reaper.Main_OnCommand(40070, 0) -- Toggle "Options: Move envelopes with items"
+            end
+        end
+        reaper.ImGui_EndDisabled(ctx)
+        reaper.ImGui_Spacing(ctx)
+    end
     
     current_preset_name = ui_renderer.draw_preset_board(
         ctx,
@@ -1532,6 +1560,11 @@ local function loop()
 
     -- Selection management
     update_targets_list()
+
+    -- Synchronize move_envelopes state from REAPER's native option if not dragging/editing
+    if not gui_state.is_dragging then
+        gui_state.move_envelopes = (reaper.GetToggleCommandState(40070) == 1)
+    end
 
     -- Set size constraints
     reaper.ImGui_SetNextWindowSizeConstraints(ctx, 460, 150, 800, 800)
