@@ -208,14 +208,36 @@ local function test_draw_preset_board_3tier()
     end
     assert_eq(#lib_btns, 2, "Two library buttons rendered")
 
-    -- Instrument headers (TextDisabled): "Brass:" and "Strings:" for Spitfire
-    local instr_headers = {}
+    -- Instruments label should appear
+    local has_instruments_label = false
+    local has_brass_header = false
+    local has_strings_header = false
     for _, c in ipairs(imgui_calls) do
-        if c.type == "TextDisabled" and c.text:match(":$") and not c.text:match("Libraries") then
-            table.insert(instr_headers, c.text)
+        if c.type == "TextDisabled" and c.text == "Instruments:" then
+            has_instruments_label = true
+        end
+        if c.type == "TextDisabled" and c.text == "Brass:" then
+            has_brass_header = true
+        end
+        if c.type == "TextDisabled" and c.text == "Strings:" then
+            has_strings_header = true
         end
     end
-    assert_eq(#instr_headers, 2, "Two instrument headers (Brass: and Strings:)")
+    assert_eq(has_instruments_label, true, "Instruments label is shown")
+    -- Only the selected instrument's articulation header should appear (Brass is first alphabetically)
+    assert_eq(has_brass_header, true, "Brass articulation header is shown for selected instrument")
+    assert_eq(has_strings_header, false, "Strings articulation header is NOT shown (only selected instrument)")
+
+    -- Instrument buttons (Brass and Strings in Spitfire)
+    local instr_btns = {}
+    for _, c in ipairs(imgui_calls) do
+        if c.type == "Button" and c.label:match("##instr_") then
+            table.insert(instr_btns, c.label)
+        end
+    end
+    assert_eq(#instr_btns, 2, "Two instrument buttons rendered (Brass, Strings)")
+    -- Default selected instrument is Brass (first alphabetically)
+    assert_eq(gui_state.selected_instrument, "Brass", "Default selected instrument is Brass")
 end
 
 test_draw_preset_board_3tier()

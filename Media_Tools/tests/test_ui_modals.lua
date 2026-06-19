@@ -27,7 +27,12 @@ _G.reaper = {
     ImGui_Button = function(ctx, label) return false end,
     ImGui_SameLine = function(ctx) end,
     ImGui_EndPopup = function(ctx) end,
-    ImGui_CloseCurrentPopup = function(ctx) end
+    ImGui_CloseCurrentPopup = function(ctx) end,
+    ImGui_BeginCombo = function(ctx, label, preview) return false end,
+    ImGui_EndCombo = function(ctx) end,
+    ImGui_Selectable = function(ctx, label, selected) return false end,
+    ImGui_SetItemDefaultFocus = function(ctx) end,
+    ImGui_SetNextItemWidth = function(ctx, width) end
 }
 
 package.path = "modules/?.lua;" .. package.path
@@ -59,6 +64,7 @@ local function test_draw_modals()
         presets_ks_pitch = {},
         presets_note_vel_min = {},
         presets_note_vel_max = {},
+        preset_keys = {},
         current_preset_name = "",
         combo_preset_name = ""
     }

@@ -186,20 +186,26 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
         local pad_x, _ = reaper.ImGui_GetStyleVar(ctx, imgui.StyleVar_FramePadding)
         local space_x, _ = reaper.ImGui_GetStyleVar(ctx, imgui.StyleVar_ItemSpacing)
         
+        -- Uniform button size for all library buttons
+        local lib_btn_h = 24
+        local max_lib_w = 0
+        for _, lib_name in ipairs(lib_names) do
+            local text_w, _ = reaper.ImGui_CalcTextSize(ctx, lib_name)
+            if text_w > max_lib_w then max_lib_w = text_w end
+        end
+        local lib_btn_w = max_lib_w + pad_x * 2
+        
         local current_x = 0.0
         for i, lib_name in ipairs(lib_names) do
-            local text_w, _ = reaper.ImGui_CalcTextSize(ctx, lib_name)
-            local btn_w = text_w + pad_x * 2
-            
             if i > 1 then
-                if current_x + btn_w + space_x < wrap_w then
+                if current_x + lib_btn_w + space_x < wrap_w then
                     reaper.ImGui_SameLine(ctx, nil, space_x)
-                    current_x = current_x + btn_w + space_x
+                    current_x = current_x + lib_btn_w + space_x
                 else
-                    current_x = btn_w
+                    current_x = lib_btn_w
                 end
             else
-                current_x = btn_w
+                current_x = lib_btn_w
             end
             
             local is_active = (gui_state.selected_library == lib_name)
@@ -215,7 +221,7 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
                 reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.07, bg[2]+0.05, bg[3]+0.10, 1.0))
             end
             
-            if reaper.ImGui_Button(ctx, lib_name .. "##lib_" .. i) then
+            if reaper.ImGui_Button(ctx, lib_name .. "##lib_" .. i, lib_btn_w, lib_btn_h) then
                 gui_state.selected_library = lib_name
             end
             
@@ -225,36 +231,100 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
         reaper.ImGui_Spacing(ctx)
         reaper.ImGui_Spacing(ctx)
         
-        -- Articulations section (with optional Instrument grouping)
+        -- Instruments row for selected library
         local cur_lib_data = libs[gui_state.selected_library] or {}
         local instr_names = cur_lib_data._instr_names or {}
         
-        local art_idx = 0
-        for _, instr in ipairs(instr_names) do
-            local arts = cur_lib_data[instr] or {}
+        if #instr_names > 0 then
+            -- Keep selected instrument valid for current library
+            if not gui_state.selected_instrument or not cur_lib_data[gui_state.selected_instrument] then
+                gui_state.selected_instrument = instr_names[1]
+            end
             
-            if instr ~= "" then
-                reaper.ImGui_TextDisabled(ctx, instr .. ":")
+            reaper.ImGui_TextDisabled(ctx, "Instruments:")
+            reaper.ImGui_Spacing(ctx)
+            
+            -- Uniform button size matching fine-tuning button style (24px height)
+            local instr_btn_h = 24
+            local max_text_w = 0
+            for _, instr in ipairs(instr_names) do
+                local display_name = (instr ~= "" and instr) or "Uncategorized"
+                local text_w, _ = reaper.ImGui_CalcTextSize(ctx, display_name)
+                if text_w > max_text_w then max_text_w = text_w end
+            end
+            local instr_btn_w = max_text_w + pad_x * 2
+            
+            local instr_current_x = 0.0
+            for i, instr in ipairs(instr_names) do
+                local display_name = (instr ~= "" and instr) or "Uncategorized"
+                
+                if i > 1 then
+                    if instr_current_x + instr_btn_w + space_x < wrap_w then
+                        reaper.ImGui_SameLine(ctx, nil, space_x)
+                        instr_current_x = instr_current_x + instr_btn_w + space_x
+                    else
+                        instr_current_x = instr_btn_w
+                    end
+                else
+                    instr_current_x = instr_btn_w
+                end
+                
+                local is_active = (gui_state.selected_instrument == instr)
+                if is_active then
+                    local a = theme_accent
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.40, a[2]*0.80, a[3]*0.50, 1.0))
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.55, a[2]*0.90, a[3]*0.60, 1.0))
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.30, a[2]*0.65, a[3]*0.40, 1.0))
+                else
+                    local bg = theme_bg
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.18, bg[2]+0.15, bg[3]+0.22, 1.0))
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.26, bg[2]+0.22, bg[3]+0.32, 1.0))
+                    reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(bg[1]+0.10, bg[2]+0.08, bg[3]+0.14, 1.0))
+                end
+                
+                if reaper.ImGui_Button(ctx, display_name .. "##instr_" .. i, instr_btn_w, instr_btn_h) then
+                    gui_state.selected_instrument = instr
+                end
+                
+                reaper.ImGui_PopStyleColor(ctx, 3)
+            end
+            
+            reaper.ImGui_Spacing(ctx)
+            reaper.ImGui_Spacing(ctx)
+        end
+        
+        -- Articulations section for selected instrument only
+        local selected_instr = gui_state.selected_instrument or ""
+        local arts = cur_lib_data[selected_instr] or {}
+        
+        if #arts > 0 then
+            if selected_instr ~= "" then
+                reaper.ImGui_TextDisabled(ctx, selected_instr .. ":")
             else
                 reaper.ImGui_TextDisabled(ctx, "Articulations (" .. gui_state.selected_library .. "):")
             end
             reaper.ImGui_Spacing(ctx)
             
+            -- Uniform button size for all articulation buttons
+            local art_btn_h = 24
+            local max_art_w = 0
+            for _, art_data in ipairs(arts) do
+                local text_w, _ = reaper.ImGui_CalcTextSize(ctx, art_data.art)
+                if text_w > max_art_w then max_art_w = text_w end
+            end
+            local art_btn_w = max_art_w + pad_x * 2
+            
             local current_art_x = 0.0
             for i, art_data in ipairs(arts) do
-                art_idx = art_idx + 1
-                local text_w, _ = reaper.ImGui_CalcTextSize(ctx, art_data.art)
-                local btn_w = text_w + pad_x * 2
-                
                 if i > 1 then
-                    if current_art_x + btn_w + space_x < wrap_w then
+                    if current_art_x + art_btn_w + space_x < wrap_w then
                         reaper.ImGui_SameLine(ctx, nil, space_x)
-                        current_art_x = current_art_x + btn_w + space_x
+                        current_art_x = current_art_x + art_btn_w + space_x
                     else
-                        current_art_x = btn_w
+                        current_art_x = art_btn_w
                     end
                 else
-                    current_art_x = btn_w
+                    current_art_x = art_btn_w
                 end
                 
                 local is_current = (current_preset_name == art_data.name)
@@ -265,7 +335,7 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
                     reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonActive,  reaper.ImGui_ColorConvertDouble4ToU32(a[1]*0.80, a[2]*0.71, a[3]*0.88, 1.0))
                 end
                 
-                if reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. art_idx) then
+                if reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. i, art_btn_w, art_btn_h) then
                     current_preset_name = art_data.name
                     adjust_offset_to_value_cb(art_data.offset, art_data.name)
                 end
@@ -279,6 +349,8 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
                 end
             end
             reaper.ImGui_Spacing(ctx)
+        else
+            reaper.ImGui_TextDisabled(ctx, "No articulations for this instrument.")
         end
     else
         reaper.ImGui_TextDisabled(ctx, "No presets configured to show in grid.")
