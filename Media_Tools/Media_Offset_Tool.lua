@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.9.7
+-- @version 1.9.8
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -60,7 +60,7 @@ local ui_shortcuts = require("ui_shortcuts")
 local target_manager = require("target_manager")
 
 -- Script variables
-local script_name = "Media Offset Tool v1.9.7"
+local script_name = "Media Offset Tool v1.9.8"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -145,6 +145,7 @@ local DEFAULT_FRAME_BG        = config_manager.DEFAULTS.theme_frame_bg
 local DEFAULT_CHECK_MARK      = config_manager.DEFAULTS.theme_check_mark
 local DEFAULT_INACTIVE_BTN    = config_manager.DEFAULTS.theme_inactive_btn
 local DEFAULT_INACTIVE_BTN_TEXT = config_manager.DEFAULTS.theme_inactive_btn_text
+local DEFAULT_ACTIVE_BTN      = config_manager.DEFAULTS.theme_active_btn
 
 local theme_bg              = {DEFAULT_BG[1],              DEFAULT_BG[2],              DEFAULT_BG[3]}
 local theme_accent          = {DEFAULT_ACCENT[1],          DEFAULT_ACCENT[2],          DEFAULT_ACCENT[3]}
@@ -157,6 +158,7 @@ local theme_frame_bg        = {DEFAULT_FRAME_BG[1],        DEFAULT_FRAME_BG[2], 
 local theme_check_mark      = {DEFAULT_CHECK_MARK[1],      DEFAULT_CHECK_MARK[2],      DEFAULT_CHECK_MARK[3]}
 local theme_inactive_btn    = {DEFAULT_INACTIVE_BTN[1],    DEFAULT_INACTIVE_BTN[2],    DEFAULT_INACTIVE_BTN[3]}
 local theme_inactive_btn_text = {DEFAULT_INACTIVE_BTN_TEXT[1], DEFAULT_INACTIVE_BTN_TEXT[2], DEFAULT_INACTIVE_BTN_TEXT[3]}
+local theme_active_btn      = {DEFAULT_ACTIVE_BTN[1],      DEFAULT_ACTIVE_BTN[2],      DEFAULT_ACTIVE_BTN[3]}
 
 local settings_write_keyswitches = false
 
@@ -173,6 +175,7 @@ local function load_settings()
     theme_check_mark = themes.theme_check_mark
     theme_inactive_btn = themes.theme_inactive_btn
     theme_inactive_btn_text = themes.theme_inactive_btn_text
+    theme_active_btn = themes.theme_active_btn
     settings_write_keyswitches = write_ks
 end
 
@@ -188,7 +191,8 @@ local function save_settings()
         theme_frame_bg        = theme_frame_bg,
         theme_check_mark      = theme_check_mark,
         theme_inactive_btn    = theme_inactive_btn,
-        theme_inactive_btn_text = theme_inactive_btn_text
+        theme_inactive_btn_text = theme_inactive_btn_text,
+        theme_active_btn      = theme_active_btn
     }
     local write_ks = false
     if gui_state and gui_state.write_keyswitches ~= nil then
@@ -223,6 +227,7 @@ local settings_edit_frame_bg_u32        = theme_pack(theme_frame_bg)
 local settings_edit_check_mark_u32      = theme_pack(theme_check_mark)
 local settings_edit_inactive_btn_u32    = theme_pack(theme_inactive_btn)
 local settings_edit_inactive_btn_text_u32 = theme_pack(theme_inactive_btn_text)
+local settings_edit_active_btn_u32      = theme_pack(theme_active_btn)
 
 -- Target adjustment modes
 local MODE_TAKE_OFFSET = 0    -- Mode A: Media Take Source Start Offset
@@ -1145,6 +1150,9 @@ local function render_ui()
         settings_edit_apply_btn_u32   = theme_pack(theme_apply_btn)
         settings_edit_frame_bg_u32    = theme_pack(theme_frame_bg)
         settings_edit_check_mark_u32  = theme_pack(theme_check_mark)
+        settings_edit_inactive_btn_u32 = theme_pack(theme_inactive_btn)
+        settings_edit_inactive_btn_text_u32 = theme_pack(theme_inactive_btn_text)
+        settings_edit_active_btn_u32  = theme_pack(theme_active_btn)
     end
 
     if is_slider_deactivated then
@@ -1343,7 +1351,8 @@ local function render_ui()
             frame_bg = DEFAULT_FRAME_BG,
             check_mark = DEFAULT_CHECK_MARK,
             inactive_btn = DEFAULT_INACTIVE_BTN,
-            inactive_btn_text = DEFAULT_INACTIVE_BTN_TEXT
+            inactive_btn_text = DEFAULT_INACTIVE_BTN_TEXT,
+            active_btn = DEFAULT_ACTIVE_BTN
         }
         local theme_state = {
             bg_u32 = settings_edit_bg_u32,
@@ -1357,6 +1366,7 @@ local function render_ui()
             check_mark_u32 = settings_edit_check_mark_u32,
             inactive_btn_u32 = settings_edit_inactive_btn_u32,
             inactive_btn_text_u32 = settings_edit_inactive_btn_text_u32,
+            active_btn_u32 = settings_edit_active_btn_u32,
 
             theme_bg = theme_bg,
             theme_accent = theme_accent,
@@ -1368,7 +1378,8 @@ local function render_ui()
             theme_frame_bg = theme_frame_bg,
             theme_check_mark = theme_check_mark,
             theme_inactive_btn = theme_inactive_btn,
-            theme_inactive_btn_text = theme_inactive_btn_text
+            theme_inactive_btn_text = theme_inactive_btn_text,
+            theme_active_btn = theme_active_btn
         }
         show_settings = ui_settings.draw_settings_panel(
             ctx,
@@ -1391,6 +1402,7 @@ local function render_ui()
         settings_edit_check_mark_u32 = theme_state.check_mark_u32
         settings_edit_inactive_btn_u32 = theme_state.inactive_btn_u32
         settings_edit_inactive_btn_text_u32 = theme_state.inactive_btn_text_u32
+        settings_edit_active_btn_u32 = theme_state.active_btn_u32
 
         theme_bg = theme_state.theme_bg
         theme_accent = theme_state.theme_accent
@@ -1403,6 +1415,7 @@ local function render_ui()
         theme_check_mark = theme_state.theme_check_mark
         theme_inactive_btn = theme_state.theme_inactive_btn
         theme_inactive_btn_text = theme_state.theme_inactive_btn_text
+        theme_active_btn = theme_state.theme_active_btn
     end
 
     -- Preset Board (2-Row wrapped buttons)
@@ -1420,6 +1433,7 @@ local function render_ui()
         theme_bg,
         theme_inactive_btn,
         theme_inactive_btn_text,
+        theme_active_btn,
         current_preset_name,
         function(offset, name)
             adjust_offset_to_value(offset, name)

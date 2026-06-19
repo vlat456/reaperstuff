@@ -147,6 +147,10 @@ local function test_draw_preset_board()
         adjusted_preset = name
     end
 
+    local theme_inactive_btn = {0.2, 0.2, 0.2}
+    local theme_inactive_btn_text = {0.8, 0.8, 0.8}
+    local theme_active_btn = {0.9, 0.4, 0.9}
+
     local new_preset_name = ui_renderer.draw_preset_board(
         "fake_ctx",
         gui_state,
@@ -155,6 +159,9 @@ local function test_draw_preset_board()
         presets,
         theme_accent,
         theme_bg,
+        theme_inactive_btn,
+        theme_inactive_btn_text,
+        theme_active_btn,
         current_preset_name,
         adjust_offset_cb
     )
@@ -192,11 +199,15 @@ local function test_draw_preset_board_3tier()
     }
     local theme_accent = {1.0, 0.0, 1.0}
     local theme_bg    = {0.1, 0.1, 0.1}
+    local theme_inactive_btn = {0.2, 0.2, 0.2}
+    local theme_inactive_btn_text = {0.8, 0.8, 0.8}
+    local theme_active_btn = {0.9, 0.4, 0.9}
 
     -- Should not crash
     local new_preset_name = ui_renderer.draw_preset_board(
         "fake_ctx", gui_state, preset_keys, presets_show_in_grid,
-        presets, theme_accent, theme_bg, "", function() end
+        presets, theme_accent, theme_bg, theme_inactive_btn,
+        theme_inactive_btn_text, theme_active_btn, "", function() end
     )
 
     -- Library buttons: Orchestral, Spitfire

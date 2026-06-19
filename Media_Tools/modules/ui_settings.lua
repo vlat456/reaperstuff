@@ -106,6 +106,13 @@ function UISettings.draw_settings_panel(ctx, gui_state, theme_state, defaults, c
 
     reaper.ImGui_Spacing(ctx)
 
+    -- Active Preset Button Color
+    reaper.ImGui_TextDisabled(ctx, "Active Preset Button Color (Libraries/Instruments/Articulations)")
+    local ab_changed, new_ab_u32 = reaper.ImGui_ColorEdit4(ctx, "##active_btn_color", theme_state.active_btn_u32)
+    if ab_changed then theme_state.active_btn_u32 = new_ab_u32 end
+
+    reaper.ImGui_Spacing(ctx)
+
     -- Live preview: unpack from uint32 once per frame → float tables for the theme
     theme_state.theme_bg              = theme_manager.theme_unpack(theme_state.bg_u32)
     theme_state.theme_accent          = theme_manager.theme_unpack(theme_state.accent_u32)
@@ -118,6 +125,7 @@ function UISettings.draw_settings_panel(ctx, gui_state, theme_state, defaults, c
     theme_state.theme_check_mark      = theme_manager.theme_unpack(theme_state.check_mark_u32)
     theme_state.theme_inactive_btn    = theme_manager.theme_unpack(theme_state.inactive_btn_u32)
     theme_state.theme_inactive_btn_text = theme_manager.theme_unpack(theme_state.inactive_btn_text_u32)
+    theme_state.theme_active_btn      = theme_manager.theme_unpack(theme_state.active_btn_u32)
 
     local show_settings = true
 
@@ -144,6 +152,7 @@ function UISettings.draw_settings_panel(ctx, gui_state, theme_state, defaults, c
         theme_state.check_mark_u32      = theme_manager.theme_pack(defaults.check_mark)
         theme_state.inactive_btn_u32    = theme_manager.theme_pack(defaults.inactive_btn)
         theme_state.inactive_btn_text_u32 = theme_manager.theme_pack(defaults.inactive_btn_text)
+        theme_state.active_btn_u32      = theme_manager.theme_pack(defaults.active_btn)
     end
     theme_manager.pop_danger_style(ctx)
 

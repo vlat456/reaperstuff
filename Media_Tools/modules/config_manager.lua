@@ -16,6 +16,7 @@ ConfigManager.DEFAULTS = {
     theme_check_mark      = {0.50, 0.35, 0.80},
     theme_inactive_btn    = {0.16, 0.16, 0.20},
     theme_inactive_btn_text = {0.55, 0.55, 0.60},
+    theme_active_btn      = {0.45, 0.25, 0.73},
     settings_write_keyswitches = false
 }
 
@@ -70,6 +71,8 @@ function ConfigManager.load_settings()
                 themes.theme_inactive_btn = {parts[1], parts[2], parts[3]}
             elseif key == "inactive_btn_text" and #parts == 3 then
                 themes.theme_inactive_btn_text = {parts[1], parts[2], parts[3]}
+            elseif key == "active_btn" and #parts == 3 then
+                themes.theme_active_btn = {parts[1], parts[2], parts[3]}
             elseif key == "write_keyswitches" or key == "settings_write_keyswitches" then
                 settings_write_keyswitches = (val == "1" or val == "true")
             end
@@ -95,6 +98,7 @@ function ConfigManager.save_settings(themes, settings_write_keyswitches)
     local check_mark = themes.theme_check_mark or ConfigManager.DEFAULTS.theme_check_mark
     local inactive_btn = themes.theme_inactive_btn or ConfigManager.DEFAULTS.theme_inactive_btn
     local inactive_btn_text = themes.theme_inactive_btn_text or ConfigManager.DEFAULTS.theme_inactive_btn_text
+    local active_btn = themes.theme_active_btn or ConfigManager.DEFAULTS.theme_active_btn
 
     -- Support passing settings_write_keyswitches as direct boolean argument, or as key inside themes
     local write_ks = false
@@ -115,6 +119,7 @@ function ConfigManager.save_settings(themes, settings_write_keyswitches)
     f:write(string.format("check_mark=%.4f,%.4f,%.4f\n",        check_mark[1],        check_mark[2],        check_mark[3]))
     f:write(string.format("inactive_btn=%.4f,%.4f,%.4f\n",      inactive_btn[1],      inactive_btn[2],      inactive_btn[3]))
     f:write(string.format("inactive_btn_text=%.4f,%.4f,%.4f\n", inactive_btn_text[1], inactive_btn_text[2], inactive_btn_text[3]))
+    f:write(string.format("active_btn=%.4f,%.4f,%.4f\n",        active_btn[1],        active_btn[2],        active_btn[3]))
     f:write(string.format("write_keyswitches=%s\n",             write_ks and "1" or "0"))
     f:close()
 end
