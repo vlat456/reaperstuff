@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="80ef2c10b9012e8ad3bbd0871455e9359a8b7c8c">
+<index version="1" name="Walter Scripts" commit="578efb4b6dd66fe1e9bb61676979f8c898bd09bb">
   <category name="FX">
     <reapack name="kontakt_tune_humanizer_package.lua" type="script" desc="Humanize Kontakt Tune Parameter">
       <metadata>
@@ -342,6 +342,13 @@
         <source file="modules/preset_manager.lua">https://github.com/vlat456/reaperstuff/raw/80ef2c10b9012e8ad3bbd0871455e9359a8b7c8c/Media_Tools/modules/preset_manager.lua</source>
         <source file="modules/offset_engine.lua">https://github.com/vlat456/reaperstuff/raw/80ef2c10b9012e8ad3bbd0871455e9359a8b7c8c/Media_Tools/modules/offset_engine.lua</source>
         <source file="modules/theme_manager.lua">https://github.com/vlat456/reaperstuff/raw/80ef2c10b9012e8ad3bbd0871455e9359a8b7c8c/Media_Tools/modules/theme_manager.lua</source>
+      </version>
+      <version name="1.9.1" author="drvlat" time="2026-06-19T12:21:29Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/578efb4b6dd66fe1e9bb61676979f8c898bd09bb/Media_Tools/Media_Offset_Tool.lua</source>
+        <source file="modules/config_manager.lua">https://github.com/vlat456/reaperstuff/raw/578efb4b6dd66fe1e9bb61676979f8c898bd09bb/Media_Tools/modules/config_manager.lua</source>
+        <source file="modules/preset_manager.lua">https://github.com/vlat456/reaperstuff/raw/578efb4b6dd66fe1e9bb61676979f8c898bd09bb/Media_Tools/modules/preset_manager.lua</source>
+        <source file="modules/offset_engine.lua">https://github.com/vlat456/reaperstuff/raw/578efb4b6dd66fe1e9bb61676979f8c898bd09bb/Media_Tools/modules/offset_engine.lua</source>
+        <source file="modules/theme_manager.lua">https://github.com/vlat456/reaperstuff/raw/578efb4b6dd66fe1e9bb61676979f8c898bd09bb/Media_Tools/modules/theme_manager.lua</source>
       </version>
     </reapack>
     <reapack name="Selective_Freeze_Tool.lua" type="script" desc="Selective Freeze Tool">
