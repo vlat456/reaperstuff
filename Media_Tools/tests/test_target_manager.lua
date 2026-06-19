@@ -86,7 +86,61 @@ local function test_update_targets_list()
     assert_eq(gui_state.selected_targets[1].pitch, 60, "Pitch of target note")
 end
 
+local function test_duration_sync()
+    local gui_state = {
+        last_selection_state = "sig123",
+        selected_targets = {
+            {
+                take = "fake_take",
+                note_index = 0,
+                original_ppq = 480,
+                offset_ms = 1000.0,
+                start_time = 0.5,
+                end_time = 1.0,
+                pitch = 60,
+                chan = 0,
+                vel = 100,
+                muted = false
+            }
+        },
+        is_dragging = false
+    }
+    local presets_state = {
+        presets = {},
+        presets_ks_pitch = {},
+        presets_note_vel_min = {},
+        presets_note_vel_max = {},
+        current_preset_name = "",
+        combo_preset_name = ""
+    }
+    local modes = {
+        MODE_TRACK_OFFSET = 1,
+        MODE_TAKE_OFFSET = 2,
+        MODE_ITEM_POSITION = 3,
+        MODE_MIDI_NOTES = 4
+    }
+    local callbacks = {
+        get_effective_mode = function() return 4, "fake_take" end,
+        has_selected_midi_notes = function() return true, "fake_take" end,
+        get_midi_notes_signature = function() return "sig123" end,
+        split_preset_name = function() return "Spitfire", "Long" end
+    }
+
+    local original_midi_get_note = _G.reaper.MIDI_GetNote
+    _G.reaper.MIDI_GetNote = function(take, idx)
+        return true, true, false, 1440, 2880, 0, 60, 100
+    end
+
+    target_manager.update_targets_list("fake_ctx", gui_state, presets_state, modes, false, callbacks)
+
+    _G.reaper.MIDI_GetNote = original_midi_get_note
+
+    local expected_end_time = 2.0
+    assert_eq(gui_state.selected_targets[1].end_time, expected_end_time, "Sync should update end_time when duration changes")
+end
+
 print("Running target_manager tests...")
 test_is_keyswitch_pitch()
 test_update_targets_list()
+test_duration_sync()
 print("All target_manager tests passed!")

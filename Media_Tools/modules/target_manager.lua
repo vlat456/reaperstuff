@@ -704,6 +704,10 @@ function TargetManager.update_targets_list(ctx, gui_state, presets_state, modes,
                             info.start_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, startppq)
                             info.end_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, endppq)
                             any_drifted = true
+                        else
+                            -- Sync end_time to preserve manual duration edits
+                            local current_end_time = reaper.MIDI_GetProjTimeFromPPQPos(info.take, endppq)
+                            info.end_time = current_end_time - (info.offset_ms / 1000.0)
                         end
 
                         -- Prioritize reading the preset name from the MIDI Text Events at its current position

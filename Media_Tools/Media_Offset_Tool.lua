@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.9.1
+-- @version 1.9.2
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -17,6 +17,14 @@
 --   [nomain] modules/preset_manager.lua
 --   [nomain] modules/offset_engine.lua
 --   [nomain] modules/theme_manager.lua
+--   [nomain] modules/target_manager.lua
+--   [nomain] modules/ui_renderer.lua
+--   [nomain] modules/ui_modals.lua
+--   [nomain] modules/ui_settings.lua
+--   [nomain] modules/ui_trigger_editor.lua
+--   [nomain] modules/ui_presets_dropdown.lua
+--   [nomain] modules/ui_info_panel.lua
+--   [nomain] modules/ui_shortcuts.lua
 
 local reaper = reaper
 
@@ -52,7 +60,7 @@ local ui_shortcuts = require("ui_shortcuts")
 local target_manager = require("target_manager")
 
 -- Script variables
-local script_name = "Media Offset Tool v1.9.1"
+local script_name = "Media Offset Tool v1.9.2"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
