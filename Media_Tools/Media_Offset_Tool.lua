@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.8.3
+-- @version 1.8.4
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -26,7 +26,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua;' .. package.path
 local imgui = require('imgui')('0.9.3')
 
 -- Script variables
-local script_name = "Media Offset Tool v1.8.3"
+local script_name = "Media Offset Tool v1.8.4"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -668,6 +668,9 @@ end
 
 -- Helper to check if a pitch is used as a keyswitch in any preset
 local function is_keyswitch_pitch(pitch)
+    if not gui_state or not gui_state.write_keyswitches then
+        return false
+    end
     if not presets_ks_pitch then return false end
     for name, ks_pitch in pairs(presets_ks_pitch) do
         if ks_pitch == pitch then
@@ -1615,7 +1618,6 @@ local function adjust_offset_to_value(target_ms, preset_name)
     
     reaper.Undo_BeginBlock2(0)
     apply_offset_to_targets(target_ms, active_preset)
-    reaper.Undo_EndBlock2(0, undo_msg, -1)
     
     if eff_mode == MODE_TRACK_OFFSET then
         reaper.TrackList_AdjustWindows(false)
@@ -1651,6 +1653,7 @@ local function adjust_offset_to_value(target_ms, preset_name)
     
     -- Persist/Clear preset association
     save_preset_name_to_targets(active_preset)
+    reaper.Undo_EndBlock2(0, undo_msg, -1)
     
     current_preset_name = active_preset
     combo_preset_name = active_preset
@@ -2338,118 +2341,120 @@ local function render_ui()
     end
 
     if is_slider_deactivated then
-        local eff_mode, take = get_effective_mode()
-        -- Restore baseline offsets temporarily
-        if eff_mode == MODE_MIDI_NOTES then
-            if take then
-                local note_idx = -1
+        if #gui_state.selected_targets > 0 then
+            local eff_mode, take = get_effective_mode()
+            -- Restore baseline offsets temporarily
+            if eff_mode == MODE_MIDI_NOTES then
+                if take then
+                    local note_idx = -1
+                    for _, info in ipairs(gui_state.selected_targets) do
+                        note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
+                        if note_idx == -1 then break end
+                        local orig_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time)
+                        local orig_end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.end_time)
+                        reaper.MIDI_SetNote(
+                            take,
+                            note_idx,
+                            nil,
+                            nil,
+                            orig_start_ppq,
+                            orig_end_ppq,
+                            nil,
+                            nil,
+                            nil,
+                            true
+                        )
+                    end
+                    reaper.MIDI_Sort(take)
+                    local item = reaper.GetMediaItemTake_Item(take)
+                    if item then
+                        reaper.UpdateItemInProject(item)
+                    end
+                end
+            elseif eff_mode == MODE_TRACK_OFFSET then
                 for _, info in ipairs(gui_state.selected_targets) do
-                    note_idx = reaper.MIDI_EnumSelNotes(take, note_idx)
-                    if note_idx == -1 then break end
-                    local orig_start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.start_time)
-                    local orig_end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, info.end_time)
-                    reaper.MIDI_SetNote(
-                        take,
-                        note_idx,
-                        nil,
-                        nil,
-                        orig_start_ppq,
-                        orig_end_ppq,
-                        nil,
-                        nil,
-                        nil,
-                        true
-                    )
+                    if reaper.ValidatePtr(info.track, "MediaTrack*") then
+                        reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", info.baseline_offset)
+                    end
                 end
-                reaper.MIDI_Sort(take)
-                local item = reaper.GetMediaItemTake_Item(take)
-                if item then
-                    reaper.UpdateItemInProject(item)
+            elseif eff_mode == MODE_TAKE_OFFSET then
+                for _, info in ipairs(gui_state.selected_targets) do
+                    if reaper.ValidatePtr(info.take, "MediaItem_Take*") then
+                        reaper.SetMediaItemTakeInfo_Value(info.take, "D_STARTOFFS", info.baseline_offset)
+                        reaper.UpdateItemInProject(info.item)
+                    end
+                end
+            elseif eff_mode == MODE_ITEM_POSITION then
+                for _, info in ipairs(gui_state.selected_targets) do
+                    if reaper.ValidatePtr(info.item, "MediaItem*") then
+                        reaper.SetMediaItemInfo_Value(info.item, "D_POSITION", info.baseline_offset)
+                        reaper.UpdateItemInProject(info.item)
+                    end
                 end
             end
-        elseif eff_mode == MODE_TRACK_OFFSET then
-            for _, info in ipairs(gui_state.selected_targets) do
-                if reaper.ValidatePtr(info.track, "MediaTrack*") then
-                    reaper.SetMediaTrackInfo_Value(info.track, "D_PLAY_OFFSET", info.baseline_offset)
+            reaper.UpdateArrange()
+            
+            -- Commit final offsets in a single undo block
+            local undo_msg = ""
+            if eff_mode == MODE_MIDI_NOTES then
+                undo_msg = string.format("Shift %d MIDI notes by %.1f ms", #gui_state.selected_targets, gui_state.slider_value)
+            elseif eff_mode == MODE_TRACK_OFFSET then
+                undo_msg = string.format("Set track media playback offset to %.1f ms", gui_state.slider_value)
+            elseif eff_mode == MODE_TAKE_OFFSET then
+                undo_msg = string.format("Set take source start offset to %.1f ms", gui_state.slider_value)
+            elseif eff_mode == MODE_ITEM_POSITION then
+                undo_msg = string.format("Move items timeline position by %.1f ms", gui_state.slider_value)
+            end
+            
+            local active_preset = ""
+            if current_preset_name ~= "" and presets[current_preset_name] ~= nil then
+                if math.abs(presets[current_preset_name] - gui_state.slider_value) < 0.01 then
+                    active_preset = current_preset_name
                 end
             end
-        elseif eff_mode == MODE_TAKE_OFFSET then
-            for _, info in ipairs(gui_state.selected_targets) do
-                if reaper.ValidatePtr(info.take, "MediaItem_Take*") then
-                    reaper.SetMediaItemTakeInfo_Value(info.take, "D_STARTOFFS", info.baseline_offset)
-                    reaper.UpdateItemInProject(info.item)
-                end
+            -- If user has a preset selected in the dropdown (but dragged to a new value),
+            -- still associate it so "Save" afterwards can overwrite the preset value.
+            if active_preset == "" and combo_preset_name ~= "" and presets[combo_preset_name] ~= nil then
+                active_preset = combo_preset_name
             end
-        elseif eff_mode == MODE_ITEM_POSITION then
-            for _, info in ipairs(gui_state.selected_targets) do
-                if reaper.ValidatePtr(info.item, "MediaItem*") then
-                    reaper.SetMediaItemInfo_Value(info.item, "D_POSITION", info.baseline_offset)
-                    reaper.UpdateItemInProject(info.item)
-                end
-            end
-        end
-        reaper.UpdateArrange()
-        
-        -- Commit final offsets in a single undo block
-        local undo_msg = ""
-        if eff_mode == MODE_MIDI_NOTES then
-            undo_msg = string.format("Shift %d MIDI notes by %.1f ms", #gui_state.selected_targets, gui_state.slider_value)
-        elseif eff_mode == MODE_TRACK_OFFSET then
-            undo_msg = string.format("Set track media playback offset to %.1f ms", gui_state.slider_value)
-        elseif eff_mode == MODE_TAKE_OFFSET then
-            undo_msg = string.format("Set take source start offset to %.1f ms", gui_state.slider_value)
-        elseif eff_mode == MODE_ITEM_POSITION then
-            undo_msg = string.format("Move items timeline position by %.1f ms", gui_state.slider_value)
-        end
-        
-        local active_preset = ""
-        if current_preset_name ~= "" and presets[current_preset_name] ~= nil then
-            if math.abs(presets[current_preset_name] - gui_state.slider_value) < 0.01 then
-                active_preset = current_preset_name
-            end
-        end
-        -- If user has a preset selected in the dropdown (but dragged to a new value),
-        -- still associate it so "Save" afterwards can overwrite the preset value.
-        if active_preset == "" and combo_preset_name ~= "" and presets[combo_preset_name] ~= nil then
-            active_preset = combo_preset_name
-        end
 
-        reaper.Undo_BeginBlock2(0)
-        apply_offset_to_targets(gui_state.slider_value, active_preset)
-        reaper.Undo_EndBlock2(0, undo_msg, -1)
-        
-        if eff_mode == MODE_TRACK_OFFSET then
-            reaper.TrackList_AdjustWindows(false)
-        end
-        
-        -- Update baselines
-        if eff_mode == MODE_MIDI_NOTES then
-            local first_target = gui_state.selected_targets[1]
-            if first_target then
-                local take = first_target.take
-                local offsets = get_take_note_offsets(take)
+            reaper.Undo_BeginBlock2(0)
+            apply_offset_to_targets(gui_state.slider_value, active_preset)
+            
+            if eff_mode == MODE_TRACK_OFFSET then
+                reaper.TrackList_AdjustWindows(false)
+            end
+            
+            -- Update baselines
+            if eff_mode == MODE_MIDI_NOTES then
+                local first_target = gui_state.selected_targets[1]
+                if first_target then
+                    local take = first_target.take
+                    local offsets = get_take_note_offsets(take)
+                    for _, info in ipairs(gui_state.selected_targets) do
+                        local key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
+                        offsets[key] = gui_state.slider_value
+                        info.offset_ms = gui_state.slider_value
+                    end
+                    save_take_note_offsets(take, offsets)
+                end
+            elseif eff_mode == MODE_TRACK_OFFSET or eff_mode == MODE_TAKE_OFFSET then
+                local final_val_sec = gui_state.slider_value / 1000.0
                 for _, info in ipairs(gui_state.selected_targets) do
-                    local key = string.format("%d_%d_%d", info.pitch, info.chan, info.original_ppq)
-                    offsets[key] = gui_state.slider_value
-                    info.offset_ms = gui_state.slider_value
+                    info.baseline_offset = final_val_sec
                 end
-                save_take_note_offsets(take, offsets)
-            end
-        elseif eff_mode == MODE_TRACK_OFFSET or eff_mode == MODE_TAKE_OFFSET then
-            local final_val_sec = gui_state.slider_value / 1000.0
-            for _, info in ipairs(gui_state.selected_targets) do
-                info.baseline_offset = final_val_sec
-            end
-        elseif eff_mode == MODE_ITEM_POSITION then
-            for _, info in ipairs(gui_state.selected_targets) do
-                if reaper.ValidatePtr(info.item, "MediaItem*") then
-                    reaper.GetSetMediaItemInfo_String(info.item, "P_EXT:Walter_MediaOffsetTool_offset", tostring(gui_state.slider_value), true)
-                    info.baseline_offset = info.zero_position + (gui_state.slider_value / 1000.0)
+            elseif eff_mode == MODE_ITEM_POSITION then
+                for _, info in ipairs(gui_state.selected_targets) do
+                    if reaper.ValidatePtr(info.item, "MediaItem*") then
+                        reaper.GetSetMediaItemInfo_String(info.item, "P_EXT:Walter_MediaOffsetTool_offset", tostring(gui_state.slider_value), true)
+                        info.baseline_offset = info.zero_position + (gui_state.slider_value / 1000.0)
+                    end
                 end
             end
+            
+            save_preset_name_to_targets(active_preset)
+            reaper.Undo_EndBlock2(0, undo_msg, -1)
         end
-        
-        save_preset_name_to_targets(active_preset)
         
         gui_state.is_dragging = false
     end
@@ -2639,6 +2644,7 @@ local function render_ui()
         if changed_cb then
             gui_state.write_keyswitches = new_cb
             save_settings()
+            update_targets_list(true)
         end
 
         reaper.ImGui_Spacing(ctx)
