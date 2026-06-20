@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.14.0
+-- @version 1.14.1
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -70,7 +70,7 @@ local ui_shortcuts = require("ui_shortcuts")
 local target_manager = require("target_manager")
 
 -- Script variables
-local script_name = "Media Offset Tool v1.14.0"
+local script_name = "Media Offset Tool v1.14.1"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -112,6 +112,7 @@ local open_rename_preset_focus = false
 local open_delete_preset_modal = false
 local show_info = false
 local show_settings = false
+local focus_main_next_frame = false
 
 local presets
 local preset_keys
@@ -1417,86 +1418,6 @@ local function render_ui()
         )
     end
 
-    -- Settings Panel
-    if show_settings then
-        local defaults = {
-            bg = DEFAULT_BG,
-            accent = DEFAULT_ACCENT,
-            text = DEFAULT_TEXT,
-            danger = DEFAULT_DANGER,
-            positive = DEFAULT_POSITIVE,
-            slider_grab = DEFAULT_SLIDER_GRAB,
-            apply_btn = DEFAULT_APPLY_BTN,
-            frame_bg = DEFAULT_FRAME_BG,
-            check_mark = DEFAULT_CHECK_MARK,
-            inactive_btn = DEFAULT_INACTIVE_BTN,
-            inactive_btn_text = DEFAULT_INACTIVE_BTN_TEXT,
-            active_btn = DEFAULT_ACTIVE_BTN
-        }
-        local theme_state = {
-            bg_u32 = settings_edit_bg_u32,
-            accent_u32 = settings_edit_accent_u32,
-            text_u32 = settings_edit_text_u32,
-            danger_u32 = settings_edit_danger_u32,
-            positive_u32 = settings_edit_positive_u32,
-            slider_grab_u32 = settings_edit_slider_grab_u32,
-            apply_btn_u32 = settings_edit_apply_btn_u32,
-            frame_bg_u32 = settings_edit_frame_bg_u32,
-            check_mark_u32 = settings_edit_check_mark_u32,
-            inactive_btn_u32 = settings_edit_inactive_btn_u32,
-            inactive_btn_text_u32 = settings_edit_inactive_btn_text_u32,
-            active_btn_u32 = settings_edit_active_btn_u32,
-
-            theme_bg = theme_bg,
-            theme_accent = theme_accent,
-            theme_text = theme_text,
-            theme_danger = theme_danger,
-            theme_positive = theme_positive,
-            theme_slider_grab = theme_slider_grab,
-            theme_apply_btn = theme_apply_btn,
-            theme_frame_bg = theme_frame_bg,
-            theme_check_mark = theme_check_mark,
-            theme_inactive_btn = theme_inactive_btn,
-            theme_inactive_btn_text = theme_inactive_btn_text,
-            theme_active_btn = theme_active_btn
-        }
-        show_settings = ui_settings.draw_settings_panel(
-            ctx,
-            gui_state,
-            theme_state,
-            defaults,
-            {
-                save_settings = save_settings,
-                update_targets_list = update_targets_list
-            }
-        )
-        settings_edit_bg_u32 = theme_state.bg_u32
-        settings_edit_accent_u32 = theme_state.accent_u32
-        settings_edit_text_u32 = theme_state.text_u32
-        settings_edit_danger_u32 = theme_state.danger_u32
-        settings_edit_positive_u32 = theme_state.positive_u32
-        settings_edit_slider_grab_u32 = theme_state.slider_grab_u32
-        settings_edit_apply_btn_u32 = theme_state.apply_btn_u32
-        settings_edit_frame_bg_u32 = theme_state.frame_bg_u32
-        settings_edit_check_mark_u32 = theme_state.check_mark_u32
-        settings_edit_inactive_btn_u32 = theme_state.inactive_btn_u32
-        settings_edit_inactive_btn_text_u32 = theme_state.inactive_btn_text_u32
-        settings_edit_active_btn_u32 = theme_state.active_btn_u32
-
-        theme_bg = theme_state.theme_bg
-        theme_accent = theme_state.theme_accent
-        theme_text = theme_state.theme_text
-        theme_danger = theme_state.theme_danger
-        theme_positive = theme_state.theme_positive
-        theme_slider_grab = theme_state.theme_slider_grab
-        theme_apply_btn = theme_state.theme_apply_btn
-        theme_frame_bg = theme_state.theme_frame_bg
-        theme_check_mark = theme_state.theme_check_mark
-        theme_inactive_btn = theme_state.theme_inactive_btn
-        theme_inactive_btn_text = theme_state.theme_inactive_btn_text
-        theme_active_btn = theme_state.theme_active_btn
-    end
-
     -- Preset Board (2-Row wrapped buttons)
     reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Separator(ctx)
@@ -1602,20 +1523,127 @@ local function loop()
         script_running = false
     end
 
-    -- Bring window to front if it loses focus to keep it topmost
+    local is_main_focused = false
     if visible and script_running then
-        local is_window_focused = reaper.ImGui_IsWindowFocused(ctx, imgui.FocusedFlags_RootAndChildWindows)
-        if not is_window_focused then
+        is_main_focused = reaper.ImGui_IsWindowFocused(ctx, imgui.FocusedFlags_RootAndChildWindows)
+        if focus_main_next_frame then
             reaper.ImGui_SetWindowFocus(ctx)
+            is_main_focused = true
+            focus_main_next_frame = false
         end
-    end
-
-    if visible and script_running then
         handle_keyboard_shortcuts()
         render_ui()
     end
 
     reaper.ImGui_End(ctx)
+
+    local is_settings_focused = false
+    if show_settings and script_running then
+        reaper.ImGui_SetNextWindowSizeConstraints(ctx, 350, 200, 600, 800)
+        local settings_visible, settings_open = reaper.ImGui_Begin(
+            ctx,
+            "Settings##MediaOffsetTool",
+            true,
+            imgui.WindowFlags_NoCollapse | imgui.WindowFlags_TopMost | imgui.WindowFlags_NoDocking | (imgui.WindowFlags_AlwaysAutoResize or 0)
+        )
+        local panel_open = true
+        if settings_visible then
+            is_settings_focused = reaper.ImGui_IsWindowFocused(ctx, imgui.FocusedFlags_RootAndChildWindows)
+            
+            local defaults = {
+                bg = DEFAULT_BG,
+                accent = DEFAULT_ACCENT,
+                text = DEFAULT_TEXT,
+                danger = DEFAULT_DANGER,
+                positive = DEFAULT_POSITIVE,
+                slider_grab = DEFAULT_SLIDER_GRAB,
+                apply_btn = DEFAULT_APPLY_BTN,
+                frame_bg = DEFAULT_FRAME_BG,
+                check_mark = DEFAULT_CHECK_MARK,
+                inactive_btn = DEFAULT_INACTIVE_BTN,
+                inactive_btn_text = DEFAULT_INACTIVE_BTN_TEXT,
+                active_btn = DEFAULT_ACTIVE_BTN
+            }
+            local theme_state = {
+                bg_u32 = settings_edit_bg_u32,
+                accent_u32 = settings_edit_accent_u32,
+                text_u32 = settings_edit_text_u32,
+                danger_u32 = settings_edit_danger_u32,
+                positive_u32 = settings_edit_positive_u32,
+                slider_grab_u32 = settings_edit_slider_grab_u32,
+                apply_btn_u32 = settings_edit_apply_btn_u32,
+                frame_bg_u32 = settings_edit_frame_bg_u32,
+                check_mark_u32 = settings_edit_check_mark_u32,
+                inactive_btn_u32 = settings_edit_inactive_btn_u32,
+                inactive_btn_text_u32 = settings_edit_inactive_btn_text_u32,
+                active_btn_u32 = settings_edit_active_btn_u32,
+
+                theme_bg = theme_bg,
+                theme_accent = theme_accent,
+                theme_text = theme_text,
+                theme_danger = theme_danger,
+                theme_positive = theme_positive,
+                theme_slider_grab = theme_slider_grab,
+                theme_apply_btn = theme_apply_btn,
+                theme_frame_bg = theme_frame_bg,
+                theme_check_mark = theme_check_mark,
+                theme_inactive_btn = theme_inactive_btn,
+                theme_inactive_btn_text = theme_inactive_btn_text,
+                theme_active_btn = theme_active_btn
+            }
+            
+            panel_open = ui_settings.draw_settings_panel(
+                ctx,
+                gui_state,
+                theme_state,
+                defaults,
+                {
+                    save_settings = save_settings,
+                    update_targets_list = update_targets_list
+                }
+            )
+            
+            settings_edit_bg_u32 = theme_state.bg_u32
+            settings_edit_accent_u32 = theme_state.accent_u32
+            settings_edit_text_u32 = theme_state.text_u32
+            settings_edit_danger_u32 = theme_state.danger_u32
+            settings_edit_positive_u32 = theme_state.positive_u32
+            settings_edit_slider_grab_u32 = theme_state.slider_grab_u32
+            settings_edit_apply_btn_u32 = theme_state.apply_btn_u32
+            settings_edit_frame_bg_u32 = theme_state.frame_bg_u32
+            settings_edit_check_mark_u32 = theme_state.check_mark_u32
+            settings_edit_inactive_btn_u32 = theme_state.inactive_btn_u32
+            settings_edit_inactive_btn_text_u32 = theme_state.inactive_btn_text_u32
+            settings_edit_active_btn_u32 = theme_state.active_btn_u32
+
+            theme_bg = theme_state.theme_bg
+            theme_accent = theme_state.theme_accent
+            theme_text = theme_state.theme_text
+            theme_danger = theme_state.theme_danger
+            theme_positive = theme_state.theme_positive
+            theme_slider_grab = theme_state.theme_slider_grab
+            theme_apply_btn = theme_state.theme_apply_btn
+            theme_frame_bg = theme_state.theme_frame_bg
+            theme_check_mark = theme_state.theme_check_mark
+            theme_inactive_btn = theme_state.theme_inactive_btn
+            theme_inactive_btn_text = theme_state.theme_inactive_btn_text
+            theme_active_btn = theme_state.theme_active_btn
+            
+        end
+        reaper.ImGui_End(ctx)
+        if not settings_open or not panel_open then
+            show_settings = false
+        end
+    end
+
+    -- Bring window to front if it loses focus to keep it topmost
+    if visible and script_running then
+        local any_focused = is_main_focused or (show_settings and is_settings_focused)
+        if not any_focused then
+            focus_main_next_frame = true
+        end
+    end
+
     pop_theme()
 
     if script_running then

@@ -88,13 +88,28 @@ local function test_draw_mode_selector()
 
     ui_renderer.draw_mode_selector("fake_ctx", gui_state, false)
 
-    assert_eq(#imgui_calls, 6, "Number of ImGui calls")
+    assert_eq(#imgui_calls, 9, "Number of ImGui calls")
     assert_eq(imgui_calls[1].type, "Text", "First call is Text")
     assert_eq(imgui_calls[2].type, "BeginDisabled", "Second call starts disabled block")
     assert_eq(imgui_calls[3].label, "Take Start Offset", "First radio button label")
     assert_eq(imgui_calls[3].active, true, "First radio button is active")
     assert_eq(imgui_calls[4].label, "Track Playback Offset", "Second radio button label")
     assert_eq(imgui_calls[4].active, false, "Second radio button is inactive")
+    assert_eq(imgui_calls[7].type, "BeginDisabled", "Seventh call starts disabled block for 4th button")
+    assert_eq(imgui_calls[8].label, "MIDI Note Offset", "4th radio button label")
+    assert_eq(imgui_calls[8].active, false, "4th radio button is inactive when has_notes is false")
+
+    -- Test with has_notes = true
+    imgui_calls = {}
+    ui_renderer.draw_mode_selector("fake_ctx", gui_state, true)
+
+    assert_eq(#imgui_calls, 9, "Number of ImGui calls when has_notes is true")
+    assert_eq(imgui_calls[2].type, "BeginDisabled", "Second call starts disabled block")
+    assert_eq(imgui_calls[2].disabled, true, "First three buttons are disabled when has_notes is true")
+    assert_eq(imgui_calls[7].type, "BeginDisabled", "Seventh call starts disabled block for 4th button")
+    assert_eq(imgui_calls[7].disabled, false, "4th button is enabled when has_notes is true")
+    assert_eq(imgui_calls[8].label, "MIDI Note Offset", "4th radio button label")
+    assert_eq(imgui_calls[8].active, true, "4th radio button is active when has_notes is true")
 end
 
 -- Test drawing offset slider

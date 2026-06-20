@@ -8,22 +8,6 @@ local UISettings = {}
 
 function UISettings.draw_settings_panel(ctx, gui_state, theme_state, defaults, callbacks)
     reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Separator(ctx)
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Text(ctx, "Settings")
-    reaper.ImGui_Spacing(ctx)
-
-    -- Write Keyswitches Option
-    local changed_cb, new_cb = reaper.ImGui_Checkbox(ctx, "Write Keyswitches (MIDI notes)", gui_state.write_keyswitches)
-    if changed_cb then
-        gui_state.write_keyswitches = new_cb
-        callbacks.save_settings()
-        callbacks.update_targets_list(true)
-    end
-
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Separator(ctx)
-    reaper.ImGui_Spacing(ctx)
 
     -- Colors Header
     reaper.ImGui_Text(ctx, "Custom Colors")
@@ -153,6 +137,20 @@ function UISettings.draw_settings_panel(ctx, gui_state, theme_state, defaults, c
         theme_state.inactive_btn_u32    = theme_manager.theme_pack(defaults.inactive_btn)
         theme_state.inactive_btn_text_u32 = theme_manager.theme_pack(defaults.inactive_btn_text)
         theme_state.active_btn_u32      = theme_manager.theme_pack(defaults.active_btn)
+
+        -- Re-unpack immediately so theme_state.theme_* get updated to defaults on this frame
+        theme_state.theme_bg              = theme_manager.theme_unpack(theme_state.bg_u32)
+        theme_state.theme_accent          = theme_manager.theme_unpack(theme_state.accent_u32)
+        theme_state.theme_text            = theme_manager.theme_unpack(theme_state.text_u32)
+        theme_state.theme_danger          = theme_manager.theme_unpack(theme_state.danger_u32)
+        theme_state.theme_positive        = theme_manager.theme_unpack(theme_state.positive_u32)
+        theme_state.theme_slider_grab     = theme_manager.theme_unpack(theme_state.slider_grab_u32)
+        theme_state.theme_apply_btn       = theme_manager.theme_unpack(theme_state.apply_btn_u32)
+        theme_state.theme_frame_bg        = theme_manager.theme_unpack(theme_state.frame_bg_u32)
+        theme_state.theme_check_mark      = theme_manager.theme_unpack(theme_state.check_mark_u32)
+        theme_state.theme_inactive_btn    = theme_manager.theme_unpack(theme_state.inactive_btn_u32)
+        theme_state.theme_inactive_btn_text = theme_manager.theme_unpack(theme_state.inactive_btn_text_u32)
+        theme_state.theme_active_btn      = theme_manager.theme_unpack(theme_state.active_btn_u32)
     end
     theme_manager.pop_danger_style(ctx)
 

@@ -10,13 +10,7 @@ UIRenderer.MODE_TRACK_OFFSET = 1
 UIRenderer.MODE_ITEM_POSITION = 2
 
 function UIRenderer.draw_mode_selector(ctx, gui_state, has_notes)
-    if has_notes then
-        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.8, 0.5, 1.0))
-        reaper.ImGui_Text(ctx, "Offsetting selected MIDI notes (modes disabled):")
-        reaper.ImGui_PopStyleColor(ctx)
-    else
-        reaper.ImGui_Text(ctx, "Offset Mode:")
-    end
+    reaper.ImGui_Text(ctx, "Offset Mode:")
     
     local mode_changed = false
     reaper.ImGui_BeginDisabled(ctx, has_notes)
@@ -41,6 +35,11 @@ function UIRenderer.draw_mode_selector(ctx, gui_state, has_notes)
         mode_changed = true
     end
     
+    reaper.ImGui_EndDisabled(ctx)
+    
+    reaper.ImGui_SameLine(ctx)
+    reaper.ImGui_BeginDisabled(ctx, not has_notes)
+    reaper.ImGui_RadioButton(ctx, "MIDI Note Offset", has_notes)
     reaper.ImGui_EndDisabled(ctx)
 
     return mode_changed
