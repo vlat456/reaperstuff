@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.13.0
+-- @version 1.14.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -70,7 +70,7 @@ local ui_shortcuts = require("ui_shortcuts")
 local target_manager = require("target_manager")
 
 -- Script variables
-local script_name = "Media Offset Tool v1.13.0"
+local script_name = "Media Offset Tool v1.14.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -129,12 +129,29 @@ local function get_presets_file_path()
     return preset_manager.get_presets_file_path()
 end
 
+local presets_lib_order = {}
+local presets_instr_order = {}
+local presets_art_order = {}
+
 local function load_presets()
-    return preset_manager.load_presets()
+    local p, pk, ps, pksp, pmin, pmax, lo, io, ao = preset_manager.load_presets()
+    presets_lib_order = lo or {}
+    presets_instr_order = io or {}
+    presets_art_order = ao or {}
+    return p, pk, ps, pksp, pmin, pmax
 end
 
 local function save_presets(presets_table, show_in_grid_table)
-    preset_manager.save_presets(presets_table, show_in_grid_table, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max)
+    preset_manager.save_presets(
+        presets_table, 
+        show_in_grid_table, 
+        presets_ks_pitch, 
+        presets_note_vel_min, 
+        presets_note_vel_max,
+        presets_lib_order,
+        presets_instr_order,
+        presets_art_order
+    )
 end
 
 presets, preset_keys, presets_show_in_grid, presets_ks_pitch, presets_note_vel_min, presets_note_vel_max = load_presets()
@@ -1529,6 +1546,12 @@ local function render_ui()
         current_preset_name,
         function(offset, name)
             adjust_offset_to_value(offset, name)
+        end,
+        presets_lib_order,
+        presets_instr_order,
+        presets_art_order,
+        function()
+            save_presets(presets, presets_show_in_grid)
         end
     )
 end

@@ -55,7 +55,14 @@ _G.reaper = {
     ImGui_IsItemHovered = function(ctx) return false end,
     ImGui_TextDisabled = function(ctx, text)
         table.insert(imgui_calls, { type = "TextDisabled", text = text })
-    end
+    end,
+    ImGui_BeginDragDropSource = function(ctx, flags) return false end,
+    ImGui_SetDragDropPayload = function(ctx, type, payload) return false end,
+    ImGui_EndDragDropSource = function(ctx) end,
+    ImGui_BeginDragDropTarget = function(ctx) return false end,
+    ImGui_AcceptDragDropPayload = function(ctx, type, flags) return false, "" end,
+    ImGui_EndDragDropTarget = function(ctx) end,
+    ImGui_DragDropFlags_None = function() return 0 end
 }
 
 _G.imgui.Col_Button = 2
@@ -251,6 +258,83 @@ local function test_draw_preset_board_3tier()
     assert_eq(gui_state.selected_instrument, "Brass", "Default selected instrument is Brass")
 end
 
+local function test_draw_preset_board_custom_sorting()
+    imgui_calls = {}
+    local gui_state = { selected_library = "Spitfire", selected_instrument = "Strings" }
+    local preset_keys = {
+        "Spitfire - Strings - Long",
+        "Spitfire - Strings - Short",
+        "Spitfire - Brass - Staccato",
+        "Orchestral - Legato",
+    }
+    local presets_show_in_grid = {
+        ["Spitfire - Strings - Long"]  = true,
+        ["Spitfire - Strings - Short"] = true,
+        ["Spitfire - Brass - Staccato"] = true,
+        ["Orchestral - Legato"]        = true,
+    }
+    local presets = {
+        ["Spitfire - Strings - Long"]  = -20.0,
+        ["Spitfire - Strings - Short"] = -10.0,
+        ["Spitfire - Brass - Staccato"] = -5.0,
+        ["Orchestral - Legato"]        = -15.0,
+    }
+    local theme_accent = {1.0, 0.0, 1.0}
+    local theme_bg    = {0.1, 0.1, 0.1}
+    local theme_inactive_btn = {0.2, 0.2, 0.2}
+    local theme_inactive_btn_text = {0.8, 0.8, 0.8}
+    local theme_active_btn = {0.9, 0.4, 0.9}
+
+    -- Set custom orders:
+    -- 1) Spitfire (1) should come before Orchestral (2)
+    -- 2) Strings (1) should come before Brass (2) under Spitfire
+    -- 3) Short (1) should come before Long (2) under Spitfire - Strings
+    local lib_order_map = { ["Spitfire"] = 1, ["Orchestral"] = 2 }
+    local instr_order_map = { ["Spitfire\0Strings"] = 1, ["Spitfire\0Brass"] = 2 }
+    local art_order_map = { ["Spitfire - Strings - Short"] = 1, ["Spitfire - Strings - Long"] = 2 }
+
+    ui_renderer.draw_preset_board(
+        "fake_ctx", gui_state, preset_keys, presets_show_in_grid,
+        presets, theme_accent, theme_bg, theme_inactive_btn,
+        theme_inactive_btn_text, theme_active_btn, "", function() end,
+        lib_order_map, instr_order_map, art_order_map, function() end
+    )
+
+    -- Extract library buttons in render order
+    local lib_btns = {}
+    for _, c in ipairs(imgui_calls) do
+        if c.type == "Button" and c.label:match("##lib_") then
+            table.insert(lib_btns, c.label:match("^(.-)##"))
+        end
+    end
+    assert_eq(#lib_btns, 2, "Two library buttons rendered")
+    assert_eq(lib_btns[1], "Spitfire", "Spitfire is first library due to custom sorting")
+    assert_eq(lib_btns[2], "Orchestral", "Orchestral is second library due to custom sorting")
+
+    -- Extract instrument buttons in render order
+    local instr_btns = {}
+    for _, c in ipairs(imgui_calls) do
+        if c.type == "Button" and c.label:match("##instr_") then
+            table.insert(instr_btns, c.label:match("^(.-)##"))
+        end
+    end
+    assert_eq(#instr_btns, 2, "Two instrument buttons rendered")
+    assert_eq(instr_btns[1], "Strings", "Strings is first instrument due to custom sorting")
+    assert_eq(instr_btns[2], "Brass", "Brass is second instrument due to custom sorting")
+
+    -- Extract articulation buttons in render order
+    local art_btns = {}
+    for _, c in ipairs(imgui_calls) do
+        if c.type == "Button" and c.label:match("##art_") then
+            table.insert(art_btns, c.label:match("^(.-)##"))
+        end
+    end
+    assert_eq(#art_btns, 2, "Two articulation buttons rendered")
+    assert_eq(art_btns[1], "Short", "Short articulation is first due to custom sorting")
+    assert_eq(art_btns[2], "Long", "Long articulation is second due to custom sorting")
+end
+
 test_draw_preset_board_3tier()
+test_draw_preset_board_custom_sorting()
 print("All ui_renderer tests passed!")
 

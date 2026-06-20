@@ -126,7 +126,22 @@ function UIRenderer.draw_offset_slider(ctx, gui_state, fixed_range, callbacks, t
     return show_info, show_settings, is_slider_deactivated
 end
 
-function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_in_grid, presets, theme_accent, theme_bg, theme_inactive_btn, theme_inactive_btn_text, theme_active_btn, current_preset_name, adjust_offset_to_value_cb)
+local function compare_elements(a_name, b_name, a_order, b_order)
+    local o1 = a_order or 0
+    local o2 = b_order or 0
+    if o1 > 0 and o2 > 0 then
+        if o1 ~= o2 then
+            return o1 < o2
+        end
+    elseif o1 > 0 then
+        return true
+    elseif o2 > 0 then
+        return false
+    end
+    return a_name < b_name
+end
+
+function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_in_grid, presets, theme_accent, theme_bg, theme_inactive_btn, theme_inactive_btn_text, theme_active_btn, current_preset_name, adjust_offset_to_value_cb, lib_order_map, instr_order_map, art_order_map, save_presets_cb)
     reaper.ImGui_Text(ctx, "Preset Board:")
     reaper.ImGui_Spacing(ctx)
     
@@ -157,15 +172,28 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
         end
     end
     
-    table.sort(lib_names)
+    table.sort(lib_names, function(a, b)
+        local o1 = (lib_order_map and lib_order_map[a]) or 0
+        local o2 = (lib_order_map and lib_order_map[b]) or 0
+        return compare_elements(a, b, o1, o2)
+    end)
+    
     for lib in pairs(libs) do
         local instr_names = {}
         for k in pairs(libs[lib]) do table.insert(instr_names, k) end
-        table.sort(instr_names)
+        table.sort(instr_names, function(a, b)
+            local o1 = (instr_order_map and instr_order_map[lib .. "\0" .. a]) or 0
+            local o2 = (instr_order_map and instr_order_map[lib .. "\0" .. b]) or 0
+            return compare_elements(a, b, o1, o2)
+        end)
         libs[lib]._instr_names = instr_names
         for instr in pairs(libs[lib]) do
             if instr ~= "_instr_names" and type(libs[lib][instr]) == "table" then
-                table.sort(libs[lib][instr], function(a, b) return a.art < b.art end)
+                table.sort(libs[lib][instr], function(a, b)
+                    local o1 = (art_order_map and art_order_map[a.name]) or 0
+                    local o2 = (art_order_map and art_order_map[b.name]) or 0
+                    return compare_elements(a.art, b.art, o1, o2)
+                end)
             end
         end
     end
@@ -224,8 +252,34 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
                 reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text,          reaper.ImGui_ColorConvertDouble4ToU32(it[1], it[2], it[3], 1.0))
             end
             
-            if reaper.ImGui_Button(ctx, lib_name .. "##lib_" .. i, lib_btn_w, lib_btn_h) then
+            local clicked = reaper.ImGui_Button(ctx, lib_name .. "##lib_" .. i, lib_btn_w, lib_btn_h)
+            if clicked then
                 gui_state.selected_library = lib_name
+            end
+            
+            -- Drag and Drop Source
+            if lib_order_map and save_presets_cb and reaper.ImGui_BeginDragDropSource(ctx, reaper.ImGui_DragDropFlags_None()) then
+                reaper.ImGui_SetDragDropPayload(ctx, "LIB_ORDER", tostring(i))
+                reaper.ImGui_Text(ctx, "Move Library: " .. lib_name)
+                reaper.ImGui_EndDragDropSource(ctx)
+            end
+            
+            -- Drag and Drop Target
+            if lib_order_map and save_presets_cb and reaper.ImGui_BeginDragDropTarget(ctx) then
+                local retval, payload = reaper.ImGui_AcceptDragDropPayload(ctx, "LIB_ORDER")
+                if retval then
+                    local from_index = tonumber(payload)
+                    local to_index = i
+                    if from_index and from_index ~= to_index then
+                        local moved_item = table.remove(lib_names, from_index)
+                        table.insert(lib_names, to_index, moved_item)
+                        for idx, name in ipairs(lib_names) do
+                            lib_order_map[name] = idx
+                        end
+                        save_presets_cb()
+                    end
+                end
+                reaper.ImGui_EndDragDropTarget(ctx)
             end
             
             if is_active then
@@ -291,8 +345,34 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
                     reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text,          reaper.ImGui_ColorConvertDouble4ToU32(it[1], it[2], it[3], 1.0))
                 end
                 
-                if reaper.ImGui_Button(ctx, display_name .. "##instr_" .. i, instr_btn_w, instr_btn_h) then
+                local clicked = reaper.ImGui_Button(ctx, display_name .. "##instr_" .. i, instr_btn_w, instr_btn_h)
+                if clicked then
                     gui_state.selected_instrument = instr
+                end
+                
+                -- Drag and Drop Source
+                if instr_order_map and save_presets_cb and reaper.ImGui_BeginDragDropSource(ctx, reaper.ImGui_DragDropFlags_None()) then
+                    reaper.ImGui_SetDragDropPayload(ctx, "INSTR_ORDER", tostring(i))
+                    reaper.ImGui_Text(ctx, "Move Instrument: " .. display_name)
+                    reaper.ImGui_EndDragDropSource(ctx)
+                end
+                
+                -- Drag and Drop Target
+                if instr_order_map and save_presets_cb and reaper.ImGui_BeginDragDropTarget(ctx) then
+                    local retval, payload = reaper.ImGui_AcceptDragDropPayload(ctx, "INSTR_ORDER")
+                    if retval then
+                        local from_index = tonumber(payload)
+                        local to_index = i
+                        if from_index and from_index ~= to_index then
+                            local moved_item = table.remove(instr_names, from_index)
+                            table.insert(instr_names, to_index, moved_item)
+                            for idx, name in ipairs(instr_names) do
+                                instr_order_map[gui_state.selected_library .. "\0" .. name] = idx
+                            end
+                            save_presets_cb()
+                        end
+                    end
+                    reaper.ImGui_EndDragDropTarget(ctx)
                 end
                 
                 if is_active then
@@ -355,9 +435,35 @@ function UIRenderer.draw_preset_board(ctx, gui_state, preset_keys, presets_show_
                     reaper.ImGui_PushStyleColor(ctx, imgui.Col_Text,          reaper.ImGui_ColorConvertDouble4ToU32(it[1], it[2], it[3], 1.0))
                 end
                 
-                if reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. i, art_btn_w, art_btn_h) then
+                local clicked = reaper.ImGui_Button(ctx, art_data.art .. "##art_" .. i, art_btn_w, art_btn_h)
+                if clicked then
                     current_preset_name = art_data.name
                     adjust_offset_to_value_cb(art_data.offset, art_data.name)
+                end
+                
+                -- Drag and Drop Source
+                if art_order_map and save_presets_cb and reaper.ImGui_BeginDragDropSource(ctx, reaper.ImGui_DragDropFlags_None()) then
+                    reaper.ImGui_SetDragDropPayload(ctx, "ART_ORDER", tostring(i))
+                    reaper.ImGui_Text(ctx, "Move Articulation: " .. art_data.art)
+                    reaper.ImGui_EndDragDropSource(ctx)
+                end
+                
+                -- Drag and Drop Target
+                if art_order_map and save_presets_cb and reaper.ImGui_BeginDragDropTarget(ctx) then
+                    local retval, payload = reaper.ImGui_AcceptDragDropPayload(ctx, "ART_ORDER")
+                    if retval then
+                        local from_index = tonumber(payload)
+                        local to_index = i
+                        if from_index and from_index ~= to_index then
+                            local moved_item = table.remove(arts, from_index)
+                            table.insert(arts, to_index, moved_item)
+                            for idx, item in ipairs(arts) do
+                                art_order_map[item.name] = idx
+                            end
+                            save_presets_cb()
+                        end
+                    end
+                    reaper.ImGui_EndDragDropTarget(ctx)
                 end
                 
                 if is_current then

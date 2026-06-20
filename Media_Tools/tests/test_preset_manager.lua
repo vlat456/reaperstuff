@@ -88,10 +88,14 @@ local function test_load_save_presets()
     local init_ks_pitch = { ["Lib - Art1"] = 36, ["Lib - Art2"] = 48 }
     local init_vel_min = { ["Lib - Art1"] = 10, ["Lib - Art2"] = 20 }
     local init_vel_max = { ["Lib - Art1"] = 100, ["Lib - Art2"] = 120 }
+    
+    local init_lib_order = { ["Lib"] = 3 }
+    local init_instr_order = { ["Lib\0"] = 1 }
+    local init_art_order = { ["Lib - Art1"] = 2 }
 
-    preset_manager.save_presets(initial_presets, initial_grid, init_ks_pitch, init_vel_min, init_vel_max)
+    preset_manager.save_presets(initial_presets, initial_grid, init_ks_pitch, init_vel_min, init_vel_max, init_lib_order, init_instr_order, init_art_order)
 
-    local loaded_presets, keys, show_in_grid, ks_pitch, vel_min, vel_max = preset_manager.load_presets()
+    local loaded_presets, keys, show_in_grid, ks_pitch, vel_min, vel_max, lib_order, instr_order, art_order = preset_manager.load_presets()
 
     assert_eq(loaded_presets["Lib - Art1"], -15.5, "Loaded preset value 1")
     assert_eq(loaded_presets["Lib - Art2"], 25.0, "Loaded preset value 2")
@@ -101,6 +105,10 @@ local function test_load_save_presets()
     assert_eq(ks_pitch["Lib - Art2"], 48, "Loaded keyswitch pitch 2")
     assert_eq(vel_min["Lib - Art1"], 10, "Loaded velocity min 1")
     assert_eq(vel_max["Lib - Art2"], 120, "Loaded velocity max 2")
+    
+    assert_eq(lib_order["Lib"], 3, "Loaded lib order")
+    assert_eq(instr_order["Lib\0"], 1, "Loaded instr order")
+    assert_eq(art_order["Lib - Art1"], 2, "Loaded art order")
 
     -- Clean up
     os.remove(file_path)

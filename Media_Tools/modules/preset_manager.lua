@@ -67,6 +67,9 @@ function PresetManager.load_presets()
     local note_vel_min_tbl = {}
     local note_vel_max_tbl = {}
     local keys = {}
+    local lib_order_map = {}
+    local instr_order_map = {}
+    local art_order_map = {}
     local f = io.open(path, "r")
     if f then
         for line in f:lines() do
@@ -82,22 +85,38 @@ function PresetManager.load_presets()
                 local ks_pitch = tonumber(parts[3]) or -1
                 local note_vel_min = tonumber(parts[6]) or -1
                 local note_vel_max = tonumber(parts[7]) or -1
+                
+                local lib_order = tonumber(parts[8]) or 0
+                local instr_order = tonumber(parts[9]) or 0
+                local art_order = tonumber(parts[10]) or 0
 
                 loaded_presets[name] = val
                 show_in_grid[name] = show
                 ks_pitch_tbl[name] = ks_pitch
                 note_vel_min_tbl[name] = note_vel_min
                 note_vel_max_tbl[name] = note_vel_max
+                
+                local lib, instr, art = PresetManager.split_preset_name(name)
+                if lib_order > 0 then
+                    lib_order_map[lib] = lib_order
+                end
+                if instr_order > 0 then
+                    instr_order_map[lib .. "\0" .. instr] = instr_order
+                end
+                if art_order > 0 then
+                    art_order_map[name] = art_order
+                end
+                
                 table.insert(keys, name)
             end
         end
         f:close()
     end
     table.sort(keys)
-    return loaded_presets, keys, show_in_grid, ks_pitch_tbl, note_vel_min_tbl, note_vel_max_tbl
+    return loaded_presets, keys, show_in_grid, ks_pitch_tbl, note_vel_min_tbl, note_vel_max_tbl, lib_order_map, instr_order_map, art_order_map
 end
 
-function PresetManager.save_presets(presets_table, show_in_grid_table, ks_pitch_tbl, note_vel_min_tbl, note_vel_max_tbl)
+function PresetManager.save_presets(presets_table, show_in_grid_table, ks_pitch_tbl, note_vel_min_tbl, note_vel_max_tbl, lib_order_map, instr_order_map, art_order_map)
     local path = PresetManager.get_presets_file_path()
     local f = io.open(path, "w")
     if f then
@@ -115,7 +134,12 @@ function PresetManager.save_presets(presets_table, show_in_grid_table, ks_pitch_
             local note_vel_min = (note_vel_min_tbl and note_vel_min_tbl[k]) or -1
             local note_vel_max = (note_vel_max_tbl and note_vel_max_tbl[k]) or -1
             
-            f:write(string.format("%s=%s|%d|%d|%d|%d|%d|%d\n", 
+            local lib, instr, art = PresetManager.split_preset_name(k)
+            local lib_order = (lib_order_map and lib_order_map[lib]) or 0
+            local instr_order = (instr_order_map and instr_order_map[lib .. "\0" .. instr]) or 0
+            local art_order = (art_order_map and art_order_map[k]) or 0
+            
+            f:write(string.format("%s=%s|%d|%d|%d|%d|%d|%d|%d|%d|%d\n", 
                 k, 
                 tostring(presets_table[k]), 
                 show and 1 or 0,
@@ -123,7 +147,10 @@ function PresetManager.save_presets(presets_table, show_in_grid_table, ks_pitch_
                 -1,
                 -1,
                 note_vel_min,
-                note_vel_max
+                note_vel_max,
+                lib_order,
+                instr_order,
+                art_order
             ))
         end
         f:close()
