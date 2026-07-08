@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6">
+<index version="1" name="Walter Scripts" commit="66771b799e51addf9aea89d6fb7c2490d68a9f97">
   <category name="ColorTool">
     <reapack name="Color_Tool.lua" type="script" desc="Color Tool: Color Palette &amp; Picker">
       <metadata>
@@ -591,6 +591,22 @@
         <source file="modules/ui_presets_dropdown.lua">https://github.com/vlat456/reaperstuff/raw/460c74897c1ce85262d75517017d540df8e6765b/Media_Tools/modules/ui_presets_dropdown.lua</source>
         <source file="modules/ui_info_panel.lua">https://github.com/vlat456/reaperstuff/raw/460c74897c1ce85262d75517017d540df8e6765b/Media_Tools/modules/ui_info_panel.lua</source>
         <source file="modules/ui_shortcuts.lua">https://github.com/vlat456/reaperstuff/raw/460c74897c1ce85262d75517017d540df8e6765b/Media_Tools/modules/ui_shortcuts.lua</source>
+      </version>
+      <version name="1.15.0" author="drvlat" time="2026-07-08T12:48:27Z">
+        <source main="main midi_eventlisteditor midi_inlineeditor midi_editor">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/Media_Offset_Tool.lua</source>
+        <source file="modules/config_manager.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/config_manager.lua</source>
+        <source file="modules/preset_manager.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/preset_manager.lua</source>
+        <source file="modules/offset_engine.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/offset_engine.lua</source>
+        <source file="modules/theme_manager.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/theme_manager.lua</source>
+        <source file="modules/target_manager.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/target_manager.lua</source>
+        <source file="modules/ui_renderer.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/ui_renderer.lua</source>
+        <source file="modules/ui_modals.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/ui_modals.lua</source>
+        <source file="modules/ui_settings.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/ui_settings.lua</source>
+        <source file="modules/ui_trigger_editor.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/ui_trigger_editor.lua</source>
+        <source file="modules/ui_presets_dropdown.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/ui_presets_dropdown.lua</source>
+        <source file="modules/ui_info_panel.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/ui_info_panel.lua</source>
+        <source file="modules/ui_shortcuts.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/ui_shortcuts.lua</source>
+        <source file="modules/ui_memory.lua">https://github.com/vlat456/reaperstuff/raw/66771b799e51addf9aea89d6fb7c2490d68a9f97/Media_Tools/modules/ui_memory.lua</source>
       </version>
     </reapack>
     <reapack name="Selective_Freeze_Tool.lua" type="script" desc="Selective Freeze Tool">
