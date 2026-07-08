@@ -160,6 +160,7 @@ local function reload_palette()
     end
   end
   update_window_size()
+  last_color_check_time = 0
 end
 
 local palettes_combo_string = ""
@@ -275,6 +276,7 @@ local function apply_color(r, g, b)
   if colored then
     reaper.MarkProjectDirty(0)
     reaper.UpdateArrange()
+    last_color_check_time = 0
   end
 end
 
@@ -392,6 +394,9 @@ local function render_pref_window()
   reaper.ImGui_End(ctx)
 end
 
+local last_color_check_time = 0
+local cached_match_idx = nil
+
 local function get_selected_color()
   local ctx_mode = reaper.GetCursorContext2(true)
   if ctx_mode == 0 then
@@ -450,13 +455,34 @@ local function get_selected_color()
   end
 end
 
+local function update_selected_color_cache()
+  local now = reaper.clock()
+  if now - last_color_check_time > 0.1 then
+    last_color_check_time = now
+    local sr, sg, sb = get_selected_color()
+    cached_match_idx = nil
+    if sr then
+      for idx, c in ipairs(colors) do
+        local dr = math.abs(c.r - sr)
+        local dg = math.abs(c.g - sg)
+        local db = math.abs(c.b - sb)
+        if dr < 0.005 and dg < 0.005 and db < 0.005 then
+          cached_match_idx = idx
+          break
+        end
+      end
+    end
+  end
+end
+
 local function render_ui()
   if #colors == 0 then
     reaper.ImGui_Text(ctx, "No palettes found in " .. palettes_dir)
     return
   end
 
-  local sr, sg, sb = get_selected_color()
+  update_selected_color_cache()
+  local dl = reaper.ImGui_GetWindowDrawList(ctx)
 
   reaper.ImGui_BeginChild(ctx, "grid", cached_cw, cached_ch, 0, imgui.WindowFlags_NoScrollbar)
   reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_ItemSpacing, cfg.tile_spacing, cfg.tile_spacing)
@@ -470,16 +496,10 @@ local function render_ui()
       apply_color(c.r, c.g, c.b)
     end
 
-    if sr then
-      local dr = math.abs(c.r - sr)
-      local dg = math.abs(c.g - sg)
-      local db = math.abs(c.b - sb)
-      if dr < 0.005 and dg < 0.005 and db < 0.005 then
-        local min_x, min_y = reaper.ImGui_GetItemRectMin(ctx)
-        local max_x, max_y = reaper.ImGui_GetItemRectMax(ctx)
-        local dl = reaper.ImGui_GetWindowDrawList(ctx)
-        reaper.ImGui_DrawList_AddRect(dl, min_x, min_y, max_x, max_y, 0xFFFFFFCC, 4, 0, 2.5)
-      end
+    if idx == cached_match_idx then
+      local min_x, min_y = reaper.ImGui_GetItemRectMin(ctx)
+      local max_x, max_y = reaper.ImGui_GetItemRectMax(ctx)
+      reaper.ImGui_DrawList_AddRect(dl, min_x, min_y, max_x, max_y, 0xFFFFFFCC, 4, 0, 2.5)
     end
   end
 
