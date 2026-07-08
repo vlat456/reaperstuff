@@ -42,7 +42,11 @@ local function test_load_save_config()
         theme_check_mark  = {0.78, 0.89, 0.91},
         settings_write_keyswitches = true
     }
-    local initial_memory_stack = {10.5, -20.0, 300.2}
+    local initial_memory_stack = {
+        { value = 10.5, name = "" },
+        { value = -20.0, name = "Brass Staccato" },
+        { value = 300.2, name = "" }
+    }
 
     config_manager.save_settings(initial_themes, initial_themes.settings_write_keyswitches, initial_memory_stack)
 
@@ -65,9 +69,12 @@ local function test_load_save_config()
     assert_eq(settings_write_keyswitches, true, "write keyswitches setting")
     
     assert_eq(#memory_stack, 3, "memory stack count")
-    assert_eq(memory_stack[1], 10.5, "memory stack value 1")
-    assert_eq(memory_stack[2], -20.0, "memory stack value 2")
-    assert_eq(memory_stack[3], 300.2, "memory stack value 3")
+    assert_eq(memory_stack[1].value, 10.5, "memory stack value 1")
+    assert_eq(memory_stack[1].name, "", "memory stack name 1")
+    assert_eq(memory_stack[2].value, -20.0, "memory stack value 2")
+    assert_eq(memory_stack[2].name, "Brass Staccato", "memory stack name 2")
+    assert_eq(memory_stack[3].value, 300.2, "memory stack value 3")
+    assert_eq(memory_stack[3].name, "", "memory stack name 3")
 
     -- Clean up
     os.remove(file_path)

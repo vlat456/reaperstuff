@@ -78,10 +78,22 @@ function ConfigManager.load_settings()
                 settings_write_keyswitches = (val == "1" or val == "true")
             elseif key == "memory_stack" then
                 memory_stack = {}
-                for v in val:gmatch("[^,]+") do
-                    local num = tonumber(v)
-                    if num then
-                        table.insert(memory_stack, num)
+                if val:find("|") or val:find(":") then
+                    for item_str in val:gmatch("[^|]+") do
+                        local v_str, n_str = item_str:match("^([^:]+):(.*)$")
+                        if v_str then
+                            local num = tonumber(v_str)
+                            if num then
+                                table.insert(memory_stack, { value = num, name = n_str or "" })
+                            end
+                        end
+                    end
+                else
+                    for v in val:gmatch("[^,]+") do
+                        local num = tonumber(v)
+                        if num then
+                            table.insert(memory_stack, { value = num, name = "" })
+                        end
                     end
                 end
             end
@@ -133,10 +145,12 @@ function ConfigManager.save_settings(themes, settings_write_keyswitches, memory_
     
     if memory_stack and #memory_stack > 0 then
         local parts = {}
-        for _, val in ipairs(memory_stack) do
-            table.insert(parts, string.format("%.4f", val))
+        for _, item in ipairs(memory_stack) do
+            local val_str = string.format("%.4f", item.value)
+            local name_str = (item.name or ""):gsub("[|:]", "")
+            table.insert(parts, val_str .. ":" .. name_str)
         end
-        f:write(string.format("memory_stack=%s\n", table.concat(parts, ",")))
+        f:write(string.format("memory_stack=%s\n", table.concat(parts, "|")))
     end
     
     f:close()

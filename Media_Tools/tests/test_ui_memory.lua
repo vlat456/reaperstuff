@@ -5,6 +5,7 @@ local mock_hovered = false
 local mock_double_clicked = false
 local mock_button_clicked = {}
 local last_drawn_selectable = nil
+local mock_selectable_clicked = false
 
 _G.imgui = {
     SelectableFlags_AllowDoubleClick = function() return 1 end
@@ -27,10 +28,14 @@ _G.reaper = {
     ImGui_Selectable = function(ctx, label, is_selected, flags)
         table.insert(imgui_calls, { type = "Selectable", label = label, is_selected = is_selected })
         last_drawn_selectable = label
-        return label == "2:  -20.0 ms", is_selected -- Simulate clicking the second item
+        local clicked = false
+        if mock_selectable_clicked and label == "2:  Brass Stac (-20.0 ms)" then
+            clicked = true
+        end
+        return clicked, is_selected
     end,
     ImGui_IsItemHovered = function(ctx)
-        if last_drawn_selectable == "2:  -20.0 ms" then
+        if last_drawn_selectable == "2:  Brass Stac (-20.0 ms)" then
             return mock_hovered
         end
         return false
@@ -56,6 +61,14 @@ _G.reaper = {
     ImGui_SetTooltip = function(ctx, text)
         table.insert(imgui_calls, { type = "SetTooltip", text = text })
     end,
+    ImGui_InputText = function(ctx, label, buf)
+        table.insert(imgui_calls, { type = "InputText", label = label, buf = buf })
+        return false, buf
+    end,
+    ImGui_GetContentRegionAvail = function(ctx)
+        return 200, 200
+    end,
+    ImGui_SetNextItemWidth = function(ctx, w) end,
     ImGui_SelectableFlags_AllowDoubleClick = function() return 1 end
 }
 
@@ -73,9 +86,14 @@ local function test_draw_memory_window_basic()
     mock_hovered = false
     mock_double_clicked = false
     mock_button_clicked = {}
+    mock_selectable_clicked = true
     
     local gui_state = {
-        memory_stack = {10.5, -20.0, 300.2},
+        memory_stack = {
+            { value = 10.5, name = "" },
+            { value = -20.0, name = "Brass Stac" },
+            { value = 300.2, name = "" }
+        },
         selected_memory_index = -1
     }
     
@@ -88,6 +106,7 @@ local function test_draw_memory_window_basic()
     }
     
     ui_memory.draw_memory_window("fake_ctx", gui_state, callbacks)
+    mock_selectable_clicked = false
     
     -- Verify listbox items were drawn
     local selectables_count = 0
@@ -98,6 +117,7 @@ local function test_draw_memory_window_basic()
     end
     assert_eq(selectables_count, 3, "should draw 3 selectables")
     assert_eq(gui_state.selected_memory_index, 2, "second selectable click should update selected index to 2")
+    assert_eq(gui_state.rename_input_buffer, "Brass Stac", "should populate rename_input_buffer with current name")
 end
 
 local function test_draw_memory_window_double_click()
@@ -107,7 +127,11 @@ local function test_draw_memory_window_double_click()
     mock_button_clicked = {}
     
     local gui_state = {
-        memory_stack = {10.5, -20.0, 300.2},
+        memory_stack = {
+            { value = 10.5, name = "" },
+            { value = -20.0, name = "Brass Stac" },
+            { value = 300.2, name = "" }
+        },
         selected_memory_index = -1
     }
     
@@ -127,8 +151,13 @@ local function test_draw_memory_window_remove()
     mock_button_clicked = { ["-"] = true }
     
     local gui_state = {
-        memory_stack = {10.5, -20.0, 300.2},
-        selected_memory_index = 2
+        memory_stack = {
+            { value = 10.5, name = "" },
+            { value = -20.0, name = "Brass Stac" },
+            { value = 300.2, name = "" }
+        },
+        selected_memory_index = 2,
+        rename_input_buffer = "Brass Stac"
     }
     
     local memory_changed = false
@@ -139,7 +168,9 @@ local function test_draw_memory_window_remove()
     
     ui_memory.draw_memory_window("fake_ctx", gui_state, callbacks)
     assert_eq(#gui_state.memory_stack, 2, "stack should have 2 elements left")
-    assert_eq(gui_state.memory_stack[2], 300.2, "second element should now be 300.2")
+    assert_eq(gui_state.memory_stack[2].value, 300.2, "second element value should now be 300.2")
+    assert_eq(gui_state.selected_memory_index, 2, "selected index should stay 2 (clamped to max index)")
+    assert_eq(gui_state.rename_input_buffer, "", "input buffer should reset because 300.2 has no name")
     assert_eq(memory_changed, true, "on_memory_changed should be called")
 end
 
@@ -150,8 +181,13 @@ local function test_draw_memory_window_clear_all()
     mock_button_clicked = { ["Clear All"] = true }
     
     local gui_state = {
-        memory_stack = {10.5, -20.0, 300.2},
-        selected_memory_index = 2
+        memory_stack = {
+            { value = 10.5, name = "" },
+            { value = -20.0, name = "Brass Stac" },
+            { value = 300.2, name = "" }
+        },
+        selected_memory_index = 2,
+        rename_input_buffer = "Brass Stac"
     }
     
     local memory_changed = false
@@ -163,6 +199,34 @@ local function test_draw_memory_window_clear_all()
     ui_memory.draw_memory_window("fake_ctx", gui_state, callbacks)
     assert_eq(#gui_state.memory_stack, 0, "stack should be empty")
     assert_eq(gui_state.selected_memory_index, -1, "selected index should reset to -1")
+    assert_eq(gui_state.rename_input_buffer, "", "input buffer should be empty")
+    assert_eq(memory_changed, true, "on_memory_changed should be called")
+end
+
+local function test_draw_memory_window_set_name()
+    imgui_calls = {}
+    mock_hovered = false
+    mock_double_clicked = false
+    mock_button_clicked = { ["Set Name"] = true }
+    
+    local gui_state = {
+        memory_stack = {
+            { value = 10.5, name = "" },
+            { value = -20.0, name = "Brass Stac" },
+            { value = 300.2, name = "" }
+        },
+        selected_memory_index = 2,
+        rename_input_buffer = "Brass Staccato"
+    }
+    
+    local memory_changed = false
+    local callbacks = {
+        on_memory_changed = function() memory_changed = true end,
+        adjust_offset_to_value = function(val) end
+    }
+    
+    ui_memory.draw_memory_window("fake_ctx", gui_state, callbacks)
+    assert_eq(gui_state.memory_stack[2].name, "Brass Staccato", "name should update to 'Brass Staccato'")
     assert_eq(memory_changed, true, "on_memory_changed should be called")
 end
 
@@ -171,4 +235,5 @@ test_draw_memory_window_basic()
 test_draw_memory_window_double_click()
 test_draw_memory_window_remove()
 test_draw_memory_window_clear_all()
+test_draw_memory_window_set_name()
 print("All ui_memory tests passed!")
