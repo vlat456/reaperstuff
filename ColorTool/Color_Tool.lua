@@ -1,9 +1,18 @@
 -- @description Color Tool: Color Palette & Picker
 -- @author drvlat
--- @version 1.2.0
+-- @version 1.2.1
 -- @about
 --   An ImGui-based color palette viewer for REAPER.
 --   Displays organized color swatches for quick visual reference.
+-- @provides
+--   [main=main] Color_Tool.lua
+--   [nomain] palettes/70s.colorpalette
+--   [nomain] palettes/80s.colorpalette
+--   [nomain] palettes/default.colorpalette
+--   [nomain] palettes/palette-2.colorpalette
+--   [nomain] palettes/palette-3.colorpalette
+--   [nomain] palettes/palette-4.colorpalette
+--   [nomain] palettes/Studio_One_User.colorpalette
 
 local reaper = reaper
 
