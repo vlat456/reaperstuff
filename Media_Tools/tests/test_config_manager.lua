@@ -42,14 +42,16 @@ local function test_load_save_config()
         theme_check_mark  = {0.78, 0.89, 0.91},
         settings_write_keyswitches = true
     }
+    local initial_memory_stack = {10.5, -20.0, 300.2}
 
-    config_manager.save_settings(initial_themes)
+    config_manager.save_settings(initial_themes, initial_themes.settings_write_keyswitches, initial_memory_stack)
 
     -- Prepare target variables/table to load settings into
     local themes = {}
     local settings_write_keyswitches = false
+    local memory_stack = {}
 
-    themes, settings_write_keyswitches = config_manager.load_settings()
+    themes, settings_write_keyswitches, memory_stack = config_manager.load_settings()
 
     assert_colors_eq(themes.theme_bg, {0.1, 0.2, 0.3}, "bg color")
     assert_colors_eq(themes.theme_accent, {0.4, 0.5, 0.6}, "accent color")
@@ -61,6 +63,11 @@ local function test_load_save_config()
     assert_colors_eq(themes.theme_frame_bg, {0.45, 0.56, 0.67}, "frame bg color")
     assert_colors_eq(themes.theme_check_mark, {0.78, 0.89, 0.91}, "check mark color")
     assert_eq(settings_write_keyswitches, true, "write keyswitches setting")
+    
+    assert_eq(#memory_stack, 3, "memory stack count")
+    assert_eq(memory_stack[1], 10.5, "memory stack value 1")
+    assert_eq(memory_stack[2], -20.0, "memory stack value 2")
+    assert_eq(memory_stack[3], 300.2, "memory stack value 3")
 
     -- Clean up
     os.remove(file_path)

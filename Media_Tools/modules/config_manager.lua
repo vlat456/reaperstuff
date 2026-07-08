@@ -34,11 +34,12 @@ function ConfigManager.load_settings()
         end
     end
     local settings_write_keyswitches = ConfigManager.DEFAULTS.settings_write_keyswitches
+    local memory_stack = {}
 
     local path = ConfigManager.get_settings_file_path()
     local f = io.open(path, "r")
     if not f then
-        return themes, settings_write_keyswitches
+        return themes, settings_write_keyswitches, memory_stack
     end
 
     for line in f:lines() do
@@ -75,14 +76,22 @@ function ConfigManager.load_settings()
                 themes.theme_active_btn = {parts[1], parts[2], parts[3]}
             elseif key == "write_keyswitches" or key == "settings_write_keyswitches" then
                 settings_write_keyswitches = (val == "1" or val == "true")
+            elseif key == "memory_stack" then
+                memory_stack = {}
+                for v in val:gmatch("[^,]+") do
+                    local num = tonumber(v)
+                    if num then
+                        table.insert(memory_stack, num)
+                    end
+                end
             end
         end
     end
     f:close()
-    return themes, settings_write_keyswitches
+    return themes, settings_write_keyswitches, memory_stack
 end
 
-function ConfigManager.save_settings(themes, settings_write_keyswitches)
+function ConfigManager.save_settings(themes, settings_write_keyswitches, memory_stack)
     local path = ConfigManager.get_settings_file_path()
     local f = io.open(path, "w")
     if not f then return end
@@ -121,6 +130,15 @@ function ConfigManager.save_settings(themes, settings_write_keyswitches)
     f:write(string.format("inactive_btn_text=%.4f,%.4f,%.4f\n", inactive_btn_text[1], inactive_btn_text[2], inactive_btn_text[3]))
     f:write(string.format("active_btn=%.4f,%.4f,%.4f\n",        active_btn[1],        active_btn[2],        active_btn[3]))
     f:write(string.format("write_keyswitches=%s\n",             write_ks and "1" or "0"))
+    
+    if memory_stack and #memory_stack > 0 then
+        local parts = {}
+        for _, val in ipairs(memory_stack) do
+            table.insert(parts, string.format("%.4f", val))
+        end
+        f:write(string.format("memory_stack=%s\n", table.concat(parts, ",")))
+    end
+    
     f:close()
 end
 

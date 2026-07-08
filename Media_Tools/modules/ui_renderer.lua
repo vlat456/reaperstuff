@@ -45,7 +45,7 @@ function UIRenderer.draw_mode_selector(ctx, gui_state, has_notes)
     return mode_changed
 end
 
-function UIRenderer.draw_offset_slider(ctx, gui_state, fixed_range, callbacks, theme_apply_btn, show_info, show_settings)
+function UIRenderer.draw_offset_slider(ctx, gui_state, fixed_range, callbacks, theme_apply_btn, show_info, show_settings, show_memory)
     reaper.ImGui_Text(ctx, "Offset:")
     reaper.ImGui_SameLine(ctx, 90)
     
@@ -94,6 +94,34 @@ function UIRenderer.draw_offset_slider(ctx, gui_state, fixed_range, callbacks, t
     end
     reaper.ImGui_PopStyleColor(ctx, 3)
 
+    -- M+ Button (Add current value to memory stack)
+    reaper.ImGui_SameLine(ctx)
+    if reaper.ImGui_Button(ctx, "M+") then
+        if callbacks.add_to_memory then
+            callbacks.add_to_memory(gui_state.slider_value)
+        end
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Add current offset value to memory stack")
+    end
+
+    -- M Button (Toggle Memory window)
+    reaper.ImGui_SameLine(ctx)
+    local mem_active = show_memory
+    if mem_active then
+        reaper.ImGui_PushStyleColor(ctx, imgui.Col_Button,        reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.3, 0.6, 1.0))
+        reaper.ImGui_PushStyleColor(ctx, imgui.Col_ButtonHovered, reaper.ImGui_ColorConvertDouble4ToU32(0.5, 0.4, 0.75, 1.0))
+    end
+    if reaper.ImGui_Button(ctx, "M") then
+        show_memory = not show_memory
+    end
+    if mem_active then
+        reaper.ImGui_PopStyleColor(ctx, 2)
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Toggle Memory window")
+    end
+
     -- Information Button
     reaper.ImGui_SameLine(ctx)
     local info_active = show_info
@@ -122,7 +150,7 @@ function UIRenderer.draw_offset_slider(ctx, gui_state, fixed_range, callbacks, t
         reaper.ImGui_PopStyleColor(ctx, 2)
     end
 
-    return show_info, show_settings, is_slider_deactivated
+    return show_info, show_settings, show_memory, is_slider_deactivated
 end
 
 local function compare_elements(a_name, b_name, a_order, b_order)

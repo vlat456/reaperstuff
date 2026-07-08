@@ -1,6 +1,6 @@
 -- @description Media Offset Tool
 -- @author drvlat
--- @version 1.14.1
+-- @version 1.15.0
 -- @about
 --   An ImGui-based utility for adjusting media offsets in REAPER.
 --   Supports three target modes selected via radio buttons:
@@ -25,6 +25,7 @@
 --   [nomain] modules/ui_presets_dropdown.lua
 --   [nomain] modules/ui_info_panel.lua
 --   [nomain] modules/ui_shortcuts.lua
+--   [nomain] modules/ui_memory.lua
 
 local reaper = reaper
 
@@ -68,9 +69,10 @@ local ui_presets_dropdown = require("ui_presets_dropdown")
 local ui_info_panel = require("ui_info_panel")
 local ui_shortcuts = require("ui_shortcuts")
 local target_manager = require("target_manager")
+local ui_memory = require("ui_memory")
 
 -- Script variables
-local script_name = "Media Offset Tool v1.14.1"
+local script_name = "Media Offset Tool v1.15.0"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local script_running = true
 local gui_state -- Forward declaration for helper functions
@@ -112,6 +114,7 @@ local open_rename_preset_focus = false
 local open_delete_preset_modal = false
 local show_info = false
 local show_settings = false
+local show_memory = false
 local focus_main_next_frame = false
 
 local presets
@@ -189,9 +192,10 @@ local theme_inactive_btn_text = {DEFAULT_INACTIVE_BTN_TEXT[1], DEFAULT_INACTIVE_
 local theme_active_btn      = {DEFAULT_ACTIVE_BTN[1],      DEFAULT_ACTIVE_BTN[2],      DEFAULT_ACTIVE_BTN[3]}
 
 local settings_write_keyswitches = false
+local settings_memory_stack = {}
 
 local function load_settings()
-    local themes, write_ks = config_manager.load_settings()
+    local themes, write_ks, mem_stack = config_manager.load_settings()
     theme_bg = themes.theme_bg
     theme_accent = themes.theme_accent
     theme_text = themes.theme_text
@@ -205,6 +209,7 @@ local function load_settings()
     theme_inactive_btn_text = themes.theme_inactive_btn_text
     theme_active_btn = themes.theme_active_btn
     settings_write_keyswitches = write_ks
+    settings_memory_stack = mem_stack or {}
 end
 
 local function save_settings()
@@ -228,7 +233,13 @@ local function save_settings()
     else
         write_ks = settings_write_keyswitches
     end
-    config_manager.save_settings(themes, write_ks)
+    local mem_stack = {}
+    if gui_state and gui_state.memory_stack ~= nil then
+        mem_stack = gui_state.memory_stack
+    else
+        mem_stack = settings_memory_stack
+    end
+    config_manager.save_settings(themes, write_ks, mem_stack)
 end
 
 load_settings()
@@ -322,6 +333,8 @@ gui_state = {
     is_dragging = false,
     write_keyswitches = settings_write_keyswitches, -- Default to loaded settings
     move_envelopes = (reaper.GetToggleCommandState(40070) == 1), -- Initialize from REAPER's global "move envelopes with items" option
+    memory_stack = settings_memory_stack,
+    selected_memory_index = -1,
 }
 
 -- Load persisted mode from project metadata
@@ -1138,7 +1151,7 @@ local function render_ui()
 
     -- Double-click / Drag slider for absolute offset (displaying current value) and manual input box side by side
     local is_slider_deactivated
-    show_info, show_settings, is_slider_deactivated = ui_renderer.draw_offset_slider(
+    show_info, show_settings, show_memory, is_slider_deactivated = ui_renderer.draw_offset_slider(
         ctx,
         gui_state,
         FIXED_RANGE,
@@ -1153,11 +1166,16 @@ local function render_ui()
             end,
             on_input_changed = function(val)
                 current_preset_name = "" -- clear committed association, but keep combo selection for Save
+            end,
+            add_to_memory = function(val)
+                table.insert(gui_state.memory_stack, val)
+                save_settings()
             end
         },
         theme_apply_btn,
         show_info,
-        show_settings
+        show_settings,
+        show_memory
     )
     if show_settings then
         -- Snapshot current theme as uint32 (one-time float→u32, no further round-trip)
@@ -1636,9 +1654,40 @@ local function loop()
         end
     end
 
+    local is_memory_focused = false
+    if show_memory and script_running then
+        reaper.ImGui_SetNextWindowSize(ctx, 220, 250, reaper.ImGui_Cond_FirstUseEver())
+        reaper.ImGui_SetNextWindowSizeConstraints(ctx, 200, 150, 400, 600)
+        local mem_visible, mem_open = reaper.ImGui_Begin(
+            ctx,
+            "Memory##MediaOffsetTool",
+            true,
+            imgui.WindowFlags_NoCollapse | imgui.WindowFlags_TopMost | imgui.WindowFlags_NoDocking
+        )
+        if mem_visible then
+            is_memory_focused = reaper.ImGui_IsWindowFocused(ctx, imgui.FocusedFlags_RootAndChildWindows)
+            ui_memory.draw_memory_window(
+                ctx,
+                gui_state,
+                {
+                    adjust_offset_to_value = function(val)
+                        adjust_offset_to_value(val)
+                    end,
+                    on_memory_changed = function()
+                        save_settings()
+                    end
+                }
+            )
+        end
+        reaper.ImGui_End(ctx)
+        if not mem_open then
+            show_memory = false
+        end
+    end
+
     -- Bring window to front if it loses focus to keep it topmost
     if visible and script_running then
-        local any_focused = is_main_focused or (show_settings and is_settings_focused)
+        local any_focused = is_main_focused or (show_settings and is_settings_focused) or (show_memory and is_memory_focused)
         if not any_focused then
             focus_main_next_frame = true
         end
