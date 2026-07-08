@@ -456,7 +456,7 @@ local function get_selected_color()
 end
 
 local function update_selected_color_cache()
-  local now = reaper.clock()
+  local now = reaper.time_precise()
   if now - last_color_check_time > 0.1 then
     last_color_check_time = now
     local sr, sg, sb = get_selected_color()
