@@ -1,6 +1,6 @@
 -- @description Color Tool: Color Palette & Picker
 -- @author drvlat
--- @version 1.1.0
+-- @version 1.2.0
 -- @about
 --   An ImGui-based color palette viewer for REAPER.
 --   Displays organized color swatches for quick visual reference.
@@ -133,11 +133,6 @@ local function load_palette(filepath)
   return out
 end
 
-local WIN_PAD = 8
-local TITLE_H = 36
-local HEADER_H = 40
-
-local cached_win_w, cached_win_h = 0, 0
 local cached_cw, cached_ch = 0, 0
 
 local function update_window_size()
@@ -145,9 +140,6 @@ local function update_window_size()
   local rows = #colors > 0 and math.ceil(#colors / cols) or 1
   cached_cw = cols * cfg.tile_size_x + (cols - 1) * cfg.tile_spacing
   cached_ch = rows * cfg.tile_size_y + (rows - 1) * cfg.tile_spacing
-  local min_w = 280
-  cached_win_w = math.max(cached_cw, min_w) + WIN_PAD * 2
-  cached_win_h = cached_ch + WIN_PAD * 2 + TITLE_H + HEADER_H
 end
 
 local function reload_palette()
@@ -214,45 +206,76 @@ load_config()
 reload_palette()
 
 local function apply_color(r, g, b)
-  local ctx_mode = reaper.GetCursorContext2(true)
-  if ctx_mode ~= 0 and ctx_mode ~= 1 then return end
-
-  local count = 0
-  if ctx_mode == 0 then
-    count = reaper.CountSelectedTracks(0)
-  elseif ctx_mode == 1 then
-    count = reaper.CountSelectedMediaItems(0)
-  end
-
-  if count == 0 then return end
-
   local r8 = math.floor(r * 255 + 0.5)
   local g8 = math.floor(g * 255 + 0.5)
   local b8 = math.floor(b * 255 + 0.5)
   local nc = reaper.ColorToNative(r8, g8, b8) | 0x1000000
+  local colored = false
 
-  reaper.Undo_BeginBlock()
+  local ctx_mode = reaper.GetCursorContext2(true)
 
   if ctx_mode == 0 then
-    for i = 0, count - 1 do
-      local track = reaper.GetSelectedTrack(0, i)
-      if track then
-        reaper.SetMediaTrackInfo_Value(track, "I_CUSTOMCOLOR", nc)
+    local cnt = reaper.CountSelectedTracks(0)
+    if cnt > 0 then
+      reaper.Undo_BeginBlock()
+      for i = 0, cnt - 1 do
+        local tr = reaper.GetSelectedTrack(0, i)
+        if tr then reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", nc) end
       end
+      reaper.Undo_EndBlock("Color Tool: Color Tracks", -1)
+      colored = true
     end
-    reaper.Undo_EndBlock("Color Tool: Color Tracks", -1)
+
   elseif ctx_mode == 1 then
-    for i = 0, count - 1 do
-      local item = reaper.GetSelectedMediaItem(0, i)
-      if item then
-        reaper.SetMediaItemInfo_Value(item, "I_CUSTOMCOLOR", nc)
+    local cnt = reaper.CountSelectedMediaItems(0)
+    if cnt > 0 then
+      reaper.Undo_BeginBlock()
+      for i = 0, cnt - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
+        if item then
+          reaper.SetMediaItemInfo_Value(item, "I_CUSTOMCOLOR", nc)
+          local take = reaper.GetActiveTake(item)
+          if take then
+            reaper.SetMediaItemTakeInfo_Value(take, "I_CUSTOMCOLOR", nc)
+          end
+        end
       end
+      reaper.Undo_EndBlock("Color Tool: Color Items+Takes", -1)
+      colored = true
     end
-    reaper.Undo_EndBlock("Color Tool: Color Items", -1)
   end
 
-  reaper.MarkProjectDirty(0)
-  reaper.UpdateArrange()
+  if not colored then
+    local curpos = reaper.GetCursorPosition()
+    local total = reaper.CountProjectMarkers(0)
+    for i = 0, total - 1 do
+      local ok, isrgn, pos, rngend, name, idxnum = reaper.EnumProjectMarkers(i)
+      if ok and ok > 0 then
+        if isrgn then
+          if curpos >= pos and curpos <= rngend then
+            reaper.Undo_BeginBlock()
+            reaper.SetProjectMarkerByIndex(0, i, isrgn, pos, rngend, idxnum, name, nc)
+            reaper.Undo_EndBlock("Color Tool: Color Region", -1)
+            colored = true
+            break
+          end
+        else
+          if math.abs(curpos - pos) < 0.1 then
+            reaper.Undo_BeginBlock()
+            reaper.SetProjectMarkerByIndex(0, i, isrgn, pos, rngend, idxnum, name, nc)
+            reaper.Undo_EndBlock("Color Tool: Color Marker", -1)
+            colored = true
+            break
+          end
+        end
+      end
+    end
+  end
+
+  if colored then
+    reaper.MarkProjectDirty(0)
+    reaper.UpdateArrange()
+  end
 end
 
 local function render_palette_selector(combo_width)
@@ -264,6 +287,7 @@ local function render_palette_selector(combo_width)
     if changed then
       cfg.palette = palettes_list[new_idx + 1].name
       reload_palette()
+      save_config()
     end
 
     reaper.ImGui_SameLine(ctx, 0, 4)
@@ -292,6 +316,7 @@ local function render_palette_selector(combo_width)
               update_palettes_cache()
               cfg.palette = basename
               reload_palette()
+              save_config()
             end
           else
             reaper.ShowMessageBox("File does not appear to be a valid .colorpalette (expected JSON with \"colors\" array).", "Import Error", 0)
@@ -367,11 +392,71 @@ local function render_pref_window()
   reaper.ImGui_End(ctx)
 end
 
+local function get_selected_color()
+  local ctx_mode = reaper.GetCursorContext2(true)
+  if ctx_mode == 0 then
+    local track = reaper.GetSelectedTrack(0, 0)
+    if track then
+      local nc = reaper.GetTrackColor(track)
+      if nc > 0 then
+        nc = nc & ~0x1000000
+        local r, g, b = reaper.ColorFromNative(nc)
+        return r / 255, g / 255, b / 255
+      end
+    end
+  elseif ctx_mode == 1 then
+    local item = reaper.GetSelectedMediaItem(0, 0)
+    if item then
+      local nc = reaper.GetMediaItemInfo_Value(item, "I_CUSTOMCOLOR")
+      if nc and nc > 0 then
+        local nc_int = math.floor(nc + 0.5) & ~0x1000000
+        local r, g, b = reaper.ColorFromNative(nc_int)
+        return r / 255, g / 255, b / 255
+      end
+    end
+  end
+
+  -- fallback: highlight marker/region at edit cursor
+  local curpos = reaper.GetCursorPosition()
+  local markeridx, regionidx = reaper.GetLastMarkerAndCurRegion(0, curpos)
+
+  if regionidx >= 0 then
+    local ok, isrgn, pos, rngend, name, id, mc = reaper.EnumProjectMarkers3(0, regionidx)
+    if ok and ok > 0 and mc and mc > 0 then
+      mc = mc & ~0x1000000
+      local r, g, b = reaper.ColorFromNative(mc)
+      return r / 255, g / 255, b / 255
+    end
+  end
+
+  if markeridx >= 0 then
+    local ok, isrgn, pos, rngend, name, id, mc = reaper.EnumProjectMarkers3(0, markeridx)
+    if ok and ok > 0 and mc and mc > 0 and math.abs(curpos - pos) < 0.1 then
+      mc = mc & ~0x1000000
+      local r, g, b = reaper.ColorFromNative(mc)
+      return r / 255, g / 255, b / 255
+    end
+  end
+
+  -- marker may be at exact cursor (GetLastMarkerAndCurRegion is "before time")
+  local markeridx2, _ = reaper.GetLastMarkerAndCurRegion(0, curpos + 0.001)
+  if markeridx2 >= 0 and markeridx2 ~= markeridx then
+    local ok, isrgn, pos, rngend, name, id, mc = reaper.EnumProjectMarkers3(0, markeridx2)
+    if ok and ok > 0 and mc and mc > 0 and math.abs(curpos - pos) < 0.1 then
+      mc = mc & ~0x1000000
+      local r, g, b = reaper.ColorFromNative(mc)
+      return r / 255, g / 255, b / 255
+    end
+  end
+end
+
 local function render_ui()
   if #colors == 0 then
     reaper.ImGui_Text(ctx, "No palettes found in " .. palettes_dir)
     return
   end
+
+  local sr, sg, sb = get_selected_color()
 
   reaper.ImGui_BeginChild(ctx, "grid", cached_cw, cached_ch, 0, imgui.WindowFlags_NoScrollbar)
   reaper.ImGui_PushStyleVar(ctx, imgui.StyleVar_ItemSpacing, cfg.tile_spacing, cfg.tile_spacing)
@@ -384,6 +469,18 @@ local function render_ui()
     if reaper.ImGui_ColorButton(ctx, c.label, c.u32, imgui.ColorEditFlags_NoTooltip, cfg.tile_size_x, cfg.tile_size_y) then
       apply_color(c.r, c.g, c.b)
     end
+
+    if sr then
+      local dr = math.abs(c.r - sr)
+      local dg = math.abs(c.g - sg)
+      local db = math.abs(c.b - sb)
+      if dr < 0.005 and dg < 0.005 and db < 0.005 then
+        local min_x, min_y = reaper.ImGui_GetItemRectMin(ctx)
+        local max_x, max_y = reaper.ImGui_GetItemRectMax(ctx)
+        local dl = reaper.ImGui_GetWindowDrawList(ctx)
+        reaper.ImGui_DrawList_AddRect(dl, min_x, min_y, max_x, max_y, 0xFFFFFFCC, 4, 0, 2.5)
+      end
+    end
   end
 
   reaper.ImGui_PopStyleVar(ctx)
@@ -395,8 +492,7 @@ local function loop()
 
   reaper.ImGui_PushStyleColor(ctx, imgui.Col_WindowBg, cfg.bg_color)
 
-  reaper.ImGui_SetNextWindowSize(ctx, cached_win_w, cached_win_h, imgui.Cond_Always)
-  local window_flags = imgui.WindowFlags_NoCollapse | imgui.WindowFlags_TopMost
+  local window_flags = imgui.WindowFlags_NoCollapse | imgui.WindowFlags_TopMost | imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoResize
   local visible, open = reaper.ImGui_Begin(ctx, script_name, true, window_flags)
 
   if not open then
