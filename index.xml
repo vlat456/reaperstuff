@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="4455a3d3a5961717becbbe432e3a7c739c9a735b">
+<index version="1" name="Walter Scripts" commit="fffe4cf8c6004276a53af5a663cbdedc39be541a">
   <category name="ColorTool">
     <reapack name="Color_Tool.lua" type="script" desc="Color Tool: Color Palette &amp; Picker">
       <metadata>
@@ -18,7 +18,7 @@
         <source main="main">https://github.com/vlat456/reaperstuff/raw/5eff26c14d37b65f7fb19819bb908d6afe5ba3bf/ColorTool/Color_Tool.lua</source>
       </version>
       <version name="1.2.0" author="drvlat" time="2026-07-08T08:17:08Z">
-        <source main="main">https://github.com/vlat456/reaperstuff/raw/4455a3d3a5961717becbbe432e3a7c739c9a735b/ColorTool/Color_Tool.lua</source>
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/fffe4cf8c6004276a53af5a663cbdedc39be541a/ColorTool/Color_Tool.lua</source>
       </version>
     </reapack>
   </category>
