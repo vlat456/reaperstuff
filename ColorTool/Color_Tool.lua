@@ -160,7 +160,7 @@ local function reload_palette()
     end
   end
   update_window_size()
-  last_change_count = -1
+  last_color_check_time = 0
 end
 
 local palettes_combo_string = ""
@@ -276,7 +276,7 @@ local function apply_color(r, g, b)
   if colored then
     reaper.MarkProjectDirty(0)
     reaper.UpdateArrange()
-    last_change_count = -1
+    last_color_check_time = 0
   end
 end
 
@@ -394,6 +394,7 @@ local function render_pref_window()
   reaper.ImGui_End(ctx)
 end
 
+local last_color_check_time = 0
 local last_change_count = -1
 local last_cursor_pos = -1
 local last_ctx_mode = -1
@@ -458,6 +459,10 @@ local function get_selected_color()
 end
 
 local function update_selected_color_cache()
+  local now = reaper.time_precise()
+  if now - last_color_check_time < 0.016 then return end
+  last_color_check_time = now
+
   local change_count = reaper.GetProjectStateChangeCount(0)
   local cursor_pos = reaper.GetCursorPosition()
   local ctx_mode = reaper.GetCursorContext2(true)
