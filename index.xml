@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Walter Scripts" commit="fffe4cf8c6004276a53af5a663cbdedc39be541a">
+<index version="1" name="Walter Scripts" commit="0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6">
   <category name="ColorTool">
     <reapack name="Color_Tool.lua" type="script" desc="Color Tool: Color Palette &amp; Picker">
       <metadata>
@@ -19,6 +19,16 @@
       </version>
       <version name="1.2.0" author="drvlat" time="2026-07-08T08:17:08Z">
         <source main="main">https://github.com/vlat456/reaperstuff/raw/fffe4cf8c6004276a53af5a663cbdedc39be541a/ColorTool/Color_Tool.lua</source>
+      </version>
+      <version name="1.2.1" author="drvlat" time="2026-07-08T08:37:55Z">
+        <source main="main">https://github.com/vlat456/reaperstuff/raw/0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6/ColorTool/Color_Tool.lua</source>
+        <source file="palettes/70s.colorpalette">https://github.com/vlat456/reaperstuff/raw/0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6/ColorTool/palettes/70s.colorpalette</source>
+        <source file="palettes/80s.colorpalette">https://github.com/vlat456/reaperstuff/raw/0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6/ColorTool/palettes/80s.colorpalette</source>
+        <source file="palettes/default.colorpalette">https://github.com/vlat456/reaperstuff/raw/0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6/ColorTool/palettes/default.colorpalette</source>
+        <source file="palettes/palette-2.colorpalette">https://github.com/vlat456/reaperstuff/raw/0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6/ColorTool/palettes/palette-2.colorpalette</source>
+        <source file="palettes/palette-3.colorpalette">https://github.com/vlat456/reaperstuff/raw/0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6/ColorTool/palettes/palette-3.colorpalette</source>
+        <source file="palettes/palette-4.colorpalette">https://github.com/vlat456/reaperstuff/raw/0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6/ColorTool/palettes/palette-4.colorpalette</source>
+        <source file="palettes/Studio_One_User.colorpalette">https://github.com/vlat456/reaperstuff/raw/0388b8c5c8f39d6f77bfebce1ca0e06bfd7e49f6/ColorTool/palettes/Studio_One_User.colorpalette</source>
       </version>
     </reapack>
   </category>
